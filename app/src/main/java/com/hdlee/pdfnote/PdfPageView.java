@@ -17,6 +17,8 @@ final class PdfPageView extends View {
         void onHighlightCreated(AnnotationStore.Mark mark);
         void onMarkTapped(AnnotationStore.Mark mark);
         void onMemoPointRequested(int page, float x, float y);
+        void onZoomGestureStarted();
+        void onPageSwipe(int direction);
     }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -30,6 +32,7 @@ final class PdfPageView extends View {
     private float startX, startY, currentX, currentY, lastX, lastY;
     private float panX, panY;
     private boolean drawing, panning, gestureMoved, scalingOccurred;
+    private boolean verticalPageSwipe;
     private float scale = 1f;
     private final Listener listener;
 
@@ -42,6 +45,7 @@ final class PdfPageView extends View {
                 drawing = false;
                 panning = false;
                 scalingOccurred = true;
+                listener.onZoomGestureStarted();
                 return true;
             }
 
@@ -87,6 +91,10 @@ final class PdfPageView extends View {
         memoMode = enabled;
         if (enabled) highlightMode = false;
         invalidate();
+    }
+
+    void setVerticalPageSwipe(boolean vertical) {
+        verticalPageSwipe = vertical;
     }
 
     private float highlightHeight(RectF dest) {
@@ -160,12 +168,25 @@ final class PdfPageView extends View {
             lastX = startX; lastY = startY;
             gestureMoved = false; scalingOccurred = false;
             drawing = highlightMode && dest.contains(startX, startY);
-            panning = scale > 1f && !highlightMode && !memoMode;
+            panning = scale > 1f;
             getParent().requestDisallowInterceptTouchEvent(drawing || panning);
             invalidate(); return true;
         }
         if (e.getAction() == MotionEvent.ACTION_POINTER_DOWN) {
             drawing = false; panning = false; scalingOccurred = true;
+            return true;
+        }
+        if (e.getActionMasked() == MotionEvent.ACTION_POINTER_UP && scale > 1f) {
+            int remaining = e.getActionIndex() == 0 ? 1 : 0;
+            if (remaining < e.getPointerCount()) {
+                lastX = e.getX(remaining);
+                lastY = e.getY(remaining);
+                startX = lastX;
+                startY = lastY;
+                panning = true;
+                gestureMoved = false;
+                getParent().requestDisallowInterceptTouchEvent(true);
+            }
             return true;
         }
         if (e.getAction() == MotionEvent.ACTION_MOVE && drawing) {
@@ -181,7 +202,10 @@ final class PdfPageView extends View {
         }
         if (e.getAction() == MotionEvent.ACTION_UP) {
             getParent().requestDisallowInterceptTouchEvent(false);
-            if (scalingOccurred || (panning && gestureMoved)) {
+            if (panning && gestureMoved) {
+                panning = false; return true;
+            }
+            if (scalingOccurred) {
                 panning = false; return true;
             }
             if (drawing) {
@@ -214,6 +238,17 @@ final class PdfPageView extends View {
                     if (m.page == page && nx >= m.left && nx <= m.right && ny >= m.top && ny <= m.bottom) {
                         listener.onMarkTapped(m); return true;
                     }
+                }
+            }
+            if (!highlightMode && !memoMode && scale <= 1f) {
+                float dx = e.getX() - startX;
+                float dy = e.getY() - startY;
+                float distance = verticalPageSwipe ? Math.abs(dy) : Math.abs(dx);
+                float cross = verticalPageSwipe ? Math.abs(dx) : Math.abs(dy);
+                if (distance > Math.max(72f, cross * 1.25f)) {
+                    int direction = verticalPageSwipe ? (dy < 0 ? 1 : -1) : (dx < 0 ? 1 : -1);
+                    listener.onPageSwipe(direction);
+                    return true;
                 }
             }
         }
