@@ -20,12 +20,14 @@ final class PdfPageView extends View {
         void onZoomGestureStarted();
         void onPageSwipe(int direction);
         void onOutlinePointRequested(int page, float x, float y);
+        void onInkChanged();
     }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ScaleGestureDetector scaleDetector;
     private Bitmap bitmap;
     private List<AnnotationStore.Mark> marks;
+    private List<AnnotationStore.InkStroke> strokes;
     private int page;
     private boolean highlightMode;
     private boolean memoMode;
@@ -35,6 +37,11 @@ final class PdfPageView extends View {
     private boolean drawing, panning, gestureMoved, scalingOccurred;
     private boolean verticalPageSwipe;
     private boolean outlineMode;
+    private int inkMode;
+    private int inkColor=0xFF172033;
+    private float inkWidth=0.004f;
+    private AnnotationStore.InkStroke activeStroke;
+    private boolean stylusDrawing;
     private float scale = 1f;
     private final Listener listener;
 
@@ -72,11 +79,12 @@ final class PdfPageView extends View {
         });
     }
 
-    void showPage(Bitmap pageBitmap, int pageNumber, List<AnnotationStore.Mark> allMarks) {
+    void showPage(Bitmap pageBitmap, int pageNumber, List<AnnotationStore.Mark> allMarks, List<AnnotationStore.InkStroke> allStrokes) {
         if (bitmap != null && bitmap != pageBitmap) bitmap.recycle();
         bitmap = pageBitmap;
         page = pageNumber;
         marks = allMarks;
+        strokes = allStrokes;
         scale = 1f;
         panX = panY = 0f;
         invalidate();
@@ -86,6 +94,7 @@ final class PdfPageView extends View {
         if (bitmap != null) bitmap.recycle();
         bitmap = null;
         marks = null;
+        strokes = null;
         scale = 1f;
         panX = panY = 0f;
         invalidate();
@@ -107,6 +116,12 @@ final class PdfPageView extends View {
     void setOutlineMode(boolean enabled) {
         outlineMode = enabled;
         if (enabled) { highlightMode = false; memoMode = false; }
+        invalidate();
+    }
+
+    void setInkTool(int mode, int color, float width) {
+        inkMode=mode; inkColor=color; inkWidth=width;
+        if(mode!=0){highlightMode=memoMode=outlineMode=false;}
         invalidate();
     }
 
@@ -177,6 +192,7 @@ final class PdfPageView extends View {
                 canvas.drawLine(cx - 5f, cy + 2f, cx + 2f, cy + 2f, paint);
             }
         }
+        if(strokes!=null){paint.setStyle(Paint.Style.STROKE);paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);for(AnnotationStore.InkStroke s:strokes)if(s.page==page&&s.points.size()>0){paint.setColor(s.color);if(s.points.size()==1){AnnotationStore.InkPoint p=s.points.get(0);paint.setStyle(Paint.Style.FILL);canvas.drawCircle(dest.left+p.x*dest.width(),dest.top+p.y*dest.height(),strokeWidth(s.width,p.pressure,dest)/2f,paint);paint.setStyle(Paint.Style.STROKE);}else for(int i=1;i<s.points.size();i++){AnnotationStore.InkPoint a=s.points.get(i-1),b=s.points.get(i);paint.setStrokeWidth(strokeWidth(s.width,(a.pressure+b.pressure)/2f,dest));canvas.drawLine(dest.left+a.x*dest.width(),dest.top+a.y*dest.height(),dest.left+b.x*dest.width(),dest.top+b.y*dest.height(),paint);}}paint.setStyle(Paint.Style.FILL);}
         if (drawing) {
             paint.setColor(highlightColor);
             float centerY = (startY + currentY) / 2f;
@@ -186,10 +202,19 @@ final class PdfPageView extends View {
         }
     }
 
+    private float strokeWidth(float base,float pressure,RectF dest){float p=Math.max(0.12f,Math.min(1f,pressure));return Math.max(1.5f,base*dest.width()*(0.45f+p*1.15f));}
+
+    private boolean isStylus(MotionEvent e){int tool=e.getToolType(0);return tool==MotionEvent.TOOL_TYPE_STYLUS||tool==MotionEvent.TOOL_TYPE_ERASER;}
+    private boolean temporaryEraser(MotionEvent e){return e.getToolType(0)==MotionEvent.TOOL_TYPE_ERASER||(e.getButtonState()&MotionEvent.BUTTON_STYLUS_PRIMARY)!=0;}
+    private void addInkPoint(MotionEvent e,RectF dest){if(activeStroke==null||!dest.contains(e.getX(),e.getY()))return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float pressure=Math.max(0.05f,Math.min(1f,e.getPressure()));if(activeStroke.points.isEmpty()){activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));return;}AnnotationStore.InkPoint last=activeStroke.points.get(activeStroke.points.size()-1);float dx=x-last.x,dy=y-last.y;if(dx*dx+dy*dy>0.000002f)activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));}
+    private void eraseAt(MotionEvent e,RectF dest){if(strokes==null||dest.width()==0)return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float threshold=Math.max(0.012f,18f/dest.width());for(int i=strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=strokes.get(i);if(s.page!=page)continue;for(AnnotationStore.InkPoint p:s.points)if(Math.hypot(p.x-x,p.y-y)<=threshold){strokes.remove(i);listener.onInkChanged();invalidate();return;}}}
+
     @Override public boolean onTouchEvent(MotionEvent e) {
         scaleDetector.onTouchEvent(e);
         if (scaleDetector.isInProgress()) return true;
         RectF dest = contentRect();
+        boolean stylus=isStylus(e);
+        if(inkMode!=0&&stylus){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i)));activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
         if (e.getAction() == MotionEvent.ACTION_DOWN) {
             startX = currentX = e.getX(); startY = currentY = e.getY();
             lastX = startX; lastY = startY;
