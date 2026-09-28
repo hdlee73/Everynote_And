@@ -46,10 +46,30 @@ final class AnnotationStore {
         }
     }
 
+    static final class OutlineItem {
+        int page;
+        float x, y;
+        String title;
+
+        JSONObject toJson() throws JSONException {
+            return new JSONObject().put("page", page).put("x", x).put("y", y).put("title", title);
+        }
+
+        static OutlineItem fromJson(JSONObject o) {
+            OutlineItem item = new OutlineItem();
+            item.page = o.optInt("page");
+            item.x = (float) o.optDouble("x", 0.5);
+            item.y = (float) o.optDouble("y", 0.5);
+            item.title = o.optString("title", "개요");
+            return item;
+        }
+    }
+
     private final SharedPreferences prefs;
     private String key;
     final List<Mark> marks = new ArrayList<>();
     final Set<Integer> bookmarks = new HashSet<>();
+    final List<OutlineItem> outlines = new ArrayList<>();
 
     AnnotationStore(Context context) {
         prefs = context.getSharedPreferences("pdf_note_data", Context.MODE_PRIVATE);
@@ -59,12 +79,15 @@ final class AnnotationStore {
         key = "doc_" + sha256(uri.toString());
         marks.clear();
         bookmarks.clear();
+        outlines.clear();
         try {
             JSONObject root = new JSONObject(prefs.getString(key, "{}"));
             JSONArray a = root.optJSONArray("marks");
             if (a != null) for (int i = 0; i < a.length(); i++) marks.add(Mark.fromJson(a.getJSONObject(i)));
             JSONArray b = root.optJSONArray("bookmarks");
             if (b != null) for (int i = 0; i < b.length(); i++) bookmarks.add(b.getInt(i));
+            JSONArray o = root.optJSONArray("outlines");
+            if (o != null) for (int i = 0; i < o.length(); i++) outlines.add(OutlineItem.fromJson(o.getJSONObject(i)));
         } catch (JSONException ignored) { }
     }
 
@@ -76,7 +99,9 @@ final class AnnotationStore {
             for (Mark m : marks) a.put(m.toJson());
             JSONArray b = new JSONArray();
             for (int page : bookmarks) b.put(page);
-            root.put("marks", a).put("bookmarks", b);
+            JSONArray o = new JSONArray();
+            for (OutlineItem item : outlines) o.put(item.toJson());
+            root.put("marks", a).put("bookmarks", b).put("outlines", o);
             prefs.edit().putString(key, root.toString()).apply();
         } catch (JSONException ignored) { }
     }
@@ -90,7 +115,9 @@ final class AnnotationStore {
         for (Mark m : marks) a.put(m.toJson());
         JSONArray b = new JSONArray();
         for (int page : bookmarks) b.put(page);
-        root.put("marks", a).put("bookmarks", b);
+        JSONArray o = new JSONArray();
+        for (OutlineItem item : outlines) o.put(item.toJson());
+        root.put("marks", a).put("bookmarks", b).put("outlines", o);
         return root.toString(2);
     }
 
