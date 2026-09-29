@@ -18,6 +18,8 @@ public final class OfficeConversionService extends Service {
             Bundle result=new Bundle();int code=0;
             try{
                 if(source==null||output==null)throw new IllegalArgumentException("변환 경로가 없습니다");
+                OfficeEngine.install(this,stage->{if(receiver!=null){Bundle update=new Bundle();update.putString("stage",stage);receiver.send(2,update);}});
+                if(receiver!=null){Bundle update=new Bundle();update.putString("stage","원본 서식을 PDF로 변환하는 중");receiver.send(2,update);}
                 OfficeEngine.convert(this,new File(source),new File(output));
                 result.putString("output",output);
             }catch(Throwable error){code=1;result.putString("error",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage());}

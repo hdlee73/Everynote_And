@@ -163,7 +163,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         new Thread(()->{
             File input=null,output=null;
             try{
-                OfficeEngine.install(getApplicationContext(),stage->runOnUiThread(()->status.setText(stage)));
                 String ext=name.substring(name.lastIndexOf('.')+1).toLowerCase(Locale.ROOT);
                 input=File.createTempFile("office-source-","."+ext,getCacheDir());
                 output=File.createTempFile("office-result-",".pdf",getCacheDir());
@@ -177,6 +176,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                     status.setText("원본 서식을 PDF로 변환하는 중");
                     android.os.ResultReceiver receiver=new android.os.ResultReceiver(new android.os.Handler(android.os.Looper.getMainLooper())){
                         @Override protected void onReceiveResult(int code,android.os.Bundle data){
+                            if(code==2){status.setText(data.getString("stage","변환하는 중"));return;}
                             progress.dismiss();officeConverting=false;finalInput.delete();
                             if(code!=0){finalOutput.delete();toast("자동 변환 실패: "+data.getString("error","알 수 없는 오류"));offerOfficeImport(source,name);return;}
                             try{Uri saved=saveConvertedPdf(finalOutput,name);finalOutput.delete();openPdf(saved);toast("변환된 PDF를 저장했습니다");}
