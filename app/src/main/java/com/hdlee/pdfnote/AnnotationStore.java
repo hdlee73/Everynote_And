@@ -80,12 +80,34 @@ final class AnnotationStore {
         static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF172033);s.width=(float)o.optDouble("width",0.004);JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
     }
 
+    static final class TranslationNote {
+        int page;
+        float left, top, right, bottom;
+        String source, translated;
+        boolean visible = true;
+
+        JSONObject toJson() throws JSONException {
+            return new JSONObject().put("page", page).put("left", left).put("top", top)
+                    .put("right", right).put("bottom", bottom).put("source", source)
+                    .put("translated", translated).put("visible", visible);
+        }
+
+        static TranslationNote fromJson(JSONObject o) {
+            TranslationNote n = new TranslationNote();
+            n.page=o.optInt("page"); n.left=(float)o.optDouble("left"); n.top=(float)o.optDouble("top");
+            n.right=(float)o.optDouble("right"); n.bottom=(float)o.optDouble("bottom");
+            n.source=o.optString("source",""); n.translated=o.optString("translated","");
+            n.visible=o.optBoolean("visible",true); return n;
+        }
+    }
+
     private final SharedPreferences prefs;
     private String key;
     final List<Mark> marks = new ArrayList<>();
     final Set<Integer> bookmarks = new HashSet<>();
     final List<OutlineItem> outlines = new ArrayList<>();
     final List<InkStroke> strokes = new ArrayList<>();
+    final List<TranslationNote> translations = new ArrayList<>();
 
     AnnotationStore(Context context) {
         prefs = context.getSharedPreferences("pdf_note_data", Context.MODE_PRIVATE);
@@ -97,6 +119,7 @@ final class AnnotationStore {
         bookmarks.clear();
         outlines.clear();
         strokes.clear();
+        translations.clear();
         try {
             JSONObject root = new JSONObject(prefs.getString(key, "{}"));
             JSONArray a = root.optJSONArray("marks");
@@ -107,6 +130,8 @@ final class AnnotationStore {
             if (o != null) for (int i = 0; i < o.length(); i++) outlines.add(OutlineItem.fromJson(o.getJSONObject(i)));
             JSONArray s = root.optJSONArray("strokes");
             if (s != null) for (int i = 0; i < s.length(); i++) strokes.add(InkStroke.fromJson(s.getJSONObject(i)));
+            JSONArray t = root.optJSONArray("translations");
+            if (t != null) for (int i = 0; i < t.length(); i++) translations.add(TranslationNote.fromJson(t.getJSONObject(i)));
         } catch (JSONException ignored) { }
     }
 
@@ -122,7 +147,9 @@ final class AnnotationStore {
             for (OutlineItem item : outlines) o.put(item.toJson());
             JSONArray s = new JSONArray();
             for (InkStroke stroke : strokes) s.put(stroke.toJson());
-            root.put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s);
+            JSONArray t = new JSONArray();
+            for (TranslationNote note : translations) t.put(note.toJson());
+            root.put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
             prefs.edit().putString(key, root.toString()).apply();
         } catch (JSONException ignored) { }
     }
@@ -140,7 +167,9 @@ final class AnnotationStore {
         for (OutlineItem item : outlines) o.put(item.toJson());
         JSONArray s = new JSONArray();
         for (InkStroke stroke : strokes) s.put(stroke.toJson());
-        root.put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s);
+        JSONArray t = new JSONArray();
+        for (TranslationNote note : translations) t.put(note.toJson());
+        root.put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
         return root.toString(2);
     }
 
