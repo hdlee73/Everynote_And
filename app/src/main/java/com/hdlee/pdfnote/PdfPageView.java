@@ -41,6 +41,7 @@ final class PdfPageView extends View {
     private List<TextRegion> textRegions = new ArrayList<>();
     private final IdentityHashMap<AnnotationStore.TranslationNote,RectF> noteHitBoxes=new IdentityHashMap<>();
     private boolean textSelectMode;
+    private boolean showTextBounds;
     private int page;
     private boolean highlightMode;
     private boolean memoMode;
@@ -156,7 +157,7 @@ final class PdfPageView extends View {
 
     Bitmap copyPageBitmap(){return bitmap==null?null:bitmap.copy(Bitmap.Config.ARGB_8888,false);}
     int getPageNumber(){return page;}
-    void setTextRegions(List<TextRegion> regions){textRegions=regions==null?new ArrayList<>():regions;textSelectMode=true;highlightMode=memoMode=outlineMode=false;invalidate();}
+    void setTextRegions(List<TextRegion> regions,boolean showBounds){textRegions=regions==null?new ArrayList<>():regions;textSelectMode=true;showTextBounds=showBounds;highlightMode=memoMode=outlineMode=false;invalidate();}
     void stopTextSelection(){textSelectMode=false;textRegions.clear();invalidate();}
 
     private float highlightHeight(RectF dest) {
@@ -196,7 +197,7 @@ final class PdfPageView extends View {
         paint.setColor(Color.WHITE);
         canvas.drawRect(dest, paint);
         canvas.drawBitmap(bitmap, null, dest, paint);
-        if(textSelectMode){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.5f*getResources().getDisplayMetrics().density);paint.setColor(0xAA2563EB);for(TextRegion r:textRegions){RectF b=r.wordBounds;canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),4,4,paint);}paint.setStyle(Paint.Style.FILL);}
+        if(textSelectMode&&showTextBounds){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.5f*getResources().getDisplayMetrics().density);paint.setColor(0xAA2563EB);for(TextRegion r:textRegions){RectF b=r.wordBounds;canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),4,4,paint);}paint.setStyle(Paint.Style.FILL);}
         if (marks != null) for (AnnotationStore.Mark m : marks) if (m.page == page) {
             if (!m.noteOnly) {
                 paint.setColor(m.color);
@@ -244,7 +245,7 @@ final class PdfPageView extends View {
             lastX = startX; lastY = startY;
             gestureMoved = false; scalingOccurred = false;
             drawing = highlightMode && dest.contains(startX, startY);
-            panning = scale > 1f && !outlineMode && !textSelectMode;
+            panning = scale > 1f && !outlineMode;
             getParent().requestDisallowInterceptTouchEvent(drawing || panning);
             invalidate(); return true;
         }
@@ -285,7 +286,6 @@ final class PdfPageView extends View {
                 panning = false; return true;
             }
             if(Math.hypot(e.getX()-startX,e.getY()-startY)<20){for(AnnotationStore.TranslationNote n:noteHitBoxes.keySet()){RectF b=noteHitBoxes.get(n);if(b!=null&&b.contains(e.getX(),e.getY())){listener.onTranslationTapped(n);return true;}}}
-            if(textSelectMode&&Math.hypot(e.getX()-startX,e.getY()-startY)<20&&dest.contains(e.getX(),e.getY())){float nx=(e.getX()-dest.left)/dest.width(),ny=(e.getY()-dest.top)/dest.height();TextRegion best=null;float area=Float.MAX_VALUE;for(TextRegion r:textRegions)if(r.wordBounds.contains(nx,ny)){float a=r.wordBounds.width()*r.wordBounds.height();if(a<area){best=r;area=a;}}if(best!=null)listener.onTextRegionSelected(best);return true;}
             if (drawing) {
                 currentX = Math.max(dest.left, Math.min(dest.right, e.getX()));
                 currentY = Math.max(dest.top, Math.min(dest.bottom, e.getY()));
@@ -323,7 +323,8 @@ final class PdfPageView extends View {
                     }
                 }
             }
-            if (!highlightMode && !memoMode && !outlineMode && !textSelectMode && scale <= 1f) {
+            if(textSelectMode&&Math.hypot(e.getX()-startX,e.getY()-startY)<20&&dest.contains(e.getX(),e.getY())){float nx=(e.getX()-dest.left)/dest.width(),ny=(e.getY()-dest.top)/dest.height();TextRegion best=null;float area=Float.MAX_VALUE;for(TextRegion r:textRegions)if(r.wordBounds.contains(nx,ny)){float a=r.wordBounds.width()*r.wordBounds.height();if(a<area){best=r;area=a;}}if(best!=null){listener.onTextRegionSelected(best);return true;}}
+            if (!highlightMode && !memoMode && !outlineMode && scale <= 1f) {
                 float dx = e.getX() - startX;
                 float dy = e.getY() - startY;
                 float distance = verticalPageSwipe ? Math.abs(dy) : Math.abs(dx);
