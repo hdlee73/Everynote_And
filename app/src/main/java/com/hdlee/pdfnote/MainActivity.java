@@ -17,6 +17,7 @@ import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions;
 import com.google.mlkit.nl.translate.*;
+import com.google.mlkit.common.model.DownloadConditions;
 import org.json.*;
 import java.io.*;
 import java.util.*;
