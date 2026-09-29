@@ -277,7 +277,19 @@ final class PdfPageView extends View {
     private float strokeWidth(float base,float pressure,RectF dest){float p=Math.max(0.12f,Math.min(1f,pressure));return Math.max(1.5f,base*dest.width()*(0.45f+p*1.15f));}
 
     private boolean isStylus(MotionEvent e){int tool=e.getToolType(0);return tool==MotionEvent.TOOL_TYPE_STYLUS||tool==MotionEvent.TOOL_TYPE_ERASER;}
-    private TextRegion textRegionAt(float x,float y,RectF dest){if(!textSelectMode||dest.width()==0||!dest.contains(x,y))return null;float nx=(x-dest.left)/dest.width(),ny=(y-dest.top)/dest.height();TextRegion best=null;float area=Float.MAX_VALUE;for(TextRegion r:textRegions)if(r.wordBounds.contains(nx,ny)){float a=r.wordBounds.width()*r.wordBounds.height();if(a<area){best=r;area=a;}}return best;}
+    private TextRegion textRegionAt(float x,float y,RectF dest){
+        if(!textSelectMode||dest.width()==0||!dest.contains(x,y))return null;
+        float nx=(x-dest.left)/dest.width(),ny=(y-dest.top)/dest.height();
+        float tolerance=16f*getResources().getDisplayMetrics().density;
+        TextRegion best=null;float bestDistance=Float.MAX_VALUE;
+        for(TextRegion r:textRegions){
+            float dx=(nx-Math.max(r.wordBounds.left,Math.min(nx,r.wordBounds.right)))*dest.width();
+            float dy=(ny-Math.max(r.wordBounds.top,Math.min(ny,r.wordBounds.bottom)))*dest.height();
+            float distance=dx*dx+dy*dy;
+            if(distance<bestDistance){bestDistance=distance;best=r;}
+        }
+        return bestDistance<=tolerance*tolerance?best:null;
+    }
     private TextRegion nearestTextRegion(float x,float y,RectF dest){TextRegion hit=textRegionAt(x,y,dest);if(hit!=null)return hit;if(dest.width()==0||textRegions.isEmpty())return null;float nx=Math.max(0f,Math.min(1f,(x-dest.left)/dest.width())),ny=Math.max(0f,Math.min(1f,(y-dest.top)/dest.height())),bestDistance=Float.MAX_VALUE;TextRegion best=null;for(TextRegion r:textRegions){float dx=nx-Math.max(r.wordBounds.left,Math.min(nx,r.wordBounds.right)),dy=ny-Math.max(r.wordBounds.top,Math.min(ny,r.wordBounds.bottom));float distance=dx*dx+dy*dy*2f;if(distance<bestDistance){bestDistance=distance;best=r;}}return best;}
     private void beginTextSelectionNow(){selectionHandler.removeCallbacks(beginTextSelection);if(selectingText||selectionStartRegion==null)return;selectingText=true;selectionCandidate=false;panning=false;selectedTextRegions.clear();selectedTextRegions.add(selectionStartRegion);getParent().requestDisallowInterceptTouchEvent(true);performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);invalidate();}
     private void updateTextSelection(TextRegion end){if(end==null||selectionStartRegion==null)return;selectionEndRegion=end;int a=textRegions.indexOf(selectionStartRegion),b=textRegions.indexOf(end);if(a<0||b<0)return;selectedTextRegions.clear();for(int i=Math.min(a,b);i<=Math.max(a,b);i++)selectedTextRegions.add(textRegions.get(i));invalidate();}
@@ -354,6 +366,11 @@ final class PdfPageView extends View {
             selectionHandler.removeCallbacks(beginTextSelection);
             getParent().requestDisallowInterceptTouchEvent(false);
             if(selectingText){updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));TextSelection selection=finishTextSelection();selectingText=selectionCandidate=false;if(selection!=null){listener.onTextSelectionFinished(selection,e.getX(),e.getY());return true;}}
+            if(selectionCandidate&&selectionStartRegion!=null){
+                selectedTextRegions.clear();selectedTextRegions.add(selectionStartRegion);
+                TextSelection selection=finishTextSelection();selectionCandidate=false;
+                listener.onTextSelectionFinished(selection,e.getX(),e.getY());invalidate();return true;
+            }
             selectionCandidate=false;
             if (panning && gestureMoved) {
                 panning = false; return true;
