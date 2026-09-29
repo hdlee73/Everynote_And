@@ -22,13 +22,16 @@ final class AnnotationStore {
         int color;
         String note;
         boolean noteOnly;
+        boolean visible = true;
+        boolean minimized;
 
         JSONObject toJson() throws JSONException {
             JSONObject o = new JSONObject();
             o.put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom)
                     .put("color", color).put("note", note == null ? "" : note)
-                    .put("noteOnly", noteOnly);
+                    .put("noteOnly", noteOnly).put("visible", visible)
+                    .put("minimized", minimized);
             return o;
         }
 
@@ -42,6 +45,8 @@ final class AnnotationStore {
             m.color = o.optInt("color", 0x66FFEB3B);
             m.note = o.optString("note", "");
             m.noteOnly = o.optBoolean("noteOnly", false);
+            m.visible = o.optBoolean("visible", true);
+            m.minimized = o.optBoolean("minimized", false);
             return m;
         }
     }
@@ -85,11 +90,13 @@ final class AnnotationStore {
         float left, top, right, bottom;
         String source, translated;
         boolean visible = true;
+        boolean minimized;
 
         JSONObject toJson() throws JSONException {
             return new JSONObject().put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom).put("source", source)
-                    .put("translated", translated).put("visible", visible);
+                    .put("translated", translated).put("visible", visible)
+                    .put("minimized", minimized);
         }
 
         static TranslationNote fromJson(JSONObject o) {
@@ -97,7 +104,7 @@ final class AnnotationStore {
             n.page=o.optInt("page"); n.left=(float)o.optDouble("left"); n.top=(float)o.optDouble("top");
             n.right=(float)o.optDouble("right"); n.bottom=(float)o.optDouble("bottom");
             n.source=o.optString("source",""); n.translated=o.optString("translated","");
-            n.visible=o.optBoolean("visible",true); return n;
+            n.visible=o.optBoolean("visible",true); n.minimized=o.optBoolean("minimized",false); return n;
         }
     }
 

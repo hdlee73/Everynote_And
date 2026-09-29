@@ -53,6 +53,7 @@ final class PdfPageView extends View {
     private final List<TextRegion> selectedTextRegions = new ArrayList<>();
     private final Handler selectionHandler = new Handler(Looper.getMainLooper());
     private final IdentityHashMap<AnnotationStore.TranslationNote,RectF> noteHitBoxes=new IdentityHashMap<>();
+    private final IdentityHashMap<AnnotationStore.Mark,RectF> memoHitBoxes=new IdentityHashMap<>();
     private boolean textSelectMode;
     private boolean showTextBounds;
     private int page;
@@ -236,17 +237,9 @@ final class PdfPageView extends View {
                 canvas.drawRect(dest.left + m.left * dest.width(), dest.top + m.top * dest.height(),
                         dest.left + m.right * dest.width(), dest.top + m.bottom * dest.height(), paint);
             }
-            if (m.noteOnly || (m.note != null && !m.note.isEmpty())) {
-                paint.setColor(0xFF1565C0);
-                float cx = dest.left + m.right * dest.width();
-                float cy = dest.top + m.top * dest.height();
-                canvas.drawCircle(cx, cy, 12f, paint);
-                paint.setColor(Color.WHITE); paint.setStrokeWidth(2f);
-                canvas.drawLine(cx - 5f, cy - 3f, cx + 5f, cy - 3f, paint);
-                canvas.drawLine(cx - 5f, cy + 2f, cx + 2f, cy + 2f, paint);
-            }
         }
         if(strokes!=null){paint.setStyle(Paint.Style.STROKE);paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);for(AnnotationStore.InkStroke s:strokes)if(s.page==page&&s.points.size()>0){paint.setColor(s.color);if(s.points.size()==1){AnnotationStore.InkPoint p=s.points.get(0);paint.setStyle(Paint.Style.FILL);canvas.drawCircle(dest.left+p.x*dest.width(),dest.top+p.y*dest.height(),strokeWidth(s.width,p.pressure,dest)/2f,paint);paint.setStyle(Paint.Style.STROKE);}else for(int i=1;i<s.points.size();i++){AnnotationStore.InkPoint a=s.points.get(i-1),b=s.points.get(i);paint.setStrokeWidth(strokeWidth(s.width,(a.pressure+b.pressure)/2f,dest));canvas.drawLine(dest.left+a.x*dest.width(),dest.top+a.y*dest.height(),dest.left+b.x*dest.width(),dest.top+b.y*dest.height(),paint);}}paint.setStyle(Paint.Style.FILL);}
+        memoHitBoxes.clear();if(marks!=null)for(AnnotationStore.Mark m:marks)if(m.page==page&&m.visible&&(m.noteOnly||(m.note!=null&&!m.note.isEmpty())))drawMemo(canvas,dest,m);
         noteHitBoxes.clear();if(translations!=null)for(AnnotationStore.TranslationNote n:translations)if(n.page==page&&n.visible)drawTranslation(canvas,dest,n);
         if (drawing) {
             paint.setColor(highlightColor);
@@ -257,13 +250,27 @@ final class PdfPageView extends View {
         }
     }
 
-    private void drawTranslation(Canvas canvas,RectF dest,AnnotationStore.TranslationNote n){float density=getResources().getDisplayMetrics().density;float anchorX=dest.left+n.right*dest.width(),anchorY=dest.top+n.top*dest.height();float w=Math.min(220*density,dest.width()*0.46f),h=88*density;float left=Math.min(dest.right-w-6*density,anchorX+8*density);if(left<dest.left)left=dest.left+6*density;float top=Math.max(dest.top+6*density,Math.min(dest.bottom-h-6*density,anchorY));RectF box=new RectF(left,top,left+w,top+h);noteHitBoxes.put(n,box);paint.setColor(0xFFFFF3A6);canvas.drawRoundRect(box,10*density,10*density,paint);paint.setColor(0xFFFFC107);canvas.drawCircle(anchorX,anchorY,6*density,paint);paint.setColor(0xFF3F3A2D);paint.setTextSize(13*density);String text=n.translated==null?"":n.translated;float x=box.left+10*density,y=box.top+22*density,max=box.width()-20*density;for(String paragraph:text.split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;line=word;if(y>box.bottom-12*density)return;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return;}}}
+    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){
+        float density=getResources().getDisplayMetrics().density;
+        float anchorX=dest.left+nx*dest.width(),anchorY=dest.top+ny*dest.height();
+        if(minimized){float r=14*density;RectF box=new RectF(anchorX-r,anchorY-r,anchorX+r,anchorY+r);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,r,paint);paint.setColor(Color.WHITE);paint.setTextSize(17*density);paint.setTextAlign(Paint.Align.CENTER);canvas.drawText("▣",anchorX,anchorY+6*density,paint);paint.setTextAlign(Paint.Align.LEFT);return box;}
+        float w=Math.min(220*density,dest.width()*0.46f),h=96*density;
+        float left=Math.min(dest.right-w-6*density,anchorX+8*density);if(left<dest.left)left=dest.left+6*density;
+        float top=Math.max(dest.top+6*density,Math.min(dest.bottom-h-6*density,anchorY));RectF box=new RectF(left,top,left+w,top+h);
+        paint.setColor(0xFFFFF3A6);canvas.drawRoundRect(box,10*density,10*density,paint);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,6*density,paint);
+        paint.setColor(0xFF3F3A2D);paint.setTextSize(13*density);float x=box.left+10*density,y=box.top+22*density,max=box.width()-20*density;
+        for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;line=word;if(y>box.bottom-12*density)return box;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return box;}}
+        return box;
+    }
+    private void drawMemo(Canvas canvas,RectF dest,AnnotationStore.Mark m){memoHitBoxes.put(m,drawSticky(canvas,dest,m.right,m.top,m.note,m.minimized,0xFFFFB300));}
+    private void drawTranslation(Canvas canvas,RectF dest,AnnotationStore.TranslationNote n){noteHitBoxes.put(n,drawSticky(canvas,dest,n.right,n.top,n.translated,n.minimized,0xFF7C3AED));}
 
     private float strokeWidth(float base,float pressure,RectF dest){float p=Math.max(0.12f,Math.min(1f,pressure));return Math.max(1.5f,base*dest.width()*(0.45f+p*1.15f));}
 
     private boolean isStylus(MotionEvent e){int tool=e.getToolType(0);return tool==MotionEvent.TOOL_TYPE_STYLUS||tool==MotionEvent.TOOL_TYPE_ERASER;}
     private TextRegion textRegionAt(float x,float y,RectF dest){if(!textSelectMode||dest.width()==0||!dest.contains(x,y))return null;float nx=(x-dest.left)/dest.width(),ny=(y-dest.top)/dest.height();TextRegion best=null;float area=Float.MAX_VALUE;for(TextRegion r:textRegions)if(r.wordBounds.contains(nx,ny)){float a=r.wordBounds.width()*r.wordBounds.height();if(a<area){best=r;area=a;}}return best;}
-    private TextRegion nearestTextRegion(float x,float y,RectF dest){TextRegion hit=textRegionAt(x,y,dest);if(hit!=null)return hit;if(dest.width()==0)return null;float nx=(x-dest.left)/dest.width(),ny=(y-dest.top)/dest.height(),bestDistance=Float.MAX_VALUE;TextRegion best=null;for(TextRegion r:textRegions){float dx=nx-Math.max(r.wordBounds.left,Math.min(nx,r.wordBounds.right)),dy=ny-Math.max(r.wordBounds.top,Math.min(ny,r.wordBounds.bottom));float distance=dx*dx+dy*dy*2f;if(distance<bestDistance){bestDistance=distance;best=r;}}return bestDistance<0.012f?best:null;}
+    private TextRegion nearestTextRegion(float x,float y,RectF dest){TextRegion hit=textRegionAt(x,y,dest);if(hit!=null)return hit;if(dest.width()==0||textRegions.isEmpty())return null;float nx=Math.max(0f,Math.min(1f,(x-dest.left)/dest.width())),ny=Math.max(0f,Math.min(1f,(y-dest.top)/dest.height())),bestDistance=Float.MAX_VALUE;TextRegion best=null;for(TextRegion r:textRegions){float dx=nx-Math.max(r.wordBounds.left,Math.min(nx,r.wordBounds.right)),dy=ny-Math.max(r.wordBounds.top,Math.min(ny,r.wordBounds.bottom));float distance=dx*dx+dy*dy*2f;if(distance<bestDistance){bestDistance=distance;best=r;}}return best;}
+    private void beginTextSelectionNow(){selectionHandler.removeCallbacks(beginTextSelection);if(selectingText||selectionStartRegion==null)return;selectingText=true;selectionCandidate=false;panning=false;selectedTextRegions.clear();selectedTextRegions.add(selectionStartRegion);getParent().requestDisallowInterceptTouchEvent(true);performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);invalidate();}
     private void updateTextSelection(TextRegion end){if(end==null||selectionStartRegion==null)return;selectionEndRegion=end;int a=textRegions.indexOf(selectionStartRegion),b=textRegions.indexOf(end);if(a<0||b<0)return;selectedTextRegions.clear();for(int i=Math.min(a,b);i<=Math.max(a,b);i++)selectedTextRegions.add(textRegions.get(i));invalidate();}
     private TextSelection finishTextSelection(){if(selectedTextRegions.isEmpty())return null;StringBuilder text=new StringBuilder();List<RectF> bounds=new ArrayList<>();RectF union=new RectF(selectedTextRegions.get(0).wordBounds);for(TextRegion r:selectedTextRegions){if(text.length()>0)text.append(' ');text.append(r.word);RectF copy=new RectF(r.wordBounds);bounds.add(copy);union.union(copy);}return new TextSelection(text.toString(),bounds,union,selectedTextRegions.size()==1);}
     private boolean temporaryEraser(MotionEvent e){return e.getToolType(0)==MotionEvent.TOOL_TYPE_ERASER||(e.getButtonState()&MotionEvent.BUTTON_STYLUS_PRIMARY)!=0;}
@@ -291,8 +298,8 @@ final class PdfPageView extends View {
             drawing = false; panning = false; scalingOccurred = true;
             return true;
         }
+        if(e.getAction()==MotionEvent.ACTION_MOVE&&selectionCandidate&&Math.hypot(e.getX()-startX,e.getY()-startY)>6){beginTextSelectionNow();updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));return true;}
         if(e.getAction()==MotionEvent.ACTION_MOVE&&selectingText){currentX=e.getX();currentY=e.getY();updateTextSelection(nearestTextRegion(currentX,currentY,dest));return true;}
-        if(e.getAction()==MotionEvent.ACTION_MOVE&&selectionCandidate&&Math.hypot(e.getX()-startX,e.getY()-startY)>12){selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;if(scale>1f){panning=true;lastX=e.getX();lastY=e.getY();}getParent().requestDisallowInterceptTouchEvent(panning);}
         if (e.getActionMasked() == MotionEvent.ACTION_POINTER_UP && scale > 1f) {
             int remaining = e.getActionIndex() == 0 ? 1 : 0;
             if (remaining < e.getPointerCount()) {
@@ -328,7 +335,7 @@ final class PdfPageView extends View {
             if (scalingOccurred) {
                 panning = false; return true;
             }
-            if(Math.hypot(e.getX()-startX,e.getY()-startY)<20){for(AnnotationStore.TranslationNote n:noteHitBoxes.keySet()){RectF b=noteHitBoxes.get(n);if(b!=null&&b.contains(e.getX(),e.getY())){listener.onTranslationTapped(n);return true;}}}
+            if(Math.hypot(e.getX()-startX,e.getY()-startY)<20){for(AnnotationStore.TranslationNote n:noteHitBoxes.keySet()){RectF b=noteHitBoxes.get(n);if(b!=null&&b.contains(e.getX(),e.getY())){listener.onTranslationTapped(n);return true;}}for(AnnotationStore.Mark m:memoHitBoxes.keySet()){RectF b=memoHitBoxes.get(m);if(b!=null&&b.contains(e.getX(),e.getY())){listener.onMarkTapped(m);return true;}}}
             if (drawing) {
                 currentX = Math.max(dest.left, Math.min(dest.right, e.getX()));
                 currentY = Math.max(dest.top, Math.min(dest.bottom, e.getY()));
