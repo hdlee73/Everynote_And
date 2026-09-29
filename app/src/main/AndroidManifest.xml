@@ -12,10 +12,12 @@
     </queries>
     <application
         android:allowBackup="true"
+        android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
         android:label="PDF Note"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/AppTheme">
+        <service android:name=".OfficeConversionService" android:process=":office" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize"

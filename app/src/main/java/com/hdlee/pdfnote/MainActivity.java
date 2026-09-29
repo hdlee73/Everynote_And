@@ -55,6 +55,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private Locale speechLocale=Locale.US;
     private boolean pageAnimating;
     private boolean awaitingOfficeReturn;
+    private boolean officeConverting;
 
     private void translateText(String source,RectF bounds){
         Intent intent=new Intent(Intent.ACTION_PROCESS_TEXT).setType("text/plain");
@@ -152,6 +153,66 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void chooseConvertedPdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/pdf");startActivityForResult(i,OPEN_PDF);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req==TRANSLATE_EXTERNAL){receiveExternalTranslation(result,data);return;}if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri u=data.getData();if(req==OPEN_PDF){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}openPdf(u);}else if(req==EXPORT_JSON){try(OutputStream out=getContentResolver().openOutputStream(u)){if(out!=null)out.write(store.exportJson(documentUri,documentTitle).getBytes());toast("주석을 내보냈습니다");}catch(Exception e){toast("내보내기 실패: "+e.getMessage());}}}
     private boolean isOfficeDocument(String name){String value=name.toLowerCase(Locale.ROOT);return value.endsWith(".hwp")||value.endsWith(".hwpx")||value.endsWith(".doc")||value.endsWith(".docx")||value.endsWith(".ppt")||value.endsWith(".pptx");}
+    private boolean canConvertOffice(String name){String lower=name.toLowerCase(Locale.ROOT);return lower.endsWith(".doc")||lower.endsWith(".docx")||lower.endsWith(".ppt")||lower.endsWith(".pptx");}
+    private void convertOffice(Uri source,String name){
+        if(officeConverting){toast("다른 문서를 변환하고 있습니다");return;}
+        if(!OfficeEngine.supported()){offerOfficeImport(source,name);return;}
+        officeConverting=true;
+        TextView status=new TextView(this);status.setText("문서를 준비하고 있습니다");status.setPadding(dp(24),dp(20),dp(24),dp(20));status.setTextSize(16);
+        AlertDialog progress=new AlertDialog.Builder(this).setTitle("PDF로 변환").setView(status).setCancelable(false).create();progress.show();
+        new Thread(()->{
+            File input=null,output=null;
+            try{
+                OfficeEngine.install(getApplicationContext(),stage->runOnUiThread(()->status.setText(stage)));
+                String ext=name.substring(name.lastIndexOf('.')+1).toLowerCase(Locale.ROOT);
+                input=File.createTempFile("office-source-","."+ext,getCacheDir());
+                output=File.createTempFile("office-result-",".pdf",getCacheDir());
+                try(java.io.InputStream in=getContentResolver().openInputStream(source);
+                    java.io.OutputStream out=new java.io.FileOutputStream(input)){
+                    if(in==null)throw new IOException("파일을 읽을 수 없습니다");
+                    byte[] buf=new byte[65536];int count;while((count=in.read(buf))!=-1)out.write(buf,0,count);
+                }
+                File finalInput=input,finalOutput=output;
+                runOnUiThread(()->{
+                    status.setText("원본 서식을 PDF로 변환하는 중");
+                    android.os.ResultReceiver receiver=new android.os.ResultReceiver(new android.os.Handler(android.os.Looper.getMainLooper())){
+                        @Override protected void onReceiveResult(int code,android.os.Bundle data){
+                            progress.dismiss();officeConverting=false;finalInput.delete();
+                            if(code!=0){finalOutput.delete();toast("자동 변환 실패: "+data.getString("error","알 수 없는 오류"));offerOfficeImport(source,name);return;}
+                            try{Uri saved=saveConvertedPdf(finalOutput,name);finalOutput.delete();openPdf(saved);toast("변환된 PDF를 저장했습니다");}
+                            catch(Exception e){finalOutput.delete();toast("PDF 저장 실패: "+e.getMessage());}
+                        }
+                    };
+                    Intent task=new Intent(this,OfficeConversionService.class).putExtra("source",finalInput.getAbsolutePath()).putExtra("output",finalOutput.getAbsolutePath()).putExtra("receiver",receiver);
+                    try{startService(task);}catch(Exception e){progress.dismiss();officeConverting=false;finalInput.delete();finalOutput.delete();toast("변환을 시작할 수 없습니다");offerOfficeImport(source,name);}
+                });
+            }catch(Exception e){
+                if(input!=null)input.delete();if(output!=null)output.delete();
+                String reason=e.getMessage();runOnUiThread(()->{progress.dismiss();officeConverting=false;toast("자동 변환 실패: "+reason);offerOfficeImport(source,name);});
+            }
+        },"office-install").start();
+    }
+    private Uri saveConvertedPdf(File pdf,String sourceName)throws IOException{
+        String base=sourceName.replaceFirst("(?i)\\.(docx?|pptx?)$","").replaceAll("[\\\\/:*?\"<>|]","_");
+        String name=base+"-"+System.currentTimeMillis()+".pdf";
+        if(Build.VERSION.SDK_INT>=29){
+            android.content.ContentValues values=new android.content.ContentValues();
+            values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,name);
+            values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE,"application/pdf");
+            values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,android.os.Environment.DIRECTORY_DOWNLOADS+"/PDF Note");
+            Uri target=getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+            if(target==null)throw new IOException("다운로드 폴더를 만들 수 없습니다");
+            try(java.io.InputStream in=new java.io.FileInputStream(pdf);java.io.OutputStream out=getContentResolver().openOutputStream(target)){
+                if(out==null)throw new IOException("저장 파일을 열 수 없습니다");byte[] buf=new byte[65536];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);
+                return target;
+            }catch(IOException e){getContentResolver().delete(target,null,null);throw e;}
+        }
+        File dir=new File(getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS),"PDF Note");
+        if(!dir.exists()&&!dir.mkdirs())throw new IOException("저장 폴더를 만들 수 없습니다");
+        File target=new File(dir,name);
+        try(java.io.InputStream in=new java.io.FileInputStream(pdf);java.io.OutputStream out=new java.io.FileOutputStream(target)){byte[] buf=new byte[65536];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);}
+        return Uri.fromFile(target);
+    }
     private void openOfficeOriginal(Uri uri,String name){
         String ext=name.substring(name.lastIndexOf('.')+1).toLowerCase(Locale.ROOT);
         String mime=ext.equals("hwp")?"application/x-hwp":ext.equals("hwpx")?"application/vnd.hancom.hwpx":ext.equals("doc")?"application/msword":ext.equals("docx")?"application/vnd.openxmlformats-officedocument.wordprocessingml.document":ext.equals("ppt")?"application/vnd.ms-powerpoint":"application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -172,14 +233,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void openOfficeText(Uri uri){openPdf(uri,true);}
     private void openPdf(Uri u){openPdf(u,false);}
-    private void openPdf(Uri u,boolean textOnly){String title=queryName(u);if(isOfficeDocument(title)&&!textOnly){offerOfficeImport(u,title);return;}for(DocumentSession s:sessions)if(s.uri.equals(u)){switchDocument(s);return;}DocumentSession s=new DocumentSession();try{
+    private void openPdf(Uri u,boolean textOnly){String title=queryName(u);if(isOfficeDocument(title)&&!textOnly){if(canConvertOffice(title))convertOffice(u,title);else offerOfficeImport(u,title);return;}for(DocumentSession s:sessions)if(s.uri.equals(u)){switchDocument(s);return;}DocumentSession s=new DocumentSession();try{
         s.title=queryName(u);
         if(OfficeImporter.isOffice(s.title)){
             s.officePreview=OfficeImporter.createPreview(this,u,s.title);
             s.descriptor=ParcelFileDescriptor.open(s.officePreview,ParcelFileDescriptor.MODE_READ_ONLY);
             toast("본문 글자 미리보기로 열었습니다. 표·그림·원본 서식은 반영되지 않습니다");
         }else if(s.title.toLowerCase(Locale.ROOT).endsWith(".pdf")||"application/pdf".equals(getContentResolver().getType(u))){
-            s.descriptor=getContentResolver().openFileDescriptor(u,"r");
+            s.descriptor="file".equals(u.getScheme())?ParcelFileDescriptor.open(new File(u.getPath()),ParcelFileDescriptor.MODE_READ_ONLY):getContentResolver().openFileDescriptor(u,"r");
         }else throw new IOException("PDF, HWP 또는 DOC 파일을 선택하세요");
         if(s.descriptor==null)throw new IOException("파일을 읽을 수 없습니다");s.renderer=new PdfRenderer(s.descriptor);s.uri=u;s.store=new AnnotationStore(this);s.store.open(u);sessions.add(s);recentPrefs.edit().putString("last_uri",u.toString()).putString("last_title",s.title).apply();switchDocument(s);
     }catch(Exception e){if(s.renderer!=null)s.renderer.close();if(s.descriptor!=null)try{s.descriptor.close();}catch(IOException ignored){}if(s.officePreview!=null)s.officePreview.delete();toast("문서 열기 실패: "+e.getMessage());if(sessions.isEmpty())showWelcome();}}
