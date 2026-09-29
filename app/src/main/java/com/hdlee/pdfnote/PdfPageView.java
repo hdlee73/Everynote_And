@@ -193,7 +193,12 @@ final class PdfPageView extends View {
 
     Bitmap copyPageBitmap(){return bitmap==null?null:bitmap.copy(Bitmap.Config.ARGB_8888,false);}
     int getPageNumber(){return page;}
-    void setTextRegions(List<TextRegion> regions,boolean showBounds){textRegions=regions==null?new ArrayList<>():regions;textSelectMode=true;showTextBounds=showBounds;highlightMode=memoMode=outlineMode=false;invalidate();}
+    void setTextRegions(List<TextRegion> regions,boolean showBounds){
+        selectionHandler.removeCallbacks(beginTextSelection);
+        selectionCandidate=selectingText=false;selectedTextRegions.clear();
+        textRegions=regions==null?new ArrayList<>():regions;textSelectMode=true;showTextBounds=showBounds;
+        invalidate();
+    }
     void stopTextSelection(){selectionHandler.removeCallbacks(beginTextSelection);textSelectMode=false;textRegions.clear();selectedTextRegions.clear();selectionCandidate=selectingText=false;invalidate();}
     void clearTextSelectionOverlay(){selectedTextRegions.clear();selectionStartRegion=selectionEndRegion=null;invalidate();}
 
