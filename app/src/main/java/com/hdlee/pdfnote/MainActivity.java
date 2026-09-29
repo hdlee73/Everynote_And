@@ -54,6 +54,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private String speechPending;
     private Locale speechLocale=Locale.US;
     private boolean pageAnimating;
+    private boolean awaitingOfficeReturn;
 
     private void translateText(String source,RectF bounds){
         Intent intent=new Intent(Intent.ACTION_PROCESS_TEXT).setType("text/plain");
@@ -112,6 +113,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
 
     @Override protected void onCreate(Bundle state){super.onCreate(state);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);buildUi();pageView.setVerticalPageSwipe(verticalPageSwipe);Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
+    @Override protected void onResume(){super.onResume();if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
+        .setMessage("문서 앱에서 PDF로 내보냈다면 파일을 가져와 필기와 주석을 이어갈 수 있습니다.")
+        .setPositiveButton("PDF 가져오기",(d,w)->chooseConvertedPdf()).setNegativeButton("나중에",null).show());}}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private GradientDrawable round(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     private ImageButton icon(int image,String label,int tint,View.OnClickListener click){ImageButton b=new ImageButton(this);b.setImageResource(image);b.setColorFilter(tint);b.setContentDescription(label);b.setBackgroundColor(Color.TRANSPARENT);b.setScaleType(ImageView.ScaleType.CENTER);b.setPadding(dp(12),dp(12),dp(12),dp(12));b.setOnClickListener(click);return b;}
@@ -154,8 +158,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         Intent chooser=Intent.createChooser(view,"원본 문서 보기");
         chooser.putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS,new ComponentName[]{new ComponentName(this,MainActivity.class)});
-        try{startActivity(chooser);}
-        catch(ActivityNotFoundException e){toast("원본 형식을 열 수 있는 문서 앱이 없습니다");}
+        try{awaitingOfficeReturn=true;startActivity(chooser);}
+        catch(ActivityNotFoundException e){awaitingOfficeReturn=false;toast("원본 형식을 열 수 있는 문서 앱이 없습니다");}
     }
     private void offerOfficeImport(Uri uri,String name){
         boolean textPreview=OfficeImporter.isOffice(name);
