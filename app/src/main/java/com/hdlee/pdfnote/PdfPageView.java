@@ -6,6 +6,9 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
@@ -23,13 +26,21 @@ final class PdfPageView extends View {
         void onPageSwipe(int direction);
         void onOutlinePointRequested(int page, float x, float y);
         void onInkChanged();
-        void onTextRegionSelected(TextRegion region);
+        void onTextSelectionFinished(TextSelection selection, float anchorX, float anchorY);
         void onTranslationTapped(AnnotationStore.TranslationNote note);
     }
 
     static final class TextRegion {
         final String word, line; final RectF wordBounds, lineBounds;
         TextRegion(String word,String line,RectF wordBounds,RectF lineBounds){this.word=word;this.line=line;this.wordBounds=wordBounds;this.lineBounds=lineBounds;}
+    }
+
+    static final class TextSelection {
+        final String text;
+        final List<RectF> bounds;
+        final RectF unionBounds;
+        final boolean singleWord;
+        TextSelection(String text,List<RectF> bounds,RectF unionBounds,boolean singleWord){this.text=text;this.bounds=bounds;this.unionBounds=unionBounds;this.singleWord=singleWord;}
     }
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -39,6 +50,8 @@ final class PdfPageView extends View {
     private List<AnnotationStore.InkStroke> strokes;
     private List<AnnotationStore.TranslationNote> translations;
     private List<TextRegion> textRegions = new ArrayList<>();
+    private final List<TextRegion> selectedTextRegions = new ArrayList<>();
+    private final Handler selectionHandler = new Handler(Looper.getMainLooper());
     private final IdentityHashMap<AnnotationStore.TranslationNote,RectF> noteHitBoxes=new IdentityHashMap<>();
     private boolean textSelectMode;
     private boolean showTextBounds;
@@ -58,6 +71,19 @@ final class PdfPageView extends View {
     private boolean stylusDrawing;
     private float scale = 1f;
     private final Listener listener;
+    private TextRegion selectionStartRegion, selectionEndRegion;
+    private boolean selectionCandidate, selectingText;
+    private final Runnable beginTextSelection = () -> {
+        if (!selectionCandidate || selectionStartRegion == null) return;
+        selectingText = true;
+        selectionCandidate = false;
+        panning = false;
+        selectedTextRegions.clear();
+        selectedTextRegions.add(selectionStartRegion);
+        getParent().requestDisallowInterceptTouchEvent(true);
+        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        invalidate();
+    };
 
     PdfPageView(Context context, Listener listener) {
         super(context);
@@ -99,7 +125,7 @@ final class PdfPageView extends View {
         page = pageNumber;
         marks = allMarks;
         strokes = allStrokes;
-        translations=allTranslations; textRegions.clear(); textSelectMode=false;
+        translations=allTranslations; textRegions.clear(); selectedTextRegions.clear(); textSelectMode=false;
         scale = 1f;
         panX = panY = 0f;
         invalidate();
@@ -110,7 +136,7 @@ final class PdfPageView extends View {
         bitmap = null;
         marks = null;
         strokes = null;
-        translations=null; textRegions.clear(); textSelectMode=false;
+        translations=null; textRegions.clear(); selectedTextRegions.clear(); textSelectMode=false;
         scale = 1f;
         panX = panY = 0f;
         invalidate();
@@ -158,7 +184,8 @@ final class PdfPageView extends View {
     Bitmap copyPageBitmap(){return bitmap==null?null:bitmap.copy(Bitmap.Config.ARGB_8888,false);}
     int getPageNumber(){return page;}
     void setTextRegions(List<TextRegion> regions,boolean showBounds){textRegions=regions==null?new ArrayList<>():regions;textSelectMode=true;showTextBounds=showBounds;highlightMode=memoMode=outlineMode=false;invalidate();}
-    void stopTextSelection(){textSelectMode=false;textRegions.clear();invalidate();}
+    void stopTextSelection(){selectionHandler.removeCallbacks(beginTextSelection);textSelectMode=false;textRegions.clear();selectedTextRegions.clear();selectionCandidate=selectingText=false;invalidate();}
+    void clearTextSelectionOverlay(){selectedTextRegions.clear();selectionStartRegion=selectionEndRegion=null;invalidate();}
 
     private float highlightHeight(RectF dest) {
         return Math.max(12f, dest.height() * 0.022f);
@@ -198,6 +225,11 @@ final class PdfPageView extends View {
         canvas.drawRect(dest, paint);
         canvas.drawBitmap(bitmap, null, dest, paint);
         if(textSelectMode&&showTextBounds){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.5f*getResources().getDisplayMetrics().density);paint.setColor(0xAA2563EB);for(TextRegion r:textRegions){RectF b=r.wordBounds;canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),4,4,paint);}paint.setStyle(Paint.Style.FILL);}
+        if(!selectedTextRegions.isEmpty()){
+            paint.setStyle(Paint.Style.FILL);paint.setColor(0x663B82F6);
+            for(TextRegion r:selectedTextRegions){RectF b=r.wordBounds;canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),5,5,paint);}
+            RectF first=selectedTextRegions.get(0).wordBounds,last=selectedTextRegions.get(selectedTextRegions.size()-1).wordBounds;float handle=5f*getResources().getDisplayMetrics().density;paint.setColor(0xFF2563EB);canvas.drawCircle(dest.left+first.left*dest.width(),dest.top+first.bottom*dest.height(),handle,paint);canvas.drawCircle(dest.left+last.right*dest.width(),dest.top+last.bottom*dest.height(),handle,paint);
+        }
         if (marks != null) for (AnnotationStore.Mark m : marks) if (m.page == page) {
             if (!m.noteOnly) {
                 paint.setColor(m.color);
@@ -230,6 +262,10 @@ final class PdfPageView extends View {
     private float strokeWidth(float base,float pressure,RectF dest){float p=Math.max(0.12f,Math.min(1f,pressure));return Math.max(1.5f,base*dest.width()*(0.45f+p*1.15f));}
 
     private boolean isStylus(MotionEvent e){int tool=e.getToolType(0);return tool==MotionEvent.TOOL_TYPE_STYLUS||tool==MotionEvent.TOOL_TYPE_ERASER;}
+    private TextRegion textRegionAt(float x,float y,RectF dest){if(!textSelectMode||dest.width()==0||!dest.contains(x,y))return null;float nx=(x-dest.left)/dest.width(),ny=(y-dest.top)/dest.height();TextRegion best=null;float area=Float.MAX_VALUE;for(TextRegion r:textRegions)if(r.wordBounds.contains(nx,ny)){float a=r.wordBounds.width()*r.wordBounds.height();if(a<area){best=r;area=a;}}return best;}
+    private TextRegion nearestTextRegion(float x,float y,RectF dest){TextRegion hit=textRegionAt(x,y,dest);if(hit!=null)return hit;if(dest.width()==0)return null;float nx=(x-dest.left)/dest.width(),ny=(y-dest.top)/dest.height(),bestDistance=Float.MAX_VALUE;TextRegion best=null;for(TextRegion r:textRegions){float dx=nx-Math.max(r.wordBounds.left,Math.min(nx,r.wordBounds.right)),dy=ny-Math.max(r.wordBounds.top,Math.min(ny,r.wordBounds.bottom));float distance=dx*dx+dy*dy*2f;if(distance<bestDistance){bestDistance=distance;best=r;}}return bestDistance<0.012f?best:null;}
+    private void updateTextSelection(TextRegion end){if(end==null||selectionStartRegion==null)return;selectionEndRegion=end;int a=textRegions.indexOf(selectionStartRegion),b=textRegions.indexOf(end);if(a<0||b<0)return;selectedTextRegions.clear();for(int i=Math.min(a,b);i<=Math.max(a,b);i++)selectedTextRegions.add(textRegions.get(i));invalidate();}
+    private TextSelection finishTextSelection(){if(selectedTextRegions.isEmpty())return null;StringBuilder text=new StringBuilder();List<RectF> bounds=new ArrayList<>();RectF union=new RectF(selectedTextRegions.get(0).wordBounds);for(TextRegion r:selectedTextRegions){if(text.length()>0)text.append(' ');text.append(r.word);RectF copy=new RectF(r.wordBounds);bounds.add(copy);union.union(copy);}return new TextSelection(text.toString(),bounds,union,selectedTextRegions.size()==1);}
     private boolean temporaryEraser(MotionEvent e){return e.getToolType(0)==MotionEvent.TOOL_TYPE_ERASER||(e.getButtonState()&MotionEvent.BUTTON_STYLUS_PRIMARY)!=0;}
     private void addInkPoint(MotionEvent e,RectF dest){if(activeStroke==null||!dest.contains(e.getX(),e.getY()))return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float pressure=Math.max(0.05f,Math.min(1f,e.getPressure()));if(activeStroke.points.isEmpty()){activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));return;}AnnotationStore.InkPoint last=activeStroke.points.get(activeStroke.points.size()-1);float dx=x-last.x,dy=y-last.y;if(dx*dx+dy*dy>0.000002f)activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));}
     private void eraseAt(MotionEvent e,RectF dest){if(strokes==null||dest.width()==0)return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float threshold=Math.max(0.012f,18f/dest.width());for(int i=strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=strokes.get(i);if(s.page!=page)continue;for(AnnotationStore.InkPoint p:s.points)if(Math.hypot(p.x-x,p.y-y)<=threshold){strokes.remove(i);listener.onInkChanged();invalidate();return;}}}
@@ -245,14 +281,18 @@ final class PdfPageView extends View {
             lastX = startX; lastY = startY;
             gestureMoved = false; scalingOccurred = false;
             drawing = highlightMode && dest.contains(startX, startY);
-            panning = scale > 1f && !outlineMode;
-            getParent().requestDisallowInterceptTouchEvent(drawing || panning);
+            selectionStartRegion=(!drawing&&!memoMode&&!outlineMode&&inkMode==0)?textRegionAt(startX,startY,dest):null;selectionEndRegion=selectionStartRegion;selectionCandidate=selectionStartRegion!=null;selectingText=false;if(selectionCandidate)selectionHandler.postDelayed(beginTextSelection,280);
+            panning = scale > 1f && !outlineMode && !selectionCandidate;
+            getParent().requestDisallowInterceptTouchEvent(drawing || panning || selectionCandidate);
             invalidate(); return true;
         }
         if (e.getAction() == MotionEvent.ACTION_POINTER_DOWN) {
+            selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=selectingText=false;selectedTextRegions.clear();
             drawing = false; panning = false; scalingOccurred = true;
             return true;
         }
+        if(e.getAction()==MotionEvent.ACTION_MOVE&&selectingText){currentX=e.getX();currentY=e.getY();updateTextSelection(nearestTextRegion(currentX,currentY,dest));return true;}
+        if(e.getAction()==MotionEvent.ACTION_MOVE&&selectionCandidate&&Math.hypot(e.getX()-startX,e.getY()-startY)>12){selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;if(scale>1f){panning=true;lastX=e.getX();lastY=e.getY();}getParent().requestDisallowInterceptTouchEvent(panning);}
         if (e.getActionMasked() == MotionEvent.ACTION_POINTER_UP && scale > 1f) {
             int remaining = e.getActionIndex() == 0 ? 1 : 0;
             if (remaining < e.getPointerCount()) {
@@ -278,7 +318,10 @@ final class PdfPageView extends View {
             clampPan(); invalidate(); return true;
         }
         if (e.getAction() == MotionEvent.ACTION_UP) {
+            selectionHandler.removeCallbacks(beginTextSelection);
             getParent().requestDisallowInterceptTouchEvent(false);
+            if(selectingText){updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));TextSelection selection=finishTextSelection();selectingText=selectionCandidate=false;if(selection!=null){listener.onTextSelectionFinished(selection,e.getX(),e.getY());return true;}}
+            selectionCandidate=false;
             if (panning && gestureMoved) {
                 panning = false; return true;
             }
@@ -323,7 +366,6 @@ final class PdfPageView extends View {
                     }
                 }
             }
-            if(textSelectMode&&Math.hypot(e.getX()-startX,e.getY()-startY)<20&&dest.contains(e.getX(),e.getY())){float nx=(e.getX()-dest.left)/dest.width(),ny=(e.getY()-dest.top)/dest.height();TextRegion best=null;float area=Float.MAX_VALUE;for(TextRegion r:textRegions)if(r.wordBounds.contains(nx,ny)){float a=r.wordBounds.width()*r.wordBounds.height();if(a<area){best=r;area=a;}}if(best!=null){listener.onTextRegionSelected(best);return true;}}
             if (!highlightMode && !memoMode && !outlineMode && scale <= 1f) {
                 float dx = e.getX() - startX;
                 float dy = e.getY() - startY;
@@ -336,6 +378,7 @@ final class PdfPageView extends View {
                 }
             }
         }
+        if(e.getAction()==MotionEvent.ACTION_CANCEL){selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=selectingText=false;selectedTextRegions.clear();getParent().requestDisallowInterceptTouchEvent(false);invalidate();}
         return true;
     }
 }
