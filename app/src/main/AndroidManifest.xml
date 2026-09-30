@@ -17,6 +17,7 @@
         android:label="PDF Note"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/AppTheme">
+        <provider android:name=".CaptureProvider" android:authorities="${applicationId}.captures" android:exported="false" android:grantUriPermissions="true" />
         <service android:name=".OfficeConversionService" android:process=":office" android:exported="false" />
         <activity
             android:name=".MainActivity"

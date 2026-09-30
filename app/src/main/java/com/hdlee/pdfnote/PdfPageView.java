@@ -6,6 +6,9 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.Path;
+import android.graphics.PointF;
+import android.graphics.DashPathEffect;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.HapticFeedbackConstants;
@@ -29,6 +32,7 @@ final class PdfPageView extends View {
         void onTextSelectionFinished(TextSelection selection, float anchorX, float anchorY);
         void onTranslationTapped(AnnotationStore.TranslationNote note);
         void onSelectionAdjustStarted();
+        void onLassoSelectionFinished();
     }
 
     static final class TextRegion {
@@ -55,6 +59,9 @@ final class PdfPageView extends View {
     private final Handler selectionHandler = new Handler(Looper.getMainLooper());
     private final IdentityHashMap<AnnotationStore.TranslationNote,RectF> noteHitBoxes=new IdentityHashMap<>();
     private final IdentityHashMap<AnnotationStore.Mark,RectF> memoHitBoxes=new IdentityHashMap<>();
+    private boolean lassoMode, lassoDrawing, suppressSelection;
+    private final List<PointF> lassoPoints=new ArrayList<>();
+    private final Paint lassoPaint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private boolean textSelectMode;
     private boolean showTextBounds;
     private int page;
@@ -94,6 +101,7 @@ final class PdfPageView extends View {
         setBackgroundColor(0xFFDDDDDD);
         scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override public boolean onScaleBegin(ScaleGestureDetector detector) {
+                clearLassoSelection();
                 selectionHandler.removeCallbacks(beginTextSelection);
                 selectingText=selectionCandidate=false;
                 selectedTextRegions.clear();
@@ -128,6 +136,7 @@ final class PdfPageView extends View {
     }
 
     void showPage(Bitmap pageBitmap, int pageNumber, List<AnnotationStore.Mark> allMarks, List<AnnotationStore.InkStroke> allStrokes, List<AnnotationStore.TranslationNote> allTranslations) {
+        clearLassoSelection();
         stopTextSelection();
         noteHitBoxes.clear(); memoHitBoxes.clear();
         if (bitmap != null && bitmap != pageBitmap) bitmap.recycle();
@@ -142,6 +151,7 @@ final class PdfPageView extends View {
     }
 
     void clearPage() {
+        clearLassoSelection();
         stopTextSelection();
         noteHitBoxes.clear(); memoHitBoxes.clear();
         if (bitmap != null) bitmap.recycle();
@@ -156,26 +166,26 @@ final class PdfPageView extends View {
 
     void setHighlightMode(boolean enabled, int color) {
         highlightMode = enabled;
-        if (enabled) { memoMode = false; outlineMode = false; }
+        if (enabled) { setLassoMode(false);memoMode = false; outlineMode = false; }
         highlightColor = color;
         invalidate();
     }
 
     void setMemoMode(boolean enabled) {
         memoMode = enabled;
-        if (enabled) { highlightMode = false; outlineMode = false; }
+        if (enabled) { setLassoMode(false);highlightMode = false; outlineMode = false; }
         invalidate();
     }
 
     void setOutlineMode(boolean enabled) {
         outlineMode = enabled;
-        if (enabled) { highlightMode = false; memoMode = false; }
+        if (enabled) { setLassoMode(false);highlightMode = false; memoMode = false; }
         invalidate();
     }
 
     void setInkTool(int mode, int color, float width) {
         inkMode=mode; inkColor=color; inkWidth=width;
-        if(mode!=0){highlightMode=memoMode=outlineMode=false;}
+        if(mode!=0){setLassoMode(false);highlightMode=memoMode=outlineMode=false;}
         invalidate();
     }
 
@@ -215,6 +225,7 @@ final class PdfPageView extends View {
     }
 
     @Override protected void onDetachedFromWindow(){
+        clearLassoSelection();
         clearTextSelectionOverlay();
         super.onDetachedFromWindow();
     }
@@ -256,8 +267,8 @@ final class PdfPageView extends View {
         paint.setColor(Color.WHITE);
         canvas.drawRect(dest, paint);
         canvas.drawBitmap(bitmap, null, dest, paint);
-        if(textSelectMode&&showTextBounds){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.5f*getResources().getDisplayMetrics().density);paint.setColor(0xAA2563EB);for(TextRegion r:textRegions){RectF b=r.wordBounds;canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),4,4,paint);}paint.setStyle(Paint.Style.FILL);}
-        if(!selectedTextRegions.isEmpty()){
+        if(!suppressSelection&&textSelectMode&&showTextBounds){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.5f*getResources().getDisplayMetrics().density);paint.setColor(0xAA2563EB);for(TextRegion r:textRegions){RectF b=r.wordBounds;canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),4,4,paint);}paint.setStyle(Paint.Style.FILL);}
+        if(!suppressSelection&&!selectedTextRegions.isEmpty()){
             paint.setStyle(Paint.Style.FILL);paint.setColor(0x663B82F6);
             for(RectF b:selectionLineBounds()){canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),5,5,paint);}
             RectF first=selectedTextRegions.get(0).wordBounds,last=selectedTextRegions.get(selectedTextRegions.size()-1).wordBounds;float handle=5f*getResources().getDisplayMetrics().density;paint.setColor(0xFF2563EB);canvas.drawCircle(dest.left+first.left*dest.width(),dest.top+first.bottom*dest.height(),handle,paint);canvas.drawCircle(dest.left+last.right*dest.width(),dest.top+last.bottom*dest.height(),handle,paint);
@@ -272,13 +283,59 @@ final class PdfPageView extends View {
         if(strokes!=null){paint.setStyle(Paint.Style.STROKE);paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);for(AnnotationStore.InkStroke s:strokes)if(s.page==page&&s.points.size()>0){paint.setColor(s.color);if(s.points.size()==1){AnnotationStore.InkPoint p=s.points.get(0);paint.setStyle(Paint.Style.FILL);canvas.drawCircle(dest.left+p.x*dest.width(),dest.top+p.y*dest.height(),strokeWidth(s.width,p.pressure,dest)/2f,paint);paint.setStyle(Paint.Style.STROKE);}else for(int i=1;i<s.points.size();i++){AnnotationStore.InkPoint a=s.points.get(i-1),b=s.points.get(i);paint.setStrokeWidth(strokeWidth(s.width,(a.pressure+b.pressure)/2f,dest));canvas.drawLine(dest.left+a.x*dest.width(),dest.top+a.y*dest.height(),dest.left+b.x*dest.width(),dest.top+b.y*dest.height(),paint);}}paint.setStyle(Paint.Style.FILL);}
         memoHitBoxes.clear();if(marks!=null)for(AnnotationStore.Mark m:marks)if(m.page==page&&m.visible&&(m.noteOnly||(m.note!=null&&!m.note.isEmpty())))drawMemo(canvas,dest,m);
         noteHitBoxes.clear();if(translations!=null)for(AnnotationStore.TranslationNote n:translations)if(n.page==page&&n.visible)drawTranslation(canvas,dest,n);
-        if (drawing) {
+        if (!suppressSelection && drawing) {
             paint.setColor(highlightColor);
             float centerY = (startY + currentY) / 2f;
             float half = highlightHeight(dest) / 2f;
             canvas.drawRect(Math.min(startX, currentX), centerY - half,
                     Math.max(startX, currentX), centerY + half, paint);
         }
+        if(!suppressSelection&&!lassoPoints.isEmpty()){
+            Path path=lassoPath(dest);lassoPaint.setStyle(Paint.Style.FILL);lassoPaint.setColor(0x222563EB);canvas.drawPath(path,lassoPaint);
+            lassoPaint.setStyle(Paint.Style.STROKE);lassoPaint.setStrokeWidth(2*getResources().getDisplayMetrics().density);lassoPaint.setColor(0xFF2563EB);
+            lassoPaint.setPathEffect(new DashPathEffect(new float[]{8,5},0));canvas.drawPath(path,lassoPaint);lassoPaint.setPathEffect(null);
+        }
+    }
+
+    void setLassoMode(boolean enabled){
+        lassoMode=enabled;clearLassoSelection();clearTextSelectionOverlay();
+        if(enabled){finishInkStroke();inkMode=0;highlightMode=memoMode=outlineMode=false;}
+    }
+    boolean isLassoMode(){return lassoMode;}
+    void clearLassoSelection(){lassoDrawing=false;lassoPoints.clear();if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);invalidate();}
+    private void addLassoPoint(float x,float y,RectF dest){
+        if(dest.width()<=0||dest.height()<=0)return;
+        PointF point=new PointF(Math.max(0,Math.min(1,(x-dest.left)/dest.width())),Math.max(0,Math.min(1,(y-dest.top)/dest.height())));
+        if(!lassoPoints.isEmpty()){PointF last=lassoPoints.get(lassoPoints.size()-1);if(Math.hypot((point.x-last.x)*dest.width(),(point.y-last.y)*dest.height())<2)return;}
+        if(lassoPoints.size()<8192)lassoPoints.add(point);
+    }
+    private Path lassoPath(RectF dest){Path path=new Path();for(int i=0;i<lassoPoints.size();i++){PointF p=lassoPoints.get(i);if(i==0)path.moveTo(dest.left+p.x*dest.width(),dest.top+p.y*dest.height());else path.lineTo(dest.left+p.x*dest.width(),dest.top+p.y*dest.height());}path.close();return path;}
+    private boolean validLasso(RectF dest){
+        if(lassoPoints.size()<3)return false;RectF bounds=new RectF();lassoPath(dest).computeBounds(bounds,true);
+        double area=0;for(int i=0;i<lassoPoints.size();i++){PointF a=lassoPoints.get(i),b=lassoPoints.get((i+1)%lassoPoints.size());area+=a.x*b.y-b.x*a.y;}
+        float minimum=8*getResources().getDisplayMetrics().density;
+        return bounds.width()>=minimum&&bounds.height()>=minimum&&Math.abs(area)*dest.width()*dest.height()/2>=minimum*minimum;
+    }
+    Bitmap captureLasso(){
+        RectF dest=contentRect();if(bitmap==null||!validLasso(dest))return null;
+        RectF normalized=new RectF();lassoPath(new RectF(0,0,1,1)).computeBounds(normalized,true);
+        int left=Math.max(0,(int)Math.floor(normalized.left*bitmap.getWidth())),top=Math.max(0,(int)Math.floor(normalized.top*bitmap.getHeight()));
+        int right=Math.min(bitmap.getWidth(),(int)Math.ceil(normalized.right*bitmap.getWidth())),bottom=Math.min(bitmap.getHeight(),(int)Math.ceil(normalized.bottom*bitmap.getHeight()));
+        float outputScale=Math.min(1f,(float)Math.sqrt(8000000d/((double)(right-left)*(bottom-top))));
+        int width=Math.max(1,(int)Math.ceil((right-left)*outputScale)),height=Math.max(1,(int)Math.ceil((bottom-top)*outputScale));
+        Bitmap capture=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(capture);
+        // Clip in original-page pixels; render the same visible annotations without selection controls.
+        canvas.scale(outputScale,outputScale);canvas.translate(-left,-top);
+        canvas.clipPath(lassoPath(new RectF(0,0,bitmap.getWidth(),bitmap.getHeight())));
+        canvas.scale(bitmap.getWidth()/dest.width(),bitmap.getHeight()/dest.height());canvas.translate(-dest.left,-dest.top);
+        suppressSelection=true;try{onDraw(canvas);}catch(RuntimeException error){capture.recycle();throw error;}finally{suppressSelection=false;}
+        return capture;
+    }
+    String lassoText(){
+        if(lassoPoints.size()<3)return "";android.graphics.Region region=new android.graphics.Region();region.setPath(lassoPath(new RectF(0,0,10000,10000)),new android.graphics.Region(0,0,10000,10000));
+        StringBuilder text=new StringBuilder();RectF previousLine=null;
+        for(TextRegion word:textRegions)if(region.contains((int)(word.wordBounds.centerX()*10000),(int)(word.wordBounds.centerY()*10000))){if(text.length()>0)text.append(previousLine!=null&&!previousLine.equals(word.lineBounds)?'\n':' ');text.append(word.word);previousLine=word.lineBounds;}
+        return text.toString();
     }
 
     private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){
@@ -336,7 +393,16 @@ final class PdfPageView extends View {
         RectF dest = contentRect();
         boolean stylus=isStylus(e);
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN)scalingOccurred=false;
-        if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){finishInkStroke();}
+        if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){finishInkStroke();clearLassoSelection();}
+        if(lassoMode){
+            int action=e.getActionMasked();
+            if(action==MotionEvent.ACTION_DOWN){listener.onSelectionAdjustStarted();clearLassoSelection();clearTextSelectionOverlay();if(dest.contains(e.getX(),e.getY())){lassoDrawing=true;getParent().requestDisallowInterceptTouchEvent(true);addLassoPoint(e.getX(),e.getY(),dest);}invalidate();return true;}
+            if(action==MotionEvent.ACTION_CANCEL){clearLassoSelection();return true;}
+            if(e.getPointerCount()!=1||scalingOccurred)return true;
+            if(action==MotionEvent.ACTION_MOVE&&lassoDrawing){for(int i=0;i<e.getHistorySize();i++)addLassoPoint(e.getHistoricalX(i),e.getHistoricalY(i),dest);addLassoPoint(e.getX(),e.getY(),dest);invalidate();return true;}
+            if(action==MotionEvent.ACTION_UP&&lassoDrawing){addLassoPoint(e.getX(),e.getY(),dest);lassoDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);if(validLasso(dest))listener.onLassoSelectionFinished();else clearLassoSelection();invalidate();return true;}
+            return true;
+        }
         if(inkMode!=0&&(stylus||fingerInk)&&e.getPointerCount()==1&&!scalingOccurred){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=stylus?Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i))):0.65f;activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
         if (e.getAction() == MotionEvent.ACTION_DOWN) {
             listener.onSelectionAdjustStarted();
