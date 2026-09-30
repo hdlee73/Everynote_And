@@ -277,3 +277,5 @@ headers of derived files.
 End of NOTICE.
 --------------------------------------------------------------------------------
 
+
+PDF Note modification (2026-09-30): built from rhwptopdf v0.2.2 commit adbc4bf0f5c6e041ed65b0dbc8aa6b810990a48b. The SVG-to-PDF step retries SubsetError/InvalidFont with text outlines (embed_text=false) for Android system-font compatibility. Added a Korean TTC font regression test. Original parser, renderer, and license notices are retained.

@@ -161,7 +161,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("한글 문서 → PDF").setView(status).setCancelable(false).setNegativeButton("취소",null).create();dialog.show();
         hwpConversion=new HwpConversion(this,root,new HwpConversion.Callback(){
             public void status(String text){status.setText(text);}
-            public void failure(String reason){hwpConversion=null;officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){toast("한글 변환 실패: "+reason);offerOfficeImport(source,name);}}
+            public void failure(String reason){hwpConversion=null;officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){new AlertDialog.Builder(MainActivity.this).setTitle("한글 문서 변환 실패").setMessage("PDF 변환을 완료하지 못했습니다.\n\n"+reason).setPositiveButton("다른 방법으로 열기",(d,w)->offerOfficeImport(source,name)).setNegativeButton("닫기",null).show();}}
             public void success(File pdf){
                 hwpConversion=null;status.setText("PDF 사본을 저장하는 중");dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
                 new Thread(()->{try{Uri saved=saveConvertedPdf(pdf,name);runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast("한글 문서를 PDF로 저장했습니다");}});}
