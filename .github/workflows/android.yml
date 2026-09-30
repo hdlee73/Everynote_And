@@ -23,6 +23,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Prepare verified offline HWP engine
+        run: python3 tools/prepare_hwp_engine.py
       - name: Build debug and release APKs
         run: gradle assembleDebug assembleRelease
       - uses: actions/upload-artifact@v4

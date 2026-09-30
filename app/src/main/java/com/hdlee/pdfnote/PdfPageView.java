@@ -71,6 +71,7 @@ final class PdfPageView extends View {
     private float inkWidth=0.004f;
     private AnnotationStore.InkStroke activeStroke;
     private boolean stylusDrawing;
+    private boolean fingerInk,pageSwipeEnabled;
     private float scale = 1f;
     private final Listener listener;
     private TextRegion selectionStartRegion, selectionEndRegion;
@@ -97,6 +98,7 @@ final class PdfPageView extends View {
                 selectingText=selectionCandidate=false;
                 selectedTextRegions.clear();
                 listener.onSelectionAdjustStarted();
+                finishInkStroke();
                 drawing = false;
                 panning = false;
                 scalingOccurred = true;
@@ -186,6 +188,9 @@ final class PdfPageView extends View {
         clampPan();
         invalidate();
     }
+
+    void setFingerInk(boolean enabled){fingerInk=enabled;}
+    void setPageSwipeEnabled(boolean enabled){pageSwipeEnabled=enabled;}
 
     void setVerticalPageSwipe(boolean vertical) {
         verticalPageSwipe = vertical;
@@ -308,7 +313,9 @@ final class PdfPageView extends View {
     }
     private TextSelection finishTextSelection(){if(selectedTextRegions.isEmpty())return null;StringBuilder text=new StringBuilder();List<RectF> bounds=selectionLineBounds();RectF union=new RectF(selectedTextRegions.get(0).wordBounds);for(TextRegion r:selectedTextRegions){if(text.length()>0)text.append(' ');text.append(r.word);union.union(r.wordBounds);}return new TextSelection(text.toString(),bounds,union,selectedTextRegions.size()==1);}
     private boolean temporaryEraser(MotionEvent e){return e.getToolType(0)==MotionEvent.TOOL_TYPE_ERASER||(e.getButtonState()&MotionEvent.BUTTON_STYLUS_PRIMARY)!=0;}
-    private void addInkPoint(MotionEvent e,RectF dest){if(activeStroke==null||!dest.contains(e.getX(),e.getY()))return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float pressure=Math.max(0.05f,Math.min(1f,e.getPressure()));if(activeStroke.points.isEmpty()){activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));return;}AnnotationStore.InkPoint last=activeStroke.points.get(activeStroke.points.size()-1);float dx=x-last.x,dy=y-last.y;if(dx*dx+dy*dy>0.000002f)activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));}
+    private void finishInkStroke(){if(activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);}
+    private float inputPressure(MotionEvent e){return isStylus(e)?Math.max(0.05f,Math.min(1f,e.getPressure())):0.65f;}
+    private void addInkPoint(MotionEvent e,RectF dest){if(activeStroke==null||!dest.contains(e.getX(),e.getY()))return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float pressure=inputPressure(e);if(activeStroke.points.isEmpty()){activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));return;}AnnotationStore.InkPoint last=activeStroke.points.get(activeStroke.points.size()-1);float dx=x-last.x,dy=y-last.y;if(dx*dx+dy*dy>0.000002f)activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));}
     private void eraseAt(MotionEvent e,RectF dest){if(strokes==null||dest.width()==0)return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float threshold=Math.max(0.012f,18f/dest.width());for(int i=strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=strokes.get(i);if(s.page!=page)continue;for(AnnotationStore.InkPoint p:s.points)if(Math.hypot(p.x-x,p.y-y)<=threshold){strokes.remove(i);listener.onInkChanged();invalidate();return;}}}
 
     @Override public boolean onTouchEvent(MotionEvent e) {
@@ -316,7 +323,9 @@ final class PdfPageView extends View {
         if (scaleDetector.isInProgress()) return true;
         RectF dest = contentRect();
         boolean stylus=isStylus(e);
-        if(inkMode!=0&&stylus){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i)));activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
+        if(e.getActionMasked()==MotionEvent.ACTION_DOWN)scalingOccurred=false;
+        if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){finishInkStroke();}
+        if(inkMode!=0&&(stylus||fingerInk)&&e.getPointerCount()==1&&!scalingOccurred){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=stylus?Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i))):0.65f;activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
         if (e.getAction() == MotionEvent.ACTION_DOWN) {
             listener.onSelectionAdjustStarted();
             if(!selectedTextRegions.isEmpty()){
@@ -421,7 +430,7 @@ final class PdfPageView extends View {
                     }
                 }
             }
-            if (!highlightMode && !memoMode && !outlineMode && scale <= 1f) {
+            if (pageSwipeEnabled && inkMode==0 && !highlightMode && !memoMode && !outlineMode && scale <= 1f) {
                 float dx = e.getX() - startX;
                 float dy = e.getY() - startY;
                 float distance = verticalPageSwipe ? Math.abs(dy) : Math.abs(dx);

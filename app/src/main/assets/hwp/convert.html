@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><script src="rhwptopdf.umd.js"></script><script>
+// This page and every resource are served by a local, network-blocked WebView.
+async function convertDocument() {
+  try {
+    await RhwpToPdf({module_or_path: await (await fetch('rhwptopdf.umd_bg.wasm')).arrayBuffer()});
+    let loaded=0;
+    for(let i=0;i<3;i++) {
+      const res=await fetch('font'+i);
+      if(res.ok) { try { RhwpToPdf.registerPdfFont(new Uint8Array(await res.arrayBuffer())); loaded++; } catch(ignore) {} }
+    }
+    if(!loaded)throw new Error('기기에서 변환용 글꼴을 읽지 못했습니다');
+    const input=new Uint8Array(await (await fetch('document')).arrayBuffer());
+    NativePdf.status('표·그림과 페이지를 PDF로 변환하는 중');
+    const pdf=RhwpToPdf.hwpToPdf(input);
+    if(!NativePdf.begin(pdf.length))return;
+    // Keep Java bridge arguments small, even for image-heavy multi-page documents.
+    for(let offset=0;offset<pdf.length;offset+=32768) {
+      let binary='';for(const byte of pdf.subarray(offset,offset+32768))binary+=String.fromCharCode(byte);
+      if(!NativePdf.chunk(btoa(binary)))return;
+    }
+    NativePdf.complete();
+  } catch(error) { NativePdf.error(String(error && error.message || error)); }
+}
+</script>
