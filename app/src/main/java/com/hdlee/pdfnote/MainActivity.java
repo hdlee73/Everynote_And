@@ -376,6 +376,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         }
         int width=Math.min(dp(376),root.getWidth()-dp(20));
         selectionPopup=new PopupWindow(panel,width,dp(156),false);selectionPopup.setBackgroundDrawable(round(Color.WHITE,20));selectionPopup.setElevation(dp(12));
+        selectionPopup.setOutsideTouchable(true);
+        if(android.os.Build.VERSION.SDK_INT>=29)selectionPopup.setTouchModal(false);
         int[] location=new int[2];pageView.getLocationOnScreen(location);
         int[] rootLocation=new int[2];root.getLocationOnScreen(rootLocation);
         int y=location[1]+Math.round(anchorY)+dp(20);

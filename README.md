@@ -69,3 +69,7 @@ MIT
 HWP/HWPX conversion retries unsupported PDF font embedding with vector text outlines. This handles Android system-font subsetting failures while retaining layout and graphics. Text can remain selectable on pages whose fonts embed successfully; fallback pages use outlines and may require OCR for text selection. Conversion failures now show the complete error in a dialog.
 
 The offline engine is built from pinned rhwptopdf source (`adbc4bf0f5c6e041ed65b0dbc8aa6b810990a48b`) with the reviewed patch in `tools/prepare_hwp_engine.py`. CI runs a Korean TTC font regression before building the WASM and APK. Local builds require the pinned source checkout at `.hwp-engine-source`, Rust, wasm-pack 0.13.1, Node.js, and `PDFNOTE_TEST_FONT` pointing to a Korean TTC font.
+
+### v1.11.2 repeated text selection
+
+Touching a word starts a fresh selection even near the previous selection handles. Touching a handle still adjusts the selected range. Selection menus allow outside touches, and cancellation clears pending long presses. OCR regions are copied into the page view so changing pages or documents cannot erase the session cache. CI runs regression tests for consecutive drags, handle adjustment, cached-page return, selection actions, and canceled gestures before publishing the APK.

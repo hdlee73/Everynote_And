@@ -200,12 +200,24 @@ final class PdfPageView extends View {
     int getPageNumber(){return page;}
     void setTextRegions(List<TextRegion> regions,boolean showBounds){
         selectionHandler.removeCallbacks(beginTextSelection);
-        selectionCandidate=selectingText=false;selectedTextRegions.clear();
-        textRegions=regions==null?new ArrayList<>():regions;textSelectMode=true;showTextBounds=showBounds;
+        clearTextSelectionOverlay();
+        textRegions=regions==null?new ArrayList<>():new ArrayList<>(regions);textSelectMode=true;showTextBounds=showBounds;
         invalidate();
     }
-    void stopTextSelection(){selectionHandler.removeCallbacks(beginTextSelection);textSelectMode=false;textRegions.clear();selectedTextRegions.clear();selectionCandidate=selectingText=false;invalidate();}
-    void clearTextSelectionOverlay(){selectedTextRegions.clear();selectionStartRegion=selectionEndRegion=null;invalidate();}
+    void stopTextSelection(){textSelectMode=false;textRegions.clear();clearTextSelectionOverlay();}
+    void clearTextSelectionOverlay(){
+        selectionHandler.removeCallbacks(beginTextSelection);
+        selectionCandidate=selectingText=false;
+        selectedTextRegions.clear();selectionStartRegion=selectionEndRegion=null;
+        drawing=panning=gestureMoved=false;
+        if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);
+        invalidate();
+    }
+
+    @Override protected void onDetachedFromWindow(){
+        clearTextSelectionOverlay();
+        super.onDetachedFromWindow();
+    }
 
     private float highlightHeight(RectF dest) {
         return Math.max(12f, dest.height() * 0.022f);
@@ -328,12 +340,24 @@ final class PdfPageView extends View {
         if(inkMode!=0&&(stylus||fingerInk)&&e.getPointerCount()==1&&!scalingOccurred){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=stylus?Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i))):0.65f;activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
         if (e.getAction() == MotionEvent.ACTION_DOWN) {
             listener.onSelectionAdjustStarted();
+            selectionHandler.removeCallbacks(beginTextSelection);
+            startX = currentX = lastX = e.getX();
+            startY = currentY = lastY = e.getY();
+            gestureMoved = false;
             if(!selectedTextRegions.isEmpty()){
                 TextRegion first=selectedTextRegions.get(0),last=selectedTextRegions.get(selectedTextRegions.size()-1);
-                float radius=28f*getResources().getDisplayMetrics().density;
-                boolean left=Math.hypot(e.getX()-(dest.left+first.wordBounds.left*dest.width()),e.getY()-(dest.top+first.wordBounds.bottom*dest.height()))<radius;
-                boolean right=Math.hypot(e.getX()-(dest.left+last.wordBounds.right*dest.width()),e.getY()-(dest.top+last.wordBounds.bottom*dest.height()))<radius;
-                if(left||right){selectionStartRegion=left?last:first;selectionEndRegion=left?first:last;selectingText=true;selectionCandidate=false;panning=false;drawing=false;scalingOccurred=false;getParent().requestDisallowInterceptTouchEvent(true);return true;}
+                float radius=22f*getResources().getDisplayMetrics().density;
+                float leftDistance=(float)Math.hypot(e.getX()-(dest.left+first.wordBounds.left*dest.width()),e.getY()-(dest.top+first.wordBounds.bottom*dest.height()));
+                float rightDistance=(float)Math.hypot(e.getX()-(dest.left+last.wordBounds.right*dest.width()),e.getY()-(dest.top+last.wordBounds.bottom*dest.height()));
+                // A touch on a word starts a new selection, even near an old handle.
+                boolean onWord=false;
+                for(TextRegion region:textRegions){
+                    RectF bounds=region.wordBounds;
+                    if(new RectF(dest.left+bounds.left*dest.width(),dest.top+bounds.top*dest.height(),dest.left+bounds.right*dest.width(),dest.top+bounds.bottom*dest.height()).contains(e.getX(),e.getY())){onWord=true;break;}
+                }
+                boolean left=leftDistance<radius&&leftDistance<=rightDistance;
+                boolean right=rightDistance<radius&&!left;
+                if(!onWord&&(left||right)){selectionStartRegion=left?last:first;selectionEndRegion=left?first:last;selectingText=true;selectionCandidate=false;panning=false;drawing=false;scalingOccurred=false;getParent().requestDisallowInterceptTouchEvent(true);return true;}
                 clearTextSelectionOverlay();
             }
             startX = currentX = e.getX(); startY = currentY = e.getY();
@@ -442,7 +466,7 @@ final class PdfPageView extends View {
                 }
             }
         }
-        if(e.getAction()==MotionEvent.ACTION_CANCEL){selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=selectingText=false;selectedTextRegions.clear();getParent().requestDisallowInterceptTouchEvent(false);invalidate();}
+        if(e.getAction()==MotionEvent.ACTION_CANCEL){clearTextSelectionOverlay();}
         return true;
     }
 }
