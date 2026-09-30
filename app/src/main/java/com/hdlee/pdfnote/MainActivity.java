@@ -158,14 +158,21 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(officeConverting){toast("다른 문서를 변환하고 있습니다");return;}
         if(!OfficeEngine.supported()){offerOfficeImport(source,name);return;}
         officeConverting=true;
+        boolean[] finished={false};
+        File[] temporary=new File[2];
+        android.os.Handler conversionHandler=new android.os.Handler(android.os.Looper.getMainLooper());
         TextView status=new TextView(this);status.setText("문서를 준비하고 있습니다");status.setPadding(dp(24),dp(20),dp(24),dp(20));status.setTextSize(16);
-        AlertDialog progress=new AlertDialog.Builder(this).setTitle("PDF로 변환").setView(status).setCancelable(false).create();progress.show();
+        AlertDialog progress=new AlertDialog.Builder(this).setTitle("PDF로 변환").setView(status).setCancelable(false).setNegativeButton("취소",null).create();progress.show();
+        Runnable abort=()->{if(finished[0])return;finished[0]=true;officeConverting=false;stopService(new Intent(this,OfficeConversionService.class));progress.dismiss();for(File f:temporary)if(f!=null)f.delete();toast("변환이 중단되었습니다");};
+        progress.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->abort.run());
+        conversionHandler.postDelayed(abort,600000);
         new Thread(()->{
             File input=null,output=null;
             try{
                 String ext=name.substring(name.lastIndexOf('.')+1).toLowerCase(Locale.ROOT);
                 input=File.createTempFile("office-source-","."+ext,getCacheDir());
                 output=File.createTempFile("office-result-",".pdf",getCacheDir());
+                temporary[0]=input;temporary[1]=output;
                 try(java.io.InputStream in=getContentResolver().openInputStream(source);
                     java.io.OutputStream out=new java.io.FileOutputStream(input)){
                     if(in==null)throw new IOException("파일을 읽을 수 없습니다");
@@ -173,22 +180,29 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 }
                 File finalInput=input,finalOutput=output;
                 runOnUiThread(()->{
+                    if(finished[0]||isFinishing()||isDestroyed()){finalInput.delete();finalOutput.delete();return;}
                     status.setText("원본 서식을 PDF로 변환하는 중");
                     android.os.ResultReceiver receiver=new android.os.ResultReceiver(new android.os.Handler(android.os.Looper.getMainLooper())){
                         @Override protected void onReceiveResult(int code,android.os.Bundle data){
+                            if(finished[0])return;
                             if(code==2){status.setText(data.getString("stage","변환하는 중"));return;}
-                            progress.dismiss();officeConverting=false;finalInput.delete();
-                            if(code!=0){finalOutput.delete();toast("자동 변환 실패: "+data.getString("error","알 수 없는 오류"));offerOfficeImport(source,name);return;}
-                            try{Uri saved=saveConvertedPdf(finalOutput,name);finalOutput.delete();openPdf(saved);toast("변환된 PDF를 저장했습니다");}
-                            catch(Exception e){finalOutput.delete();toast("PDF 저장 실패: "+e.getMessage());}
+                            finalInput.delete();
+                            if(code!=0){finished[0]=true;conversionHandler.removeCallbacks(abort);progress.dismiss();officeConverting=false;finalOutput.delete();toast("자동 변환 실패: "+data.getString("error","알 수 없는 오류"));offerOfficeImport(source,name);return;}
+                            conversionHandler.removeCallbacks(abort);
+                            status.setText("변환된 PDF를 저장하는 중");progress.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
+                            new Thread(()->{
+                                try{Uri saved=saveConvertedPdf(finalOutput,name);runOnUiThread(()->{finished[0]=true;conversionHandler.removeCallbacks(abort);progress.dismiss();officeConverting=false;if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast("다운로드/PDF Note에 PDF를 저장했습니다");}});}
+                                catch(Exception e){runOnUiThread(()->{finished[0]=true;conversionHandler.removeCallbacks(abort);progress.dismiss();officeConverting=false;toast("PDF 저장 실패: "+e.getMessage());});}
+                                finally{finalOutput.delete();}
+                            },"office-save").start();
                         }
                     };
                     Intent task=new Intent(this,OfficeConversionService.class).putExtra("source",finalInput.getAbsolutePath()).putExtra("output",finalOutput.getAbsolutePath()).putExtra("receiver",receiver);
-                    try{startService(task);}catch(Exception e){progress.dismiss();officeConverting=false;finalInput.delete();finalOutput.delete();toast("변환을 시작할 수 없습니다");offerOfficeImport(source,name);}
+                    try{startService(task);}catch(Exception e){finished[0]=true;conversionHandler.removeCallbacks(abort);progress.dismiss();officeConverting=false;finalInput.delete();finalOutput.delete();toast("변환을 시작할 수 없습니다");offerOfficeImport(source,name);}
                 });
             }catch(Exception e){
                 if(input!=null)input.delete();if(output!=null)output.delete();
-                String reason=e.getMessage();runOnUiThread(()->{progress.dismiss();officeConverting=false;toast("자동 변환 실패: "+reason);offerOfficeImport(source,name);});
+                String reason=e.getMessage();runOnUiThread(()->{if(finished[0])return;finished[0]=true;conversionHandler.removeCallbacks(abort);progress.dismiss();officeConverting=false;toast("자동 변환 실패: "+reason);offerOfficeImport(source,name);});
             }
         },"office-install").start();
     }
@@ -200,14 +214,17 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,name);
             values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE,"application/pdf");
             values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,android.os.Environment.DIRECTORY_DOWNLOADS+"/PDF Note");
+            values.put(android.provider.MediaStore.MediaColumns.IS_PENDING,1);
             Uri target=getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
             if(target==null)throw new IOException("다운로드 폴더를 만들 수 없습니다");
             try(java.io.InputStream in=new java.io.FileInputStream(pdf);java.io.OutputStream out=getContentResolver().openOutputStream(target)){
                 if(out==null)throw new IOException("저장 파일을 열 수 없습니다");byte[] buf=new byte[65536];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);
-                return target;
             }catch(IOException e){getContentResolver().delete(target,null,null);throw e;}
+            android.content.ContentValues complete=new android.content.ContentValues();complete.put(android.provider.MediaStore.MediaColumns.IS_PENDING,0);
+            getContentResolver().update(target,complete,null,null);return target;
         }
-        File dir=new File(getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS),"PDF Note");
+        File documents=getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS);if(documents==null)documents=new File(getFilesDir(),"Documents");
+        File dir=new File(documents,"PDF Note");
         if(!dir.exists()&&!dir.mkdirs())throw new IOException("저장 폴더를 만들 수 없습니다");
         File target=new File(dir,name);
         try(java.io.InputStream in=new java.io.FileInputStream(pdf);java.io.OutputStream out=new java.io.FileOutputStream(target)){byte[] buf=new byte[65536];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);}

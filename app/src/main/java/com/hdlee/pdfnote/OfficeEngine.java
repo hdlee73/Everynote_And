@@ -135,7 +135,11 @@ final class OfficeEngine {
         File temp=new File(c.getCacheDir(),"office-tmp");temp.mkdirs();
         File fontDir=new File(dir,"etc/fonts");fontDir.mkdirs();
         File fontFile=new File(fontDir,"fonts.conf");
-        String xml="<?xml version=\"1.0\"?><fontconfig><dir>/system/fonts</dir><dir>"+new File(dir,"user/fonts").getAbsolutePath()+"</dir><cachedir>"+temp.getAbsolutePath()+"</cachedir></fontconfig>";
+        String xml="<?xml version=\"1.0\"?><fontconfig><dir>/system/fonts</dir><dir>"+new File(dir,"user/fonts").getAbsolutePath()+"</dir><dir>"+new File(dir,"share/fonts/truetype").getAbsolutePath()+"</dir><cachedir>"+temp.getAbsolutePath()+"</cachedir>"
+                +"<alias><family>Calibri</family><prefer><family>Carlito</family></prefer></alias>"
+                +"<alias><family>Cambria</family><prefer><family>Caladea</family></prefer></alias>"
+                +"<alias><family>Arial</family><prefer><family>Liberation Sans</family></prefer></alias>"
+                +"<alias><family>Times New Roman</family><prefer><family>Liberation Serif</family></prefer></alias></fontconfig>";
         try(OutputStream out=new FileOutputStream(fontFile)){out.write(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
         for(String env:new String[]{"FONTCONFIG_FILE="+fontFile.getAbsolutePath(),"FONTCONFIG_PATH="+fontDir.getAbsolutePath(),"TMPDIR="+temp.getAbsolutePath(),"HOME="+c.getFilesDir().getAbsolutePath()})LibreOfficeKit.putenv(env);
         LibreOfficeKit.putenv("SAL_LOG=-WARN-INFO");LibreOfficeKit.redirectStdio(true);
