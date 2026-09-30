@@ -52,7 +52,13 @@ public class PdfPageViewSelectionTest {
     }
 
     private void event(int action, float x, float y) {
-        MotionEvent e = MotionEvent.obtain(time, time += 20, action, x, y, 0);
+        // Robolectric may resize the activity when the looper processes layout work.
+        // Keep gesture coordinates relative to the fitted PDF content.
+        float size = Math.min(view.getWidth(), view.getHeight());
+        float contentX = (view.getWidth()-size)/2f + x*size/1000f;
+        float contentY = (view.getHeight()-size)/2f + y*size/1000f;
+        time = Math.max(time + 20, android.os.SystemClock.uptimeMillis());
+        MotionEvent e = MotionEvent.obtain(time, time, action, contentX, contentY, 0);
         view.onTouchEvent(e);
         e.recycle();
     }
