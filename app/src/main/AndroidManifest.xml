@@ -33,6 +33,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:mimeType="application/pdf" />
                 <data android:mimeType="application/msword" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
                 <data android:mimeType="application/x-hwp" />
                 <data android:mimeType="application/vnd.hancom.hwp" />
                 <data android:mimeType="application/vnd.hancom.hwpx" />

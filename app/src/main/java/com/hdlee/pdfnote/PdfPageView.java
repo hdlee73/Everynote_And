@@ -33,6 +33,7 @@ final class PdfPageView extends View {
         void onTranslationTapped(AnnotationStore.TranslationNote note);
         void onSelectionAdjustStarted();
         void onLassoSelectionFinished();
+        void onElementTapped(AnnotationStore.PageElement element);
     }
 
     static final class TextRegion {
@@ -51,6 +52,9 @@ final class PdfPageView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ScaleGestureDetector scaleDetector;
     private Bitmap bitmap;
+    private AnnotationStore annotationStore;
+    private boolean edgeSwipe;
+    private long edgeStartTime;
     private List<AnnotationStore.Mark> marks;
     private List<AnnotationStore.InkStroke> strokes;
     private List<AnnotationStore.TranslationNote> translations;
@@ -199,6 +203,8 @@ final class PdfPageView extends View {
         invalidate();
     }
 
+    void copyToolsFrom(PdfPageView other){highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
+    void setAnnotationStore(AnnotationStore store){annotationStore=store;invalidate();}
     void setFingerInk(boolean enabled){fingerInk=enabled;}
     void setPageSwipeEnabled(boolean enabled){pageSwipeEnabled=enabled;}
 
@@ -290,6 +296,7 @@ final class PdfPageView extends View {
             canvas.drawRect(Math.min(startX, currentX), centerY - half,
                     Math.max(startX, currentX), centerY + half, paint);
         }
+        AnnotationPainter.elements(getContext(),canvas,dest,annotationStore,page);
         if(!suppressSelection&&!lassoPoints.isEmpty()){
             Path path=lassoPath(dest);lassoPaint.setStyle(Paint.Style.FILL);lassoPaint.setColor(0x222563EB);canvas.drawPath(path,lassoPaint);
             lassoPaint.setStyle(Paint.Style.STROKE);lassoPaint.setStrokeWidth(2*getResources().getDisplayMetrics().density);lassoPaint.setColor(0xFF2563EB);
@@ -384,7 +391,7 @@ final class PdfPageView extends View {
     private boolean temporaryEraser(MotionEvent e){return e.getToolType(0)==MotionEvent.TOOL_TYPE_ERASER||(e.getButtonState()&MotionEvent.BUTTON_STYLUS_PRIMARY)!=0;}
     private void finishInkStroke(){if(activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);}
     private float inputPressure(MotionEvent e){return isStylus(e)?Math.max(0.05f,Math.min(1f,e.getPressure())):0.65f;}
-    private void addInkPoint(MotionEvent e,RectF dest){if(activeStroke==null||!dest.contains(e.getX(),e.getY()))return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float pressure=inputPressure(e);if(activeStroke.points.isEmpty()){activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));return;}AnnotationStore.InkPoint last=activeStroke.points.get(activeStroke.points.size()-1);float dx=x-last.x,dy=y-last.y;if(dx*dx+dy*dy>0.000002f)activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));}
+    private void addInkPoint(MotionEvent e,RectF dest){if(activeStroke==null||!dest.contains(e.getX(),e.getY()))return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float pressure=inputPressure(e);if(activeStroke.points.isEmpty()){activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));return;}if(inkMode==3){AnnotationStore.InkPoint end=new AnnotationStore.InkPoint(x,y,pressure);if(activeStroke.points.size()==1)activeStroke.points.add(end);else activeStroke.points.set(1,end);return;}AnnotationStore.InkPoint last=activeStroke.points.get(activeStroke.points.size()-1);float dx=x-last.x,dy=y-last.y;if(dx*dx+dy*dy>0.000002f)activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));}
     private void eraseAt(MotionEvent e,RectF dest){if(strokes==null||dest.width()==0)return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float threshold=Math.max(0.012f,18f/dest.width());for(int i=strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=strokes.get(i);if(s.page!=page)continue;for(AnnotationStore.InkPoint p:s.points)if(Math.hypot(p.x-x,p.y-y)<=threshold){strokes.remove(i);listener.onInkChanged();invalidate();return;}}}
 
     @Override public boolean onTouchEvent(MotionEvent e) {
@@ -394,6 +401,21 @@ final class PdfPageView extends View {
         boolean stylus=isStylus(e);
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN)scalingOccurred=false;
         if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){finishInkStroke();clearLassoSelection();}
+        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){
+            listener.onSelectionAdjustStarted();
+            float edge=32*getResources().getDisplayMetrics().density;
+            edgeSwipe=pageSwipeEnabled&&!stylus&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk)&&
+                (verticalPageSwipe?(e.getY()<edge||e.getY()>getHeight()-edge):(e.getX()<edge||e.getX()>getWidth()-edge));
+            if(edgeSwipe){startX=e.getX();startY=e.getY();edgeStartTime=e.getEventTime();selectionHandler.removeCallbacks(beginTextSelection);getParent().requestDisallowInterceptTouchEvent(true);return true;}
+        }
+        if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){edgeSwipe=false;}
+        if(edgeSwipe){
+            if(e.getActionMasked()==MotionEvent.ACTION_UP){float along=verticalPageSwipe?e.getY()-startY:e.getX()-startX,cross=verticalPageSwipe?e.getX()-startX:e.getY()-startY;
+                edgeSwipe=false;getParent().requestDisallowInterceptTouchEvent(false);
+                float threshold=Math.max(36*getResources().getDisplayMetrics().density,(verticalPageSwipe?getHeight():getWidth())*.12f);
+                if(Math.abs(along)>=threshold&&Math.abs(along)>Math.abs(cross)*1.4f&&e.getEventTime()-edgeStartTime<1500)listener.onPageSwipe(along<0?1:-1);
+            }else if(e.getActionMasked()==MotionEvent.ACTION_CANCEL){edgeSwipe=false;getParent().requestDisallowInterceptTouchEvent(false);}return true;
+        }
         if(lassoMode){
             int action=e.getActionMasked();
             if(action==MotionEvent.ACTION_DOWN){listener.onSelectionAdjustStarted();clearLassoSelection();clearTextSelectionOverlay();if(dest.contains(e.getX(),e.getY())){lassoDrawing=true;getParent().requestDisallowInterceptTouchEvent(true);addLassoPoint(e.getX(),e.getY(),dest);}invalidate();return true;}
@@ -403,7 +425,7 @@ final class PdfPageView extends View {
             if(action==MotionEvent.ACTION_UP&&lassoDrawing){addLassoPoint(e.getX(),e.getY(),dest);lassoDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);if(validLasso(dest))listener.onLassoSelectionFinished();else clearLassoSelection();invalidate();return true;}
             return true;
         }
-        if(inkMode!=0&&(stylus||fingerInk)&&e.getPointerCount()==1&&!scalingOccurred){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=stylus?Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i))):0.65f;activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null&&!activeStroke.points.isEmpty())listener.onInkChanged();activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
+        if(inkMode!=0&&(stylus||fingerInk)&&e.getPointerCount()==1&&!scalingOccurred){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;inkMode!=3&&i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=stylus?Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i))):0.65f;activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null){if(action==MotionEvent.ACTION_CANCEL){if(strokes!=null)strokes.remove(activeStroke);}else{addInkPoint(e,dest);if(!activeStroke.points.isEmpty())listener.onInkChanged();}}activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
         if (e.getAction() == MotionEvent.ACTION_DOWN) {
             listener.onSelectionAdjustStarted();
             selectionHandler.removeCallbacks(beginTextSelection);
@@ -513,6 +535,7 @@ final class PdfPageView extends View {
             if (Math.hypot(e.getX() - startX, e.getY() - startY) < 20 && marks != null) {
                 float nx = (e.getX() - dest.left) / dest.width();
                 float ny = (e.getY() - dest.top) / dest.height();
+                if(annotationStore!=null)for(int i=annotationStore.elements.size()-1;i>=0;i--){AnnotationStore.PageElement element=annotationStore.elements.get(i);if(element.page==page&&nx>=element.left&&nx<=element.right&&ny>=element.top&&ny<=element.bottom){listener.onElementTapped(element);return true;}}
                 for (int i = marks.size() - 1; i >= 0; i--) {
                     AnnotationStore.Mark m = marks.get(i);
                     if (m.page == page && nx >= m.left && nx <= m.right && ny >= m.top && ny <= m.bottom) {
@@ -520,7 +543,7 @@ final class PdfPageView extends View {
                     }
                 }
             }
-            if (pageSwipeEnabled && inkMode==0 && !highlightMode && !memoMode && !outlineMode && scale <= 1f) {
+            if (false && pageSwipeEnabled && inkMode==0 && !highlightMode && !memoMode && !outlineMode && scale <= 1f) {
                 float dx = e.getX() - startX;
                 float dy = e.getY() - startY;
                 float distance = verticalPageSwipe ? Math.abs(dy) : Math.abs(dx);

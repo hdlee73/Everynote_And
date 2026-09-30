@@ -127,6 +127,13 @@ final class AnnotationStore {
             return e;
         }
     }
+    static final class PageElement {
+        int page;String kind="text",text="",asset="";
+        float left=.1f,top=.1f,right=.8f,bottom=.3f;
+        JSONObject toJson()throws JSONException{return new JSONObject().put("page",page).put("kind",kind).put("text",text).put("asset",asset).put("left",left).put("top",top).put("right",right).put("bottom",bottom);}
+        static PageElement fromJson(JSONObject o)throws JSONException{PageElement e=new PageElement();e.page=o.getInt("page");e.kind=o.optString("kind","text");e.text=o.optString("text");e.asset=o.optString("asset");e.left=(float)o.optDouble("left",.1);e.top=(float)o.optDouble("top",.1);e.right=(float)o.optDouble("right",.8);e.bottom=(float)o.optDouble("bottom",.3);if(e.page<0||!Float.isFinite(e.left)||!Float.isFinite(e.top)||!Float.isFinite(e.right)||!Float.isFinite(e.bottom)||e.left<0||e.top<0||e.right>1||e.bottom>1||e.left>=e.right||e.top>=e.bottom||!java.util.Arrays.asList("text","image","link").contains(e.kind)||(!e.asset.isEmpty()&&!e.asset.matches("[a-f0-9-]{36}\\.png")))throw new JSONException("잘못된 노트 요소");return e;}
+    }
+    final List<PageElement> elements=new ArrayList<>();
     final List<StudyEntry> studyEntries=new ArrayList<>();
 
     private final SharedPreferences prefs;
@@ -151,6 +158,7 @@ final class AnnotationStore {
         strokes.clear();
         translations.clear();
         studyEntries.clear();
+        elements.clear();
         try {
             String json=prefs.getString(key,"{}");
             android.util.AtomicFile sidecar=new android.util.AtomicFile(new java.io.File(sidecarDirectory,key+".json"));
@@ -159,6 +167,7 @@ final class AnnotationStore {
                 while((n=in.read(buffer))!=-1)out.write(buffer,0,n);json=out.toString("UTF-8");
             }catch(java.io.IOException ignored){}
             JSONObject root = new JSONObject(json);
+            JSONArray els=root.optJSONArray("elements");if(els!=null)for(int i=0;i<els.length();i++)elements.add(PageElement.fromJson(els.getJSONObject(i)));
             JSONArray entries=root.optJSONArray("studyEntries");
             if(entries!=null)for(int i=0;i<entries.length();i++)studyEntries.add(StudyEntry.fromJson(entries.getJSONObject(i)));
             JSONArray a = root.optJSONArray("marks");
@@ -189,7 +198,8 @@ final class AnnotationStore {
             JSONArray t = new JSONArray();
             for (TranslationNote note : translations) t.put(note.toJson());
             JSONArray entries=new JSONArray();for(StudyEntry e:studyEntries)entries.put(e.toJson());
-        root.put("studyEntries",entries).put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
+        JSONArray els=new JSONArray();for(PageElement e:elements)els.put(e.toJson());
+        root.put("elements",els).put("studyEntries",entries).put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
             String json=root.toString();
             if(!sidecarDirectory.isDirectory())sidecarDirectory.mkdirs();
             android.util.AtomicFile file=new android.util.AtomicFile(new java.io.File(sidecarDirectory,key+".json"));
@@ -216,7 +226,8 @@ final class AnnotationStore {
         JSONArray t = new JSONArray();
         for (TranslationNote note : translations) t.put(note.toJson());
         JSONArray entries=new JSONArray();for(StudyEntry e:studyEntries)entries.put(e.toJson());
-        root.put("studyEntries",entries).put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
+        JSONArray els=new JSONArray();for(PageElement e:elements)els.put(e.toJson());
+        root.put("elements",els).put("studyEntries",entries).put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
         return root.toString(2);
     }
 
@@ -235,14 +246,15 @@ final class AnnotationStore {
         for(int i=0;i<t.length();i++)temporary.translations.add(TranslationNote.fromJson(t.getJSONObject(i)));
         JSONArray entries=root.optJSONArray("studyEntries");
         if(entries!=null)for(int i=0;i<entries.length();i++)temporary.studyEntries.add(StudyEntry.fromJson(entries.getJSONObject(i)));
+        JSONArray els=root.optJSONArray("elements");if(els!=null)for(int i=0;i<els.length();i++)temporary.elements.add(PageElement.fromJson(els.getJSONObject(i)));
         List<Integer> pages=new ArrayList<>(temporary.bookmarks);
         for(Mark m:temporary.marks)pages.add(m.page);for(OutlineItem m:temporary.outlines)pages.add(m.page);
         for(InkStroke m:temporary.strokes)pages.add(m.page);for(TranslationNote m:temporary.translations)pages.add(m.page);
-        for(StudyEntry m:temporary.studyEntries)pages.add(m.page);
+        for(StudyEntry m:temporary.studyEntries)pages.add(m.page);for(PageElement e:temporary.elements)pages.add(e.page);
         for(int page:pages)if(page<0||page>=pageCount)throw new JSONException("문서 페이지 범위를 벗어난 주석");
         marks.clear();marks.addAll(temporary.marks);bookmarks.clear();bookmarks.addAll(temporary.bookmarks);
         outlines.clear();outlines.addAll(temporary.outlines);strokes.clear();strokes.addAll(temporary.strokes);
-        translations.clear();translations.addAll(temporary.translations);studyEntries.clear();studyEntries.addAll(temporary.studyEntries);save();
+        translations.clear();translations.addAll(temporary.translations);studyEntries.clear();studyEntries.addAll(temporary.studyEntries);elements.clear();elements.addAll(temporary.elements);save();
     }
     private AnnotationStore() { prefs=null;sidecarDirectory=null; }
 
