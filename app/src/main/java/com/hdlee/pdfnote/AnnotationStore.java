@@ -108,6 +108,27 @@ final class AnnotationStore {
         }
     }
 
+    static final class StudyEntry {
+        String id = java.util.UUID.randomUUID().toString();
+        int page;
+        float x, y;
+        String text = "", comment = "";
+        boolean excerpt;
+        JSONObject toJson() throws JSONException {
+            return new JSONObject().put("id",id).put("page",page).put("x",x).put("y",y)
+                .put("text",text).put("comment",comment).put("excerpt",excerpt);
+        }
+        static StudyEntry fromJson(JSONObject o) throws JSONException {
+            StudyEntry e=new StudyEntry();e.id=o.optString("id",e.id);e.page=o.getInt("page");
+            e.x=(float)o.optDouble("x",0.5);e.y=(float)o.optDouble("y",0.5);
+            e.text=o.getString("text");e.comment=o.optString("comment","");e.excerpt=o.optBoolean("excerpt");
+            if(e.page<0 || !Float.isFinite(e.x) || !Float.isFinite(e.y) || e.x<0 || e.x>1 || e.y<0 || e.y>1)
+                throw new JSONException("잘못된 페이지 링크");
+            return e;
+        }
+    }
+    final List<StudyEntry> studyEntries=new ArrayList<>();
+
     private final SharedPreferences prefs;
     private String key;
     final List<Mark> marks = new ArrayList<>();
@@ -127,8 +148,11 @@ final class AnnotationStore {
         outlines.clear();
         strokes.clear();
         translations.clear();
+        studyEntries.clear();
         try {
             JSONObject root = new JSONObject(prefs.getString(key, "{}"));
+            JSONArray entries=root.optJSONArray("studyEntries");
+            if(entries!=null)for(int i=0;i<entries.length();i++)studyEntries.add(StudyEntry.fromJson(entries.getJSONObject(i)));
             JSONArray a = root.optJSONArray("marks");
             if (a != null) for (int i = 0; i < a.length(); i++) marks.add(Mark.fromJson(a.getJSONObject(i)));
             JSONArray b = root.optJSONArray("bookmarks");
@@ -156,14 +180,15 @@ final class AnnotationStore {
             for (InkStroke stroke : strokes) s.put(stroke.toJson());
             JSONArray t = new JSONArray();
             for (TranslationNote note : translations) t.put(note.toJson());
-            root.put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
+            JSONArray entries=new JSONArray();for(StudyEntry e:studyEntries)entries.put(e.toJson());
+        root.put("studyEntries",entries).put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
             prefs.edit().putString(key, root.toString()).apply();
         } catch (JSONException ignored) { }
     }
 
     String exportJson(Uri uri, String title) throws JSONException {
         JSONObject root = new JSONObject();
-        root.put("format", "PDF Note annotations v1");
+        root.put("format", "PDF Note annotations v2");
         root.put("document", title);
         root.put("uri", uri.toString());
         JSONArray a = new JSONArray();
@@ -176,9 +201,36 @@ final class AnnotationStore {
         for (InkStroke stroke : strokes) s.put(stroke.toJson());
         JSONArray t = new JSONArray();
         for (TranslationNote note : translations) t.put(note.toJson());
-        root.put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
+        JSONArray entries=new JSONArray();for(StudyEntry e:studyEntries)entries.put(e.toJson());
+        root.put("studyEntries",entries).put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
         return root.toString(2);
     }
+
+    void importJson(String json, int pageCount) throws JSONException {
+        JSONObject root=new JSONObject(json);
+        String format=root.optString("format");
+        if(!format.equals("PDF Note annotations v1")&&!format.equals("PDF Note annotations v2"))
+            throw new JSONException("PDF Note 주석 백업이 아닙니다");
+        AnnotationStore temporary=new AnnotationStore();
+        JSONArray a=root.getJSONArray("marks"), b=root.getJSONArray("bookmarks"), o=root.getJSONArray("outlines"),
+            s=root.getJSONArray("strokes"), t=root.getJSONArray("translations");
+        for(int i=0;i<a.length();i++)temporary.marks.add(Mark.fromJson(a.getJSONObject(i)));
+        for(int i=0;i<b.length();i++)temporary.bookmarks.add(b.getInt(i));
+        for(int i=0;i<o.length();i++)temporary.outlines.add(OutlineItem.fromJson(o.getJSONObject(i)));
+        for(int i=0;i<s.length();i++)temporary.strokes.add(InkStroke.fromJson(s.getJSONObject(i)));
+        for(int i=0;i<t.length();i++)temporary.translations.add(TranslationNote.fromJson(t.getJSONObject(i)));
+        JSONArray entries=root.optJSONArray("studyEntries");
+        if(entries!=null)for(int i=0;i<entries.length();i++)temporary.studyEntries.add(StudyEntry.fromJson(entries.getJSONObject(i)));
+        List<Integer> pages=new ArrayList<>(temporary.bookmarks);
+        for(Mark m:temporary.marks)pages.add(m.page);for(OutlineItem m:temporary.outlines)pages.add(m.page);
+        for(InkStroke m:temporary.strokes)pages.add(m.page);for(TranslationNote m:temporary.translations)pages.add(m.page);
+        for(StudyEntry m:temporary.studyEntries)pages.add(m.page);
+        for(int page:pages)if(page<0||page>=pageCount)throw new JSONException("문서 페이지 범위를 벗어난 주석");
+        marks.clear();marks.addAll(temporary.marks);bookmarks.clear();bookmarks.addAll(temporary.bookmarks);
+        outlines.clear();outlines.addAll(temporary.outlines);strokes.clear();strokes.addAll(temporary.strokes);
+        translations.clear();translations.addAll(temporary.translations);studyEntries.clear();studyEntries.addAll(temporary.studyEntries);save();
+    }
+    private AnnotationStore() { prefs=null; }
 
     private static String sha256(String input) {
         try {

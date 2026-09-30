@@ -73,3 +73,13 @@ The offline engine is built from pinned rhwptopdf source (`adbc4bf0f5c6e041ed65b
 ### v1.11.2 repeated text selection
 
 Touching a word starts a fresh selection even near the previous selection handles. Touching a handle still adjusts the selected range. Selection menus allow outside touches, and cancellation clears pending long presses. OCR regions are copied into the page view so changing pages or documents cannot erase the session cache. CI runs regression tests for consecutive drags, handle adjustment, cached-page return, selection actions, and canceled gestures before publishing the APK.
+
+### v1.12.0 linked study notes and excerpt basket
+
+- 도구 → **듀얼 뷰 노트**: PDF와 독립 노트를 함께 표시합니다. 화면 폭 600dp 이상은 좌우, 작은 화면은 상하로 배치하고 폴드 펼침/접힘에 대응합니다.
+- ＋로 현재 페이지에 연결된 노트를 추가하고, 본문 드래그 → **발췌**로 OCR 문장을 바구니에 저장합니다. 노트 본문을 눌러 원문과 설명을 수정하거나 삭제할 수 있습니다. Markdown 문법은 일반 텍스트로 작성·저장합니다.
+- 노트의 **[p.N]** 링크는 PDF 페이지와 저장된 위치로 이동합니다. PDF 페이지를 이동하면 연결된 노트 카드가 강조됩니다.
+- **노트·발췌 내보내기**: Markdown, UTF-8 CSV, XLSX, Anki 가져오기용 TSV(앞면=원문, 뒷면=설명·문서·페이지). 바구니 보기에서는 발췌만, 전체 노트 보기에서는 모두 내보냅니다.
+- **주석 백업**에 노트·발췌도 포함합니다. **주석 백업 복원**에서 문서명을 확인하고 복원을 누르면 현재 문서의 주석·노트를 교체합니다. 페이지 범위나 파일 형식이 잘못되면 기존 자료를 유지합니다. 원본 PDF는 변경하지 않습니다.
+
+다음 단계: 녹음과 필기 시점 연결, TTS 반복 구간, 선택영역 AI 요약·Q&A 포스트잇. 이 릴리스에는 포함하지 않습니다.
