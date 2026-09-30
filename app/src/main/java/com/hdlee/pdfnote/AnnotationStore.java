@@ -130,6 +130,7 @@ final class AnnotationStore {
     final List<StudyEntry> studyEntries=new ArrayList<>();
 
     private final SharedPreferences prefs;
+    private final java.io.File sidecarDirectory;
     private String key;
     final List<Mark> marks = new ArrayList<>();
     final Set<Integer> bookmarks = new HashSet<>();
@@ -139,6 +140,7 @@ final class AnnotationStore {
 
     AnnotationStore(Context context) {
         prefs = context.getSharedPreferences("pdf_note_data", Context.MODE_PRIVATE);
+        sidecarDirectory=new java.io.File(context.getFilesDir(),"annotations");
     }
 
     void open(Uri uri) {
@@ -150,7 +152,13 @@ final class AnnotationStore {
         translations.clear();
         studyEntries.clear();
         try {
-            JSONObject root = new JSONObject(prefs.getString(key, "{}"));
+            String json=prefs.getString(key,"{}");
+            android.util.AtomicFile sidecar=new android.util.AtomicFile(new java.io.File(sidecarDirectory,key+".json"));
+            if(!prefs.contains(key))try(java.io.InputStream in=sidecar.openRead()){
+                java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[8192];int n;
+                while((n=in.read(buffer))!=-1)out.write(buffer,0,n);json=out.toString("UTF-8");
+            }catch(java.io.IOException ignored){}
+            JSONObject root = new JSONObject(json);
             JSONArray entries=root.optJSONArray("studyEntries");
             if(entries!=null)for(int i=0;i<entries.length();i++)studyEntries.add(StudyEntry.fromJson(entries.getJSONObject(i)));
             JSONArray a = root.optJSONArray("marks");
@@ -182,7 +190,13 @@ final class AnnotationStore {
             for (TranslationNote note : translations) t.put(note.toJson());
             JSONArray entries=new JSONArray();for(StudyEntry e:studyEntries)entries.put(e.toJson());
         root.put("studyEntries",entries).put("marks", a).put("bookmarks", b).put("outlines", o).put("strokes", s).put("translations",t);
-            prefs.edit().putString(key, root.toString()).apply();
+            String json=root.toString();
+            if(!sidecarDirectory.isDirectory())sidecarDirectory.mkdirs();
+            android.util.AtomicFile file=new android.util.AtomicFile(new java.io.File(sidecarDirectory,key+".json"));
+            java.io.FileOutputStream out=null;
+            try{out=file.startWrite();out.write(json.getBytes(StandardCharsets.UTF_8));file.finishWrite(out);}
+            catch(java.io.IOException error){if(out!=null)file.failWrite(out);prefs.edit().putString(key,json).apply();return;}
+            prefs.edit().remove(key).apply();
         } catch (JSONException ignored) { }
     }
 
@@ -230,7 +244,7 @@ final class AnnotationStore {
         outlines.clear();outlines.addAll(temporary.outlines);strokes.clear();strokes.addAll(temporary.strokes);
         translations.clear();translations.addAll(temporary.translations);studyEntries.clear();studyEntries.addAll(temporary.studyEntries);save();
     }
-    private AnnotationStore() { prefs=null; }
+    private AnnotationStore() { prefs=null;sidecarDirectory=null; }
 
     private static String sha256(String input) {
         try {
