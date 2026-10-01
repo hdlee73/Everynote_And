@@ -14,7 +14,10 @@ android {
         versionName '1.17.0'
     }
 
-    testOptions { unitTests.includeAndroidResources = true }
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all { testLogging { exceptionFormat = 'full' } }
+    }
 
     buildTypes {
         release {
