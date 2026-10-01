@@ -14,7 +14,8 @@ final class FolderTreeView extends ScrollView {
     private final LinearLayout rows;
     private final Set<String> expanded=new HashSet<>();
     private File selected;
-    private final Selected listener;
+    private final Selected listener; private java.util.function.BiConsumer<File,android.view.View> menu;
+    void setFolderMenu(java.util.function.BiConsumer<File,android.view.View> menu){this.menu=menu;}
     FolderTreeView(Context context,LibraryRepository repository,File selected,Selected listener){
         super(context);this.repository=repository;this.listener=listener;this.selected=selected;
         rows=new LinearLayout(context);rows.setOrientation(LinearLayout.VERTICAL);rows.setPadding(dp(6),dp(8),dp(6),dp(8));addView(rows,new LayoutParams(-1,-2));setBackgroundColor(0xFFF1F4F8);
@@ -29,8 +30,8 @@ final class FolderTreeView extends ScrollView {
         if(folder.equals(selected)){GradientDrawable bg=new GradientDrawable();bg.setColor(0xFFDCEAFE);bg.setCornerRadius(dp(8));row.setBackground(bg);}
         TextView arrow=new TextView(getContext());arrow.setGravity(android.view.Gravity.CENTER);arrow.setText(children.isEmpty()?"":expanded.contains(folder.getAbsolutePath())?"▾":"▸");arrow.setTextSize(17);arrow.setTextColor(0xFF52647A);arrow.setContentDescription(folder.getName()+" 하위 폴더 펼치기");row.addView(arrow,new LinearLayout.LayoutParams(dp(28),dp(46)));
         arrow.setOnClickListener(v->{if(!expanded.remove(folder.getAbsolutePath()))expanded.add(folder.getAbsolutePath());reload();});
-        TextView name=new TextView(getContext());name.setText(folder.equals(repository.root)?"모든 문서":folder.getName());name.setTextSize(14);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setTextColor(folder.equals(selected)?0xFF2563EB:0xFF334155);name.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_folder_open,0,0,0);name.setCompoundDrawablePadding(dp(6));row.addView(name,new LinearLayout.LayoutParams(0,dp(46),1));name.setContentDescription("폴더 "+name.getText());name.setOnClickListener(v->{selected=folder;reload();listener.folder(folder);});
-        rows.addView(row,new LinearLayout.LayoutParams(-1,dp(46)));if(expanded.contains(folder.getAbsolutePath()))for(File child:children)addFolder(child,depth+1);
+        TextView name=new TextView(getContext());name.setText(folder.equals(repository.root)?"모든 문서":folder.getName());name.setTextSize(14);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setTextColor(folder.equals(selected)?0xFF2563EB:0xFF334155);android.graphics.drawable.Drawable icon=getContext().getDrawable(R.drawable.ic_folder_open).mutate();icon.setTint(repository.folderColor(folder));name.setCompoundDrawablesWithIntrinsicBounds(icon,null,null,null);name.setCompoundDrawablePadding(dp(6));row.addView(name,new LinearLayout.LayoutParams(0,dp(46),1));name.setContentDescription("폴더 "+name.getText());name.setOnClickListener(v->{selected=folder;reload();listener.folder(folder);});
+        name.setOnLongClickListener(v->{if(menu==null)return false;menu.accept(folder,v);return true;});rows.addView(row,new LinearLayout.LayoutParams(-1,dp(46)));if(expanded.contains(folder.getAbsolutePath()))for(File child:children)addFolder(child,depth+1);
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
 }

@@ -53,7 +53,7 @@ final class PdfPageView extends View {
     private final ScaleGestureDetector scaleDetector;
     private Bitmap bitmap;
     private AnnotationStore annotationStore;
-    private boolean edgeSwipe;
+    private boolean edgeSwipe,bodySwipeCandidate,directTextSelection;
     private long edgeStartTime;
     private List<AnnotationStore.Mark> marks;
     private List<AnnotationStore.InkStroke> strokes;
@@ -89,6 +89,7 @@ final class PdfPageView extends View {
     private boolean selectionCandidate, selectingText;
     private final Runnable beginTextSelection = () -> {
         if (!selectionCandidate || selectionStartRegion == null) return;
+        bodySwipeCandidate=false;
         selectingText = true;
         selectionCandidate = false;
         panning = false;
@@ -203,7 +204,8 @@ final class PdfPageView extends View {
         invalidate();
     }
 
-    void copyToolsFrom(PdfPageView other){highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
+    void setDirectTextSelection(boolean enabled){directTextSelection=enabled;clearTextSelectionOverlay();}
+    void copyToolsFrom(PdfPageView other){directTextSelection=other.directTextSelection;highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
     void setAnnotationStore(AnnotationStore store){annotationStore=store;invalidate();}
     void setFingerInk(boolean enabled){fingerInk=enabled;}
     void setPageSwipeEnabled(boolean enabled){pageSwipeEnabled=enabled;}
@@ -220,12 +222,12 @@ final class PdfPageView extends View {
         textRegions=regions==null?new ArrayList<>():new ArrayList<>(regions);textSelectMode=true;showTextBounds=showBounds;
         invalidate();
     }
-    void stopTextSelection(){textSelectMode=false;textRegions.clear();clearTextSelectionOverlay();}
+    void stopTextSelection(){directTextSelection=false;textSelectMode=false;textRegions.clear();clearTextSelectionOverlay();}
     void clearTextSelectionOverlay(){
         selectionHandler.removeCallbacks(beginTextSelection);
         selectionCandidate=selectingText=false;
         selectedTextRegions.clear();selectionStartRegion=selectionEndRegion=null;
-        drawing=panning=gestureMoved=false;
+        drawing=panning=gestureMoved=false;bodySwipeCandidate=false;
         if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);
         invalidate();
     }
@@ -377,7 +379,7 @@ final class PdfPageView extends View {
         return bestDistance<=tolerance*tolerance?best:null;
     }
     private TextRegion nearestTextRegion(float x,float y,RectF dest){TextRegion hit=textRegionAt(x,y,dest);if(hit!=null)return hit;if(dest.width()==0||textRegions.isEmpty())return null;float nx=Math.max(0f,Math.min(1f,(x-dest.left)/dest.width())),ny=Math.max(0f,Math.min(1f,(y-dest.top)/dest.height())),bestDistance=Float.MAX_VALUE;TextRegion best=null;for(TextRegion r:textRegions){float dx=nx-Math.max(r.wordBounds.left,Math.min(nx,r.wordBounds.right)),dy=ny-Math.max(r.wordBounds.top,Math.min(ny,r.wordBounds.bottom));float distance=dx*dx+dy*dy*2f;if(distance<bestDistance){bestDistance=distance;best=r;}}return best;}
-    private void beginTextSelectionNow(){selectionHandler.removeCallbacks(beginTextSelection);if(selectingText||selectionStartRegion==null)return;selectingText=true;selectionCandidate=false;panning=false;selectedTextRegions.clear();selectedTextRegions.add(selectionStartRegion);getParent().requestDisallowInterceptTouchEvent(true);performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);invalidate();}
+    private void beginTextSelectionNow(){selectionHandler.removeCallbacks(beginTextSelection);if(selectingText||selectionStartRegion==null)return;selectingText=true;selectionCandidate=false;bodySwipeCandidate=false;panning=false;selectedTextRegions.clear();selectedTextRegions.add(selectionStartRegion);getParent().requestDisallowInterceptTouchEvent(true);performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);invalidate();}
     private void updateTextSelection(TextRegion end){if(end==null||selectionStartRegion==null)return;selectionEndRegion=end;int a=textRegions.indexOf(selectionStartRegion),b=textRegions.indexOf(end);if(a<0||b<0)return;selectedTextRegions.clear();for(int i=Math.min(a,b);i<=Math.max(a,b);i++)selectedTextRegions.add(textRegions.get(i));invalidate();}
     private List<RectF> selectionLineBounds(){
         List<RectF> bounds=new ArrayList<>();RectF previousLine=null,current=null;
@@ -394,6 +396,9 @@ final class PdfPageView extends View {
     private void addInkPoint(MotionEvent e,RectF dest){if(activeStroke==null||!dest.contains(e.getX(),e.getY()))return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float pressure=inputPressure(e);if(activeStroke.points.isEmpty()){activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));return;}if(inkMode==3){AnnotationStore.InkPoint end=new AnnotationStore.InkPoint(x,y,pressure);if(activeStroke.points.size()==1)activeStroke.points.add(end);else activeStroke.points.set(1,end);return;}AnnotationStore.InkPoint last=activeStroke.points.get(activeStroke.points.size()-1);float dx=x-last.x,dy=y-last.y;if(dx*dx+dy*dy>0.000002f)activeStroke.points.add(new AnnotationStore.InkPoint(x,y,pressure));}
     private void eraseAt(MotionEvent e,RectF dest){if(strokes==null||dest.width()==0)return;float x=(e.getX()-dest.left)/dest.width(),y=(e.getY()-dest.top)/dest.height();float threshold=Math.max(0.012f,18f/dest.width());for(int i=strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=strokes.get(i);if(s.page!=page)continue;for(AnnotationStore.InkPoint p:s.points)if(Math.hypot(p.x-x,p.y-y)<=threshold){strokes.remove(i);listener.onInkChanged();invalidate();return;}}}
 
+    private float touchSlop(){return Math.max(14*getResources().getDisplayMetrics().density,android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop()*1.5f);}
+    private float swipeDistance(){return Math.max(48*getResources().getDisplayMetrics().density,Math.min((verticalPageSwipe?getHeight():getWidth())*.1f,100*getResources().getDisplayMetrics().density));}
+
     @Override public boolean onTouchEvent(MotionEvent e) {
         scaleDetector.onTouchEvent(e);
         if (scaleDetector.isInProgress()) return true;
@@ -403,17 +408,19 @@ final class PdfPageView extends View {
         if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){finishInkStroke();clearLassoSelection();}
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN){
             listener.onSelectionAdjustStarted();
-            float edge=32*getResources().getDisplayMetrics().density;
-            edgeSwipe=pageSwipeEnabled&&!stylus&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk)&&
+            float edge=72*getResources().getDisplayMetrics().density;
+            boolean eligible=pageSwipeEnabled&&!stylus&&!directTextSelection&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk);
+            bodySwipeCandidate=eligible&&scale<=1f;edgeStartTime=e.getEventTime();
+            edgeSwipe=eligible&&scale>1f&&
                 (verticalPageSwipe?(e.getY()<edge||e.getY()>getHeight()-edge):(e.getX()<edge||e.getX()>getWidth()-edge));
             if(edgeSwipe){startX=e.getX();startY=e.getY();edgeStartTime=e.getEventTime();selectionHandler.removeCallbacks(beginTextSelection);getParent().requestDisallowInterceptTouchEvent(true);return true;}
         }
-        if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){edgeSwipe=false;}
+        if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){edgeSwipe=bodySwipeCandidate=false;}
         if(edgeSwipe){
             if(e.getActionMasked()==MotionEvent.ACTION_UP){float along=verticalPageSwipe?e.getY()-startY:e.getX()-startX,cross=verticalPageSwipe?e.getX()-startX:e.getY()-startY;
                 edgeSwipe=false;getParent().requestDisallowInterceptTouchEvent(false);
-                float threshold=Math.max(36*getResources().getDisplayMetrics().density,(verticalPageSwipe?getHeight():getWidth())*.12f);
-                if(Math.abs(along)>=threshold&&Math.abs(along)>Math.abs(cross)*1.4f&&e.getEventTime()-edgeStartTime<1500)listener.onPageSwipe(along<0?1:-1);
+                float threshold=swipeDistance();
+                if(Math.abs(along)>=threshold&&Math.abs(along)>Math.abs(cross)*1.5f&&e.getEventTime()-edgeStartTime<=1200)listener.onPageSwipe(along<0?1:-1);
             }else if(e.getActionMasked()==MotionEvent.ACTION_CANCEL){edgeSwipe=false;getParent().requestDisallowInterceptTouchEvent(false);}return true;
         }
         if(lassoMode){
@@ -445,14 +452,14 @@ final class PdfPageView extends View {
                 }
                 boolean left=leftDistance<radius&&leftDistance<=rightDistance;
                 boolean right=rightDistance<radius&&!left;
-                if(!onWord&&(left||right)){selectionStartRegion=left?last:first;selectionEndRegion=left?first:last;selectingText=true;selectionCandidate=false;panning=false;drawing=false;scalingOccurred=false;getParent().requestDisallowInterceptTouchEvent(true);return true;}
+                if(!onWord&&(left||right)){selectionStartRegion=left?last:first;selectionEndRegion=left?first:last;selectingText=true;selectionCandidate=false;bodySwipeCandidate=false;panning=false;drawing=false;scalingOccurred=false;getParent().requestDisallowInterceptTouchEvent(true);return true;}
                 clearTextSelectionOverlay();
             }
             startX = currentX = e.getX(); startY = currentY = e.getY();
             lastX = startX; lastY = startY;
-            gestureMoved = false; scalingOccurred = false;
+            gestureMoved = false; scalingOccurred = false;bodySwipeCandidate=pageSwipeEnabled&&!stylus&&!directTextSelection&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk)&&scale<=1f;
             drawing = highlightMode && dest.contains(startX, startY);
-            selectionStartRegion=(!drawing&&!memoMode&&!outlineMode&&inkMode==0)?textRegionAt(startX,startY,dest):null;selectionEndRegion=selectionStartRegion;selectionCandidate=selectionStartRegion!=null;selectingText=false;if(selectionCandidate)selectionHandler.postDelayed(beginTextSelection,280);
+            selectionStartRegion=(!drawing&&!memoMode&&!outlineMode&&inkMode==0)?textRegionAt(startX,startY,dest):null;selectionEndRegion=selectionStartRegion;selectionCandidate=selectionStartRegion!=null;selectingText=false;if(selectionCandidate)selectionHandler.postDelayed(beginTextSelection,420);
             panning = scale > 1f && !outlineMode && !selectionCandidate;
             getParent().requestDisallowInterceptTouchEvent(drawing || panning || selectionCandidate);
             invalidate(); return true;
@@ -462,7 +469,12 @@ final class PdfPageView extends View {
             drawing = false; panning = false; scalingOccurred = true;
             return true;
         }
-        if(e.getAction()==MotionEvent.ACTION_MOVE&&selectionCandidate&&Math.hypot(e.getX()-startX,e.getY()-startY)>6){beginTextSelectionNow();updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));return true;}
+        if(e.getAction()==MotionEvent.ACTION_MOVE&&selectionCandidate&&Math.hypot(e.getX()-startX,e.getY()-startY)>touchSlop()){
+            if(directTextSelection||stylus){beginTextSelectionNow();updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));return true;}
+            selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;panning=scale>1f;
+        }
+        if(bodySwipeCandidate&&!selectingText&&e.getActionMasked()==MotionEvent.ACTION_MOVE){if(Math.hypot(e.getX()-startX,e.getY()-startY)>touchSlop()){gestureMoved=true;selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;}return true;}
+        if(bodySwipeCandidate&&e.getActionMasked()==MotionEvent.ACTION_UP){bodySwipeCandidate=false;if(!selectingText&&gestureMoved){selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;getParent().requestDisallowInterceptTouchEvent(false);float along=verticalPageSwipe?e.getY()-startY:e.getX()-startX,cross=verticalPageSwipe?e.getX()-startX:e.getY()-startY;if(Math.abs(along)>=swipeDistance()&&Math.abs(along)>Math.abs(cross)*1.5f&&e.getEventTime()-edgeStartTime<=1200)listener.onPageSwipe(along<0?1:-1);return true;}}
         if(e.getAction()==MotionEvent.ACTION_MOVE&&selectingText){currentX=e.getX();currentY=e.getY();updateTextSelection(nearestTextRegion(currentX,currentY,dest));return true;}
         if (e.getActionMasked() == MotionEvent.ACTION_POINTER_UP && scale > 1f) {
             int remaining = e.getActionIndex() == 0 ? 1 : 0;
@@ -481,18 +493,19 @@ final class PdfPageView extends View {
             currentX = e.getX(); currentY = e.getY(); invalidate(); return true;
         }
         if (e.getAction() == MotionEvent.ACTION_MOVE && panning && e.getPointerCount() == 1) {
+            if(!gestureMoved&&Math.hypot(e.getX()-startX,e.getY()-startY)<=touchSlop())return true;
             float dx = e.getX() - lastX;
             float dy = e.getY() - lastY;
-            panX += dx; panY += dy;
+            panX += dx*.8f; panY += dy*.8f;
             lastX = e.getX(); lastY = e.getY();
-            if (Math.hypot(e.getX() - startX, e.getY() - startY) > 8) gestureMoved = true;
+            if (Math.hypot(e.getX() - startX, e.getY() - startY) > touchSlop()) gestureMoved = true;
             clampPan(); invalidate(); return true;
         }
         if (e.getAction() == MotionEvent.ACTION_UP) {
             selectionHandler.removeCallbacks(beginTextSelection);
             getParent().requestDisallowInterceptTouchEvent(false);
             if(selectingText){updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));TextSelection selection=finishTextSelection();selectingText=selectionCandidate=false;if(selection!=null){listener.onTextSelectionFinished(selection,e.getX(),e.getY());return true;}}
-            if(selectionCandidate&&selectionStartRegion!=null){
+            if(selectionCandidate&&selectionStartRegion!=null&&(directTextSelection||stylus)){
                 selectedTextRegions.clear();selectedTextRegions.add(selectionStartRegion);
                 TextSelection selection=finishTextSelection();selectionCandidate=false;
                 listener.onTextSelectionFinished(selection,e.getX(),e.getY());invalidate();return true;
@@ -543,19 +556,9 @@ final class PdfPageView extends View {
                     }
                 }
             }
-            if (false && pageSwipeEnabled && inkMode==0 && !highlightMode && !memoMode && !outlineMode && scale <= 1f) {
-                float dx = e.getX() - startX;
-                float dy = e.getY() - startY;
-                float distance = verticalPageSwipe ? Math.abs(dy) : Math.abs(dx);
-                float cross = verticalPageSwipe ? Math.abs(dx) : Math.abs(dy);
-                if (distance > Math.max(72f, cross * 1.25f)) {
-                    int direction = verticalPageSwipe ? (dy < 0 ? 1 : -1) : (dx < 0 ? 1 : -1);
-                    listener.onPageSwipe(direction);
-                    return true;
-                }
-            }
+
         }
-        if(e.getAction()==MotionEvent.ACTION_CANCEL){clearTextSelectionOverlay();}
+        if(e.getAction()==MotionEvent.ACTION_CANCEL){edgeSwipe=bodySwipeCandidate=false;clearTextSelectionOverlay();}
         return true;
     }
 }

@@ -49,6 +49,7 @@ public class PdfPageViewSelectionTest {
                 new RectF(left, 0.10f, left+0.10f, 0.12f), new RectF(0.1f, 0.10f, 0.55f, 0.12f)));
         }
         view.setTextRegions(cached, false);
+        view.setDirectTextSelection(true);
     }
 
     private void event(int action, float x, float y) {
@@ -86,6 +87,7 @@ public class PdfPageViewSelectionTest {
         view.stopTextSelection();
         assertEquals(4, cached.size());
         view.setTextRegions(cached, false);
+        view.setDirectTextSelection(true);
         drag(150, 270);
         assertEquals(List.of("A B"), selections);
     }
