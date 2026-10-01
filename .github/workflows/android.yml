@@ -50,7 +50,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: selection-test-results
-          path: app/build/test-results/testDebugUnitTest
+          path: |
+            app/build/test-results/testDebugUnitTest
+            app/build/test-screenshots
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:

@@ -150,6 +150,8 @@ final class AnnotationStore {
         sidecarDirectory=new java.io.File(context.getFilesDir(),"annotations");
     }
 
+    void rebind(Uri uri) { key = "doc_" + sha256(uri.toString()); save(); }
+
     void open(Uri uri) {
         key = "doc_" + sha256(uri.toString());
         marks.clear();
