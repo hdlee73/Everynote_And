@@ -18,7 +18,7 @@ final class FolderTreeView extends ScrollView {
     void setFolderMenu(java.util.function.BiConsumer<File,android.view.View> menu){this.menu=menu;}
     FolderTreeView(Context context,LibraryRepository repository,File selected,Selected listener){
         super(context);this.repository=repository;this.listener=listener;this.selected=selected;
-        rows=new LinearLayout(context);rows.setOrientation(LinearLayout.VERTICAL);rows.setPadding(dp(6),dp(8),dp(6),dp(8));addView(rows,new LayoutParams(-1,-2));setBackgroundColor(0xFFF1F4F8);
+        rows=new LinearLayout(context);rows.setOrientation(LinearLayout.VERTICAL);rows.setPadding(dp(8),dp(10),dp(8),dp(10));addView(rows,new LayoutParams(-1,-2));setBackgroundColor(0xFFF3F6FA);
         for(File parent=selected;parent!=null;parent=parent.getParentFile()){expanded.add(parent.getAbsolutePath());if(parent.equals(repository.root))break;}reload();
     }
     File selected(){return selected;}
@@ -27,10 +27,10 @@ final class FolderTreeView extends ScrollView {
     private void addFolder(File folder,int depth){
         List<File> children=new ArrayList<>();for(File file:repository.list(folder))if(file.isDirectory())children.add(file);
         LinearLayout row=new LinearLayout(getContext());row.setGravity(android.view.Gravity.CENTER_VERTICAL);row.setPadding(dp(Math.min(depth,12)*12),0,dp(3),0);
-        if(folder.equals(selected)){GradientDrawable bg=new GradientDrawable();bg.setColor(0xFFDCEAFE);bg.setCornerRadius(dp(8));row.setBackground(bg);}
+        if(folder.equals(selected)){GradientDrawable bg=new GradientDrawable();bg.setColor(0xFFE3EDFB);bg.setCornerRadius(dp(10));row.setBackground(bg);}
         TextView arrow=new TextView(getContext());arrow.setGravity(android.view.Gravity.CENTER);arrow.setText(children.isEmpty()?"":expanded.contains(folder.getAbsolutePath())?"▾":"▸");arrow.setTextSize(17);arrow.setTextColor(0xFF52647A);arrow.setContentDescription(folder.getName()+" 하위 폴더 펼치기");row.addView(arrow,new LinearLayout.LayoutParams(dp(28),dp(46)));
         arrow.setOnClickListener(v->{if(!expanded.remove(folder.getAbsolutePath()))expanded.add(folder.getAbsolutePath());reload();});
-        TextView name=new TextView(getContext());name.setText(folder.equals(repository.root)?"모든 문서":folder.getName());name.setTextSize(14);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setTextColor(folder.equals(selected)?0xFF2563EB:0xFF334155);android.graphics.drawable.Drawable icon=getContext().getDrawable(R.drawable.ic_folder_open).mutate();icon.setTint(repository.folderColor(folder));name.setCompoundDrawablesWithIntrinsicBounds(icon,null,null,null);name.setCompoundDrawablePadding(dp(6));row.addView(name,new LinearLayout.LayoutParams(0,dp(46),1));name.setContentDescription("폴더 "+name.getText());name.setOnClickListener(v->{selected=folder;reload();listener.folder(folder);});
+        TextView name=new TextView(getContext());name.setText(folder.equals(repository.root)?"모든 문서":folder.getName());name.setTextSize(14);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setTextColor(folder.equals(selected)?0xFF2563EB:0xFF334155);android.graphics.drawable.Drawable icon=new FolderIconDrawable(repository.folderColor(folder),dp(26));name.setCompoundDrawablesWithIntrinsicBounds(icon,null,null,null);name.setCompoundDrawablePadding(dp(8));name.setGravity(android.view.Gravity.START|android.view.Gravity.CENTER_VERTICAL);name.setIncludeFontPadding(false);row.addView(name,new LinearLayout.LayoutParams(0,dp(46),1));name.setContentDescription("폴더 "+name.getText());name.setOnClickListener(v->{selected=folder;reload();listener.folder(folder);});
         name.setOnLongClickListener(v->{if(menu==null)return false;menu.accept(folder,v);return true;});rows.addView(row,new LinearLayout.LayoutParams(-1,dp(46)));if(expanded.contains(folder.getAbsolutePath()))for(File child:children)addFolder(child,depth+1);
     }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
