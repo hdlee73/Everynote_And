@@ -40,12 +40,37 @@ final class NotebookFiles {
             replace(temp,file);return count;
         }finally{temp.delete();}
     }
+    /** Inserts a blank paper page right after {@code afterIndex} (the last page when out of range). */
+    static int insert(Context context,File file,Paper paper,int afterIndex)throws IOException{
+        File temp=File.createTempFile(".page-",".tmp",file.getParentFile());int count;
+        try{
+            try(PDDocument pdf=PDDocument.load(file,MemoryUsageSetting.setupTempFileOnly().setTempDir(context.getCacheDir()))){
+                if(!pdf.getCurrentAccessPermission().canModify())throw new IOException("페이지 추가가 허용되지 않는 PDF입니다");
+                addPaper(pdf,paper,Math.min(afterIndex,pdf.getNumberOfPages()-1));count=pdf.getNumberOfPages();pdf.save(temp);
+            }
+            replace(temp,file);return count;
+        }finally{temp.delete();}
+    }
+    /** Deletes one page and returns the remaining page count. The last remaining page cannot be deleted. */
+    static int delete(Context context,File file,int index)throws IOException{
+        File temp=File.createTempFile(".page-",".tmp",file.getParentFile());int count;
+        try{
+            try(PDDocument pdf=PDDocument.load(file,MemoryUsageSetting.setupTempFileOnly().setTempDir(context.getCacheDir()))){
+                if(!pdf.getCurrentAccessPermission().canModify())throw new IOException("페이지 삭제가 허용되지 않는 PDF입니다");
+                if(index<0||index>=pdf.getNumberOfPages())throw new IOException("삭제할 페이지가 없습니다");
+                if(pdf.getNumberOfPages()<=1)throw new IOException("마지막 한 페이지는 삭제할 수 없습니다");
+                pdf.removePage(index);count=pdf.getNumberOfPages();pdf.save(temp);
+            }
+            replace(temp,file);return count;
+        }finally{temp.delete();}
+    }
     static void replace(File temp,File target)throws IOException{
         try{Files.move(temp.toPath(),target.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);}
         catch(AtomicMoveNotSupportedException error){Files.move(temp.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING);}
     }
-    private static void addPaper(PDDocument pdf,Paper paper)throws IOException{
-        PDPage page=new PDPage(PDRectangle.A4);pdf.addPage(page);float width=page.getMediaBox().getWidth(),height=page.getMediaBox().getHeight();
+    private static void addPaper(PDDocument pdf,Paper paper)throws IOException{addPaper(pdf,paper,-1);}
+    private static void addPaper(PDDocument pdf,Paper paper,int afterIndex)throws IOException{
+        PDPage page=new PDPage(PDRectangle.A4);if(afterIndex<0||afterIndex>=pdf.getNumberOfPages())pdf.addPage(page);else pdf.getPages().insertAfter(page,pdf.getPage(afterIndex));float width=page.getMediaBox().getWidth(),height=page.getMediaBox().getHeight();
         try(PDPageContentStream canvas=new PDPageContentStream(pdf,page)){
             canvas.setNonStrokingColor(Color.red(paper.color),Color.green(paper.color),Color.blue(paper.color));canvas.addRect(0,0,width,height);canvas.fill();
             if(paper.kind==0)return;

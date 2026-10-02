@@ -1,0 +1,79 @@
+package com.hdlee.pdfnote;
+
+import android.graphics.Bitmap;
+import android.net.Uri;
+import android.view.*;
+import android.widget.*;
+import java.lang.reflect.*;
+import java.util.*;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.shadows.ShadowDialog;
+import android.graphics.pdf.PdfRenderer;
+import static org.junit.Assert.*;
+
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk=28,qualifiers="mdpi",shadows=ReadingToolbarTest.RendererShadow.class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+public class InlineTextTest {
+    private MainActivity activity;private AnnotationStore store;private View root;
+    @Before public void setup()throws Exception{
+        activity=Robolectric.buildActivity(MainActivity.class).setup().get();
+        store=new AnnotationStore(activity);store.open(Uri.parse("content://inline/"+UUID.randomUUID()));
+        set("store",store);set("renderer",new PdfRenderer(null));
+        root=field("root");root.measure(View.MeasureSpec.makeMeasureSpec(360,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(720,View.MeasureSpec.EXACTLY));root.layout(0,0,360,720);
+        PdfPageView page=field("firstPageView");page.showPage(Bitmap.createBitmap(600,850,Bitmap.Config.ARGB_8888),0,store.marks,store.strokes,store.translations);page.setAnnotationStore(store);
+        root.measure(View.MeasureSpec.makeMeasureSpec(360,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(720,View.MeasureSpec.EXACTLY));root.layout(0,0,360,720);
+    }
+    @SuppressWarnings("unchecked") private <T>T field(String name)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);return (T)f.get(activity);}
+    private void set(String name,Object value)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);f.set(activity,value);}
+    private void invoke(String name)throws Exception{Method m=MainActivity.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(activity);}
+    private View byTag(String tag){return root.findViewWithTag(tag);}
+    private static View byDescription(View view,String text){if(text.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=byDescription(((ViewGroup)view).getChildAt(i),text);if(found!=null)return found;}return null;}
+    private EditText startTyping(float x,float y)throws Exception{invoke("toggleTyping");activity.onMemoPointRequested(0,x,y);EditText edit=(EditText)byTag("inline_text");assertNotNull("입력창이 페이지 위에 바로 나타나야 합니다",edit);return edit;}
+
+    @Test public void tappingThePageTypesRightThereWithoutADialog()throws Exception{
+        EditText edit=startTyping(.2f,.3f);assertNull("별도 입력 대화상자는 열리지 않습니다",ShadowDialog.getLatestDialog());
+        assertNotNull(byTag("inline_style_bar"));assertTrue(edit.getParent()==field("viewportLayer"));
+        edit.setText("안녕하세요\n두 번째 줄");byTag("text_done").performClick();
+        assertNull(byTag("inline_text"));assertNull(byTag("inline_style_bar"));assertEquals(1,store.elements.size());
+        AnnotationStore.PageElement e=store.elements.get(0);assertEquals("안녕하세요\n두 번째 줄",e.text);assertEquals(.2f,e.left,.001f);assertEquals(.3f,e.top,.001f);assertTrue(e.bottom>e.top);assertTrue(e.right>e.left);assertEquals("sans",e.font);
+        assertTrue("완료 후에도 텍스트 모드는 유지",(Boolean)field("memoMode"));
+    }
+    @Test public void styleBarChangesFontBoldItalicSizeAndColor()throws Exception{
+        EditText edit=startTyping(.1f,.1f);edit.setText("서식");
+        int before=Math.round(AnnotationStore.PageElement.DEFAULT_TEXT_SIZE*595);
+        byTag("text_bold").performClick();byTag("text_italic").performClick();
+        View bigger=byDescription(root,"글자 크게");bigger.performClick();bigger.performClick();bigger.performClick();
+        ViewGroup fonts=(ViewGroup)byTag("text_fonts");fonts.getChildAt(1).performClick();
+        View color=byDescription(root,"색상 6");color.performClick();
+        assertEquals((before+3)+"pt",((TextView)byTag("text_size")).getText().toString());
+        byTag("text_done").performClick();
+        AnnotationStore.PageElement e=store.elements.get(0);assertTrue(e.bold);assertTrue(e.italic);assertEquals("serif",e.font);assertEquals((before+3)/595f,e.textSize,.0005f);assertEquals(0xFFDC2626,e.color);
+        activity.onMemoPointRequested(0,.1f,.6f);EditText next=(EditText)byTag("inline_text");assertNotNull(next);byTag("text_done").performClick();assertEquals("빈 상자는 저장하지 않습니다",1,store.elements.size());
+        activity.onMemoPointRequested(0,.1f,.6f);assertEquals("마지막 서식이 이어집니다","serif",(String)field("inlineElement").getClass().getDeclaredField("font").get(field("inlineElement")));
+    }
+    @Test public void tappingAnExistingBoxEditsItInPlaceAndEmptyingDeletesIt()throws Exception{
+        AnnotationStore.PageElement e=new AnnotationStore.PageElement();e.page=0;e.text="원래 글";e.left=.1f;e.top=.1f;e.right=.6f;e.bottom=.2f;store.elements.add(e);
+        activity.onElementTapped(e);EditText edit=(EditText)byTag("inline_text");assertNotNull(edit);assertEquals("원래 글",edit.getText().toString());assertNull(ShadowDialog.getLatestDialog());
+        edit.setText("고친 글");byTag("text_done").performClick();assertEquals(1,store.elements.size());assertSame(e,store.elements.get(0));assertEquals("고친 글",e.text);
+        activity.onElementTapped(e);((EditText)byTag("inline_text")).setText("   ");byTag("text_done").performClick();assertTrue(store.elements.isEmpty());
+    }
+    @Test public void deleteButtonRemovesTheBoxAndBackKeyFinishesEditing()throws Exception{
+        AnnotationStore.PageElement e=new AnnotationStore.PageElement();e.page=0;e.text="지울 글";e.left=.1f;e.top=.4f;e.right=.6f;e.bottom=.5f;store.elements.add(e);
+        activity.onElementTapped(e);byDescription(root,"글상자 삭제").performClick();assertTrue(store.elements.isEmpty());assertNull(byTag("inline_text"));
+        EditText edit=startTyping(.3f,.3f);edit.setText("뒤로 가기로 저장");activity.onBackPressed();assertNull(byTag("inline_text"));assertEquals(1,store.elements.size());assertEquals("뒤로 가기로 저장",store.elements.get(0).text);
+    }
+    @Test public void headerTitleRenamesAndLassoIsOnTheMainToolbar()throws Exception{
+        View title=byTag("document_title");assertNotNull(title);assertTrue(title.hasOnClickListeners());
+        View bar=byTag("reading_toolbar");View lasso=byDescription(bar,"올가미 선택");assertNotNull("올가미는 메인 하단 도구막대에 있습니다",lasso);
+        lasso.performClick();PdfPageView page=field("pageView");assertTrue(page.isLassoMode());assertEquals(View.VISIBLE,byTag("lasso_bar").getVisibility());
+        byTag("lasso_shape_1").performClick();assertEquals(PdfPageView.LASSO_RECT,page.getLassoShape());byTag("lasso_shape_2").performClick();assertEquals(PdfPageView.LASSO_CIRCLE,page.getLassoShape());
+        byDescription(bar,"올가미 선택").performClick();assertFalse(page.isLassoMode());assertEquals(View.GONE,byTag("lasso_bar").getVisibility());
+    }
+}
