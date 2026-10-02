@@ -33,6 +33,7 @@ public class InlineTextTest {
     @SuppressWarnings("unchecked") private <T>T field(String name)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);return (T)f.get(activity);}
     private void set(String name,Object value)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);f.set(activity,value);}
     private void invoke(String name)throws Exception{Method m=MainActivity.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(activity);}
+    private static boolean hasText(View view,String text){if(view instanceof TextView&&((TextView)view).getText().toString().contains(text))return true;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++)if(hasText(((ViewGroup)view).getChildAt(i),text))return true;return false;}
     private View byTag(String tag){return root.findViewWithTag(tag);}
     private static View byDescription(View view,String text){if(text.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=byDescription(((ViewGroup)view).getChildAt(i),text);if(found!=null)return found;}return null;}
     private EditText startTyping(float x,float y)throws Exception{invoke("toggleTyping");activity.onMemoPointRequested(0,x,y);EditText edit=(EditText)byTag("inline_text");assertNotNull("입력창이 페이지 위에 바로 나타나야 합니다",edit);return edit;}
@@ -85,7 +86,7 @@ public class InlineTextTest {
     }
     @Test public void audioNoteTapsOpenAPlayerAndListedRecordingsCanBeDeleted()throws Exception{
         AnnotationStore.PageElement clip=new AnnotationStore.PageElement();clip.page=0;clip.kind="audio";clip.asset=UUID.randomUUID()+".m4a";clip.text="0:12";clip.left=.04f;clip.top=.03f;clip.right=.42f;clip.bottom=.075f;store.elements.add(clip);
-        activity.onElementTapped(clip);android.app.AlertDialog player=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();assertNotNull(player);TextView note=player.findViewById(android.R.id.message);assertNotNull(note);assertTrue(note.getText().toString().contains("찾을 수 없습니다"));player.dismiss();
+        activity.onElementTapped(clip);android.app.AlertDialog player=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();assertNotNull(player);assertTrue("녹음 파일이 없으면 안내합니다",hasText(player.getWindow().getDecorView(),"찾을 수 없습니다"));player.dismiss();
         byDescription(root,"페이지 목록").performClick();byTag("side_tab:3").performClick();assertNotNull("첨부한 녹음이 목록에 보입니다",byTag("recording_item"));
         byDescription(root,"녹음 삭제").performClick();assertTrue(store.elements.isEmpty());assertNull(byTag("recording_item"));
     }
