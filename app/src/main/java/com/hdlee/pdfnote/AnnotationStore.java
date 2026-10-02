@@ -128,10 +128,50 @@ final class AnnotationStore {
         }
     }
     static final class PageElement {
-        int page;String kind="text",text="",asset="";
-        float left=.1f,top=.1f,right=.8f,bottom=.3f;
-        JSONObject toJson()throws JSONException{return new JSONObject().put("page",page).put("kind",kind).put("text",text).put("asset",asset).put("left",left).put("top",top).put("right",right).put("bottom",bottom);}
-        static PageElement fromJson(JSONObject o)throws JSONException{PageElement e=new PageElement();e.page=o.getInt("page");e.kind=o.optString("kind","text");e.text=o.optString("text");e.asset=o.optString("asset");e.left=(float)o.optDouble("left",.1);e.top=(float)o.optDouble("top",.1);e.right=(float)o.optDouble("right",.8);e.bottom=(float)o.optDouble("bottom",.3);if(e.page<0||!Float.isFinite(e.left)||!Float.isFinite(e.top)||!Float.isFinite(e.right)||!Float.isFinite(e.bottom)||e.left<0||e.top<0||e.right>1||e.bottom>1||e.left>=e.right||e.top>=e.bottom||!java.util.Arrays.asList("text","image","link").contains(e.kind)||(!e.asset.isEmpty()&&!e.asset.matches("[a-f0-9-]{36}\\.png")))throw new JSONException("잘못된 노트 요소");return e;}
+        static final float DEFAULT_TEXT_SIZE = .027f;
+        static final int DEFAULT_TEXT_COLOR = 0xFF172033;
+        /** sans=고딕, serif=명조, mono=고정폭, hand=손글씨체 */
+        static final List<String> FONTS = java.util.Arrays.asList("sans", "serif", "mono", "hand");
+        int page;
+        String kind = "text", text = "", asset = "";
+        float left = .1f, top = .1f, right = .8f, bottom = .3f;
+        /** Text height as a fraction of the page width (typing boxes only). */
+        float textSize = DEFAULT_TEXT_SIZE;
+        int color = DEFAULT_TEXT_COLOR;
+        String font = "sans";
+        boolean bold, italic;
+
+        JSONObject toJson() throws JSONException {
+            return new JSONObject().put("page", page).put("kind", kind).put("text", text).put("asset", asset)
+                    .put("left", left).put("top", top).put("right", right).put("bottom", bottom)
+                    .put("textSize", textSize).put("color", color).put("font", font)
+                    .put("bold", bold).put("italic", italic);
+        }
+
+        static PageElement fromJson(JSONObject o) throws JSONException {
+            PageElement e = new PageElement();
+            e.page = o.getInt("page");
+            e.kind = o.optString("kind", "text");
+            e.text = o.optString("text");
+            e.asset = o.optString("asset");
+            e.left = (float) o.optDouble("left", .1);
+            e.top = (float) o.optDouble("top", .1);
+            e.right = (float) o.optDouble("right", .8);
+            e.bottom = (float) o.optDouble("bottom", .3);
+            e.textSize = (float) o.optDouble("textSize", DEFAULT_TEXT_SIZE);
+            e.color = o.optInt("color", DEFAULT_TEXT_COLOR);
+            e.font = o.optString("font", "sans");
+            if (!FONTS.contains(e.font)) e.font = "sans";
+            e.bold = o.optBoolean("bold", false);
+            e.italic = o.optBoolean("italic", false);
+            if (e.page < 0 || !Float.isFinite(e.left) || !Float.isFinite(e.top) || !Float.isFinite(e.right) || !Float.isFinite(e.bottom)
+                    || e.left < 0 || e.top < 0 || e.right > 1 || e.bottom > 1 || e.left >= e.right || e.top >= e.bottom
+                    || !java.util.Arrays.asList("text", "image", "link").contains(e.kind)
+                    || (!e.asset.isEmpty() && !e.asset.matches("[a-f0-9-]{36}\\.png")))
+                throw new JSONException("잘못된 노트 요소");
+            if (!Float.isFinite(e.textSize) || e.textSize < .004f || e.textSize > .3f) e.textSize = DEFAULT_TEXT_SIZE;
+            return e;
+        }
     }
     final List<PageElement> elements=new ArrayList<>();
     final List<StudyEntry> studyEntries=new ArrayList<>();
