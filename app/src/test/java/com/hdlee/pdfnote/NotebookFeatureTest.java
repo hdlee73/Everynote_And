@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk=28,qualifiers="mdpi")
+@Config(sdk=28,qualifiers="mdpi",shadows=ReadingToolbarTest.RendererShadow.class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class NotebookFeatureTest {
     @Test public void pageElementsPersistAndSearchFindsTypedNotes()throws Exception{AnnotationStore store=new AnnotationStore(RuntimeEnvironment.getApplication());store.open(Uri.parse("content://notebook/"+UUID.randomUUID()));AnnotationStore.PageElement element=new AnnotationStore.PageElement();element.text="Financial research 금융";store.elements.add(element);store.save();AnnotationStore restored=new AnnotationStore(RuntimeEnvironment.getApplication());String backup=store.exportJson(Uri.parse("content://test"),"note");restored.importJson(backup,2);assertEquals(1,restored.elements.size());assertEquals(1,SearchScanner.annotations(restored,"financial").size());assertEquals(1,SearchScanner.annotations(restored,"금융").size());assertTrue(SearchScanner.annotations(restored,"missing").isEmpty());}
