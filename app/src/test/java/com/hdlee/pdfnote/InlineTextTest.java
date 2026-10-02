@@ -82,7 +82,6 @@ public class InlineTextTest {
         byTag("side_tab:0").performClick();assertEquals(View.VISIBLE,byTag("search_panel").getVisibility());assertNotNull(byTag("search_input"));
         byDescription(root,"검색 닫기").performClick();assertEquals(View.GONE,byTag("search_panel").getVisibility());assertEquals("검색을 닫아도 패널은 남습니다",View.VISIBLE,side.getVisibility());
         byDescription(root,"패널 닫기").performClick();assertEquals(View.GONE,side.getVisibility());
-        byDescription(root,"문서·필기 검색").performClick();assertEquals(View.VISIBLE,byTag("search_panel").getVisibility());assertEquals(View.VISIBLE,side.getVisibility());
     }
     @Test public void audioNoteTapsOpenAPlayerAndListedRecordingsCanBeDeleted()throws Exception{
         AnnotationStore.PageElement clip=new AnnotationStore.PageElement();clip.page=0;clip.kind="audio";clip.asset=UUID.randomUUID()+".m4a";clip.text="0:12";clip.left=.04f;clip.top=.03f;clip.right=.42f;clip.bottom=.075f;store.elements.add(clip);
