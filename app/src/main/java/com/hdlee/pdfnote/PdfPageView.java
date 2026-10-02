@@ -267,6 +267,9 @@ final class PdfPageView extends View {
         if (scale <= 1f) panX = panY = 0f;
     }
 
+    /** Where the page is drawn inside this view (follows zoom and pan), in view pixels. */
+    RectF pageRect() { return contentRect(); }
+
     private RectF contentRect() {
         if (bitmap == null) return new RectF();
         float[] size = contentSize();

@@ -275,6 +275,34 @@ final class AnnotationStore {
         return root.toString(2);
     }
 
+    /** Removes everything anchored to a deleted page and renumbers the pages after it. Does not save. */
+    void removePage(int index) {
+        marks.removeIf(m -> m.page == index);
+        strokes.removeIf(s -> s.page == index);
+        translations.removeIf(t -> t.page == index);
+        outlines.removeIf(o -> o.page == index);
+        elements.removeIf(e -> e.page == index);
+        studyEntries.removeIf(e -> e.page == index);
+        bookmarks.remove(index);
+        shiftPages(index + 1, -1);
+    }
+
+    /** Makes room for a page inserted right after {@code afterIndex}. Does not save. */
+    void insertPageAfter(int afterIndex) { shiftPages(afterIndex + 1, 1); }
+
+    private void shiftPages(int from, int delta) {
+        for (Mark m : marks) if (m.page >= from) m.page += delta;
+        for (InkStroke s : strokes) if (s.page >= from) s.page += delta;
+        for (TranslationNote t : translations) if (t.page >= from) t.page += delta;
+        for (OutlineItem o : outlines) if (o.page >= from) o.page += delta;
+        for (PageElement e : elements) if (e.page >= from) e.page += delta;
+        for (StudyEntry e : studyEntries) if (e.page >= from) e.page += delta;
+        Set<Integer> moved = new HashSet<>();
+        for (int page : bookmarks) moved.add(page >= from ? page + delta : page);
+        bookmarks.clear();
+        bookmarks.addAll(moved);
+    }
+
     void importJson(String json, int pageCount) throws JSONException {
         JSONObject root=new JSONObject(json);
         String format=root.optString("format");

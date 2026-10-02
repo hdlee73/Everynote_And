@@ -48,10 +48,12 @@ final class AnnotationPainter {
     }
 
     static RectF box(RectF dest,AnnotationStore.PageElement e){return new RectF(dest.left+e.left*dest.width(),dest.top+e.top*dest.height(),dest.left+e.right*dest.width(),dest.top+e.bottom*dest.height());}
+    /** The text box being edited in place; it is drawn by the editor instead of the page. */
+    static volatile AnnotationStore.PageElement skip;
     static void elements(Context context,Canvas c,RectF d,AnnotationStore store,int page){
         if(store==null)return;
         for(AnnotationStore.PageElement e:store.elements){
-            if(e.page!=page)continue;RectF b=box(d,e);
+            if(e.page!=page||e==skip)continue;RectF b=box(d,e);
             if(e.kind.equals("image")){
                 File file=new File(new File(context.getFilesDir(),"images"),e.asset);Bitmap image=image(file);
                 if(image!=null){

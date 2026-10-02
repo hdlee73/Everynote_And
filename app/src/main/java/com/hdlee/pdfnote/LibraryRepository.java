@@ -21,21 +21,30 @@ final class LibraryRepository {
     List<File> list(File directory){File[] files=directory.listFiles(f->!f.getName().startsWith(".")&&(f.isDirectory()||f.getName().toLowerCase(Locale.ROOT).endsWith(".pdf")));List<File> result=files==null?new ArrayList<>():new ArrayList<>(Arrays.asList(files));result.sort(Comparator.comparing((File f)->!f.isDirectory()).thenComparing(File::getName,String.CASE_INSENSITIVE_ORDER));return result;}
     static final String[] SORT_NAMES={"이름 오름차순","이름 내림차순","최근 수정","최근 열기"};
     static final String[] VIEW_NAMES={"큰 표지","작은 표지","목록"};
-    static final int[] FOLDER_COLORS={0xFF5C86BE,0xFFDA9A43,0xFF54A485,0xFF9272C3,0xFFD36D86,0xFF718096};
+    static final int[] FOLDER_COLORS={0xFF8FA8F0,0xFFF4B67E,0xFF7FCFB2,0xFFB9A0F2,0xFFF2A3BA,0xFFA6B2C6};
+    private static final int[] LEGACY_FOLDER_COLORS={0xFF5C86BE,0xFFDA9A43,0xFF54A485,0xFF9272C3,0xFFD36D86,0xFF718096};
     static final String[] FOLDER_COLOR_NAMES={"블루","오렌지","그린","퍼플","로즈","그레이"};
     int sortMode(){return Math.max(0,Math.min(3,preferences.getInt("sort",0)));}
     void sortMode(int mode){preferences.edit().putInt("sort",mode).apply();}
     int viewMode(){return Math.max(0,Math.min(2,preferences.getInt("view",0)));}
     void viewMode(int mode){preferences.edit().putInt("view",mode).apply();}
-    int folderColor(File folder){return preferences.getInt("color:"+folder.getAbsolutePath(),FOLDER_COLORS[0]);}
+    int folderColor(File folder){int saved=preferences.getInt("color:"+folder.getAbsolutePath(),FOLDER_COLORS[0]);for(int i=0;i<LEGACY_FOLDER_COLORS.length;i++)if(saved==LEGACY_FOLDER_COLORS[i])return FOLDER_COLORS[i];return saved;}
     void folderColor(File folder,int color){preferences.edit().putInt("color:"+folder.getAbsolutePath(),color).apply();}
     void opened(Uri uri){if(managed(uri))preferences.edit().putLong("opened:"+uri.getPath(),System.currentTimeMillis()).apply();}
     List<File> sorted(File directory,String query){
         List<File> items=list(directory);String q=query.trim().toLowerCase(Locale.ROOT);items.removeIf(f->!f.getName().toLowerCase(Locale.ROOT).contains(q));
+        items.sort(Comparator.comparing((File f)->!f.isDirectory()).thenComparing(order()));return items;
+    }
+    private Comparator<File> order(){
         Comparator<File> byName=Comparator.comparing(File::getName,String.CASE_INSENSITIVE_ORDER);Comparator<File> order=byName;
         switch(sortMode()){case 1:order=byName.reversed();break;case 2:order=Comparator.comparingLong(this::modified).reversed().thenComparing(byName);break;case 3:order=Comparator.comparingLong((File f)->preferences.getLong("opened:"+f.getAbsolutePath(),0)).reversed().thenComparing(byName);break;}
-        items.sort(Comparator.comparing((File f)->!f.isDirectory()).thenComparing(order));return items;
+        return order;
     }
+    /** Every PDF and note in the library, whatever folder it lives in (the trash is excluded), in the current sort order. */
+    List<File> allDocuments(String query){
+        List<File> items=new ArrayList<>();collectDocuments(root,items);String q=query.trim().toLowerCase(Locale.ROOT);items.removeIf(f->!f.getName().toLowerCase(Locale.ROOT).contains(q));items.sort(order());return items;
+    }
+    private void collectDocuments(File directory,List<File> into){for(File item:list(directory)){if(item.isDirectory())collectDocuments(item,into);else into.add(item);}}
     private long modified(File file){return Math.max(file.lastModified(),AnnotationStore.modified(context,Uri.fromFile(file)));}
     private File trashFolder(){File folder=new File(root,".trash");folder.mkdirs();return folder;}
     private boolean inTrash(File file){try{return file.getCanonicalPath().startsWith(new File(root,".trash").getCanonicalPath()+File.separator);}catch(IOException error){return true;}}
@@ -88,6 +97,12 @@ final class LibraryRepository {
     }
     private void cloneAnnotations(Uri source,Uri target,int count)throws JSONException{
         AnnotationStore original=new AnnotationStore(context);original.open(source);AnnotationStore clone=new AnnotationStore(context);clone.open(target);clone.importJson(original.exportJson(source,"PDF"),count);
+    }
+    synchronized int insertPage(File file,NotebookFiles.Paper requested,int afterIndex)throws IOException{
+        if(!managed(file)||!file.isFile())throw new IOException("저장된 PDF가 아닙니다");return NotebookFiles.insert(context,file,requested,afterIndex);
+    }
+    synchronized int deletePage(File file,int index)throws IOException{
+        if(!managed(file)||!file.isFile())throw new IOException("저장된 PDF가 아닙니다");return NotebookFiles.delete(context,file,index);
     }
     synchronized int append(File file,NotebookFiles.Paper requested)throws IOException{
         if(!managed(file)||!file.isFile())throw new IOException("저장된 PDF가 아닙니다");return NotebookFiles.append(context,file,requested);
