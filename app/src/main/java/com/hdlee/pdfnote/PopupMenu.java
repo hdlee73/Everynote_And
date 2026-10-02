@@ -5,7 +5,7 @@ import android.view.View;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Drop-in replacement for android.widget.PopupMenu that shows the app's bottom action sheet instead of a floating list. */
+/** Drop-in replacement for android.widget.PopupMenu that shows the app's compact anchored menu card. */
 final class PopupMenu {
     static final class Item {
         private final int id; private final String title;
@@ -20,13 +20,17 @@ final class PopupMenu {
     }
     interface OnMenuItemClickListener { boolean onMenuItemClick(Item item); }
 
-    private final Context context; private final Menu menu = new Menu(); private OnMenuItemClickListener listener;
-    PopupMenu(Context context, View anchor) { this.context = context; }
+    private final Context context; private final View anchor; private final Menu menu = new Menu(); private OnMenuItemClickListener listener;
+    PopupMenu(Context context, View anchor) { this.context = context; this.anchor = anchor; }
     Menu getMenu() { return menu; }
     void setOnMenuItemClickListener(OnMenuItemClickListener l) { listener = l; }
     void show() {
-        CharSequence[] titles = new CharSequence[menu.items.size()];
-        for (int i = 0; i < titles.length; i++) titles[i] = menu.items.get(i).title;
-        new AlertDialog.Builder(context).setItems(titles, (d, index) -> { if (listener != null) listener.onMenuItemClick(menu.items.get(index)); }).show();
+        List<AnchoredMenu.Row> rows = new ArrayList<>();
+        for (Item item : menu.items) {
+            boolean checked = item.title.startsWith("✓");
+            String label = checked ? item.title.substring(1).trim() : item.title;
+            rows.add(new AnchoredMenu.Row(label, 0, () -> { if (listener != null) listener.onMenuItemClick(item); }).selected(checked));
+        }
+        AnchoredMenu.show(context, anchor, false, rows, null);
     }
 }
