@@ -9,6 +9,13 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:alertDialogTheme">@style/ReaderDialog</item>
+        <item name="android:popupMenuStyle">@style/RoundPopupMenu</item>
+        <item name="android:editTextBackground">@drawable/field_background</item>
+        <item name="android:textAppearanceLargePopupMenu">@style/PopupItemText</item>
+        <item name="android:textAppearanceSmallPopupMenu">@style/PopupItemText</item>
+        <item name="android:listPreferredItemHeightSmall">52dp</item>
+        <item name="android:listPreferredItemPaddingLeft">20dp</item>
+        <item name="android:listPreferredItemPaddingRight">20dp</item>
     </style>
     <style name="ReaderDialog" parent="android:style/Theme.Material.Light.Dialog.Alert">
         <item name="android:windowBackground">@drawable/dialog_surface</item>
@@ -17,6 +24,33 @@
         <item name="android:backgroundDimAmount">0.32</item>
         <item name="android:windowMinWidthMajor">88%</item>
         <item name="android:windowMinWidthMinor">92%</item>
+        <item name="android:windowTitleStyle">@style/DialogTitle</item>
+        <item name="android:buttonBarButtonStyle">@style/DialogButton</item>
+        <item name="android:editTextBackground">@drawable/field_background</item>
+        <item name="android:textColorPrimary">#3D4266</item>
+        <item name="android:textColorSecondary">#5B5F82</item>
+    </style>
+    <style name="DialogTitle" parent="android:TextAppearance.Material.DialogWindowTitle">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#3D4266</item>
+        <item name="android:paddingBottom">6dp</item>
+    </style>
+    <style name="DialogButton" parent="android:Widget.Material.Light.Button.Borderless.Colored">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#5062E0</item>
+        <item name="android:minWidth">64dp</item>
+    </style>
+    <style name="RoundPopupMenu" parent="android:Widget.Material.Light.PopupMenu">
+        <item name="android:popupBackground">@drawable/popup_surface</item>
+        <item name="android:popupElevation">14dp</item>
+        <item name="android:overlapAnchor">true</item>
+    </style>
+    <style name="PopupItemText" parent="android:TextAppearance.Material.Widget.PopupMenu.Large">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">#3D4266</item>
     </style>
     <style name="SheetAnimation">
         <item name="android:windowEnterAnimation">@anim/sheet_in</item>

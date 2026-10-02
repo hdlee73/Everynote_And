@@ -51,8 +51,8 @@ jobs:
           python3 - <<'PY'
           import glob,re,os,xml.etree.ElementTree as ET
           n=0
-          if os.path.exists('build.log'):
-              errs=[l.strip() for l in open('build.log',errors='ignore') if re.search(r'error:|\.java:\d+|FAILED|What went wrong',l)]
+          if os.path.exists('build.log') and not glob.glob('app/build/test-results/testDebugUnitTest/*.xml'):
+              errs=[l.strip() for l in open('build.log',errors='ignore') if re.search(r'error:|symbol:|location:|What went wrong',l)]
               for l in errs[:10]: print('::error title=build::'+l[:400].replace('%','%25'))
           for f in sorted(glob.glob('app/build/test-results/testDebugUnitTest/*.xml')):
               for case in ET.parse(f).getroot().iter('testcase'):
