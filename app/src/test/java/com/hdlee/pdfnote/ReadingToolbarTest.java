@@ -14,7 +14,6 @@ import org.junit.*;
 import org.junit.runner.RunWith;
 import org.robolectric.*;
 import org.robolectric.annotation.*;
-import org.robolectric.shadows.ShadowAlertDialog;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
@@ -39,12 +38,12 @@ public class ReadingToolbarTest {
         assertEquals(54,bar.getLayoutParams().height-bar.getPaddingBottom());assertEquals(86,page.getLayoutParams().width);assertTrue(page.getLayoutParams().width<bar.getWidth()/3);
         description(bar,"문서 개요").performClick();View side=root.findViewWithTag("side_panel");assertEquals("개요는 미리보기 패널의 탭으로 열립니다",View.VISIBLE,side.getVisibility());assertNotNull(root.findViewWithTag("outline_add"));description(bar,"문서 개요").performClick();assertEquals(View.GONE,side.getVisibility());
         description(bar,"보기 방법").performClick();android.app.Dialog view=org.robolectric.shadows.ShadowDialog.getLatestDialog();assertTrue(hasText(view.getWindow().getDecorView(),"두 쪽 보기 · 꺼짐"));view.dismiss();assertNotNull(description(bar,"타이핑"));
-        page.performClick();assertEquals("페이지로 이동",org.robolectric.Shadows.shadowOf(ShadowAlertDialog.getLatestAlertDialog()).getTitle().toString());ShadowAlertDialog.getLatestAlertDialog().dismiss();screenshot(root,"reading-toolbar.png");
+        page.performClick();assertEquals("페이지로 이동",((AlertDialog)org.robolectric.shadows.ShadowDialog.getLatestDialog()).getTitleText().toString());org.robolectric.shadows.ShadowDialog.getLatestDialog().dismiss();screenshot(root,"reading-toolbar.png");
     }
     @Test public void fullscreenCanAddOutlineWithoutExitingAndReturnsToNormalToolbar()throws Exception{
         invoke("toggleFullscreen");assertTrue((Boolean)field("fullscreen"));View dock=field("fullscreenDock");assertEquals(View.VISIBLE,dock.getVisibility());assertEquals(View.GONE,((View)field("bottomBar")).getVisibility());
         description(dock,"전체 화면 개요").performClick();View panelRoot=field("root");View addOutline=panelRoot.findViewWithTag("outline_add");assertNotNull(addOutline);addOutline.performClick();org.robolectric.shadows.ShadowLooper.idleMainLooper();assertTrue("Outline placement starts from the panel", (Boolean)field("outlineMode"));assertTrue((Boolean)field("fullscreen"));
-        activity.onOutlinePointRequested(0,.25f,.5f);AlertDialog editor=ShadowAlertDialog.getLatestAlertDialog();EditText input=findEdit(editor.getWindow().getDecorView());input.setText("중요한 내용");editor.getButton(AlertDialog.BUTTON_POSITIVE).performClick();org.robolectric.shadows.ShadowLooper.idleMainLooper();assertEquals(1,store.outlines.size());assertEquals("중요한 내용",store.outlines.get(0).title);assertEquals(.25f,store.outlines.get(0).x,.001f);assertFalse((Boolean)field("outlineMode"));assertTrue((Boolean)field("fullscreen"));assertEquals(View.VISIBLE,dock.getVisibility());
+        activity.onOutlinePointRequested(0,.25f,.5f);AlertDialog editor=(AlertDialog)org.robolectric.shadows.ShadowDialog.getLatestDialog();EditText input=findEdit(editor.getWindow().getDecorView());input.setText("중요한 내용");editor.getButton(AlertDialog.BUTTON_POSITIVE).performClick();org.robolectric.shadows.ShadowLooper.idleMainLooper();assertEquals(1,store.outlines.size());assertEquals("중요한 내용",store.outlines.get(0).title);assertEquals(.25f,store.outlines.get(0).x,.001f);assertFalse((Boolean)field("outlineMode"));assertTrue((Boolean)field("fullscreen"));assertEquals(View.VISIBLE,dock.getVisibility());
         View root=field("root");layout(root,360,720);screenshot(root,"fullscreen-toolbar.png");description(dock,"전체 화면 종료").performClick();assertFalse((Boolean)field("fullscreen"));assertEquals(View.VISIBLE,((View)field("bottomBar")).getVisibility());assertEquals(View.GONE,dock.getVisibility());
     }
     @Test public void longTabNamesStayAtTheirBeginningWithEndEllipsis()throws Exception{
