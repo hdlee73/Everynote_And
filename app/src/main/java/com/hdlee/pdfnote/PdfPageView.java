@@ -85,7 +85,7 @@ final class PdfPageView extends View {
     private boolean verticalPageSwipe;
     private boolean outlineMode;
     private int inkMode;
-    private int inkColor=0xFF1F1F1F;
+    private int inkColor=0xFF1C1C1E;
     private float inkWidth=0.004f;
     private AnnotationStore.InkStroke activeStroke;
     private boolean stylusDrawing;
@@ -289,7 +289,7 @@ final class PdfPageView extends View {
         if(!suppressSelection&&!selectedTextRegions.isEmpty()){
             paint.setStyle(Paint.Style.FILL);paint.setColor(0x663B82F6);
             for(RectF b:selectionLineBounds()){canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),5,5,paint);}
-            RectF first=selectedTextRegions.get(0).wordBounds,last=selectedTextRegions.get(selectedTextRegions.size()-1).wordBounds;float handle=5f*getResources().getDisplayMetrics().density;paint.setColor(0xFF2563EB);canvas.drawCircle(dest.left+first.left*dest.width(),dest.top+first.bottom*dest.height(),handle,paint);canvas.drawCircle(dest.left+last.right*dest.width(),dest.top+last.bottom*dest.height(),handle,paint);
+            RectF first=selectedTextRegions.get(0).wordBounds,last=selectedTextRegions.get(selectedTextRegions.size()-1).wordBounds;float handle=5f*getResources().getDisplayMetrics().density;paint.setColor(0xFF007AFF);canvas.drawCircle(dest.left+first.left*dest.width(),dest.top+first.bottom*dest.height(),handle,paint);canvas.drawCircle(dest.left+last.right*dest.width(),dest.top+last.bottom*dest.height(),handle,paint);
         }
         if (marks != null) for (AnnotationStore.Mark m : marks) if (m.page == page) {
             if (!m.noteOnly) {
@@ -312,7 +312,7 @@ final class PdfPageView extends View {
         if(!suppressSelection&&searchPage==page)drawSearchHighlights(canvas,dest);
         if(!suppressSelection&&!lassoPoints.isEmpty()){
             Path path=lassoPath(dest);lassoPaint.setStyle(Paint.Style.FILL);lassoPaint.setColor(0x222563EB);canvas.drawPath(path,lassoPaint);
-            lassoPaint.setStyle(Paint.Style.STROKE);lassoPaint.setStrokeWidth(2*getResources().getDisplayMetrics().density);lassoPaint.setColor(0xFF2563EB);
+            lassoPaint.setStyle(Paint.Style.STROKE);lassoPaint.setStrokeWidth(2*getResources().getDisplayMetrics().density);lassoPaint.setColor(0xFF007AFF);
             lassoPaint.setPathEffect(new DashPathEffect(new float[]{8,5},0));canvas.drawPath(path,lassoPaint);lassoPaint.setPathEffect(null);
         }
     }
@@ -389,19 +389,20 @@ final class PdfPageView extends View {
         return text.toString();
     }
 
-    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){
+    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){return drawSticky(canvas,dest,nx,ny,text,minimized,accent,0xFFFFF3A6,13,1);}
+    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent,int paper,int fontSp,int boxSize){
         float density=getResources().getDisplayMetrics().density;
         float anchorX=dest.left+nx*dest.width(),anchorY=dest.top+ny*dest.height();
         if(minimized){float r=14*density;RectF box=new RectF(anchorX-r,anchorY-r,anchorX+r,anchorY+r);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,r,paint);paint.setColor(Color.WHITE);paint.setTextSize(17*density);paint.setTextAlign(Paint.Align.CENTER);canvas.drawText("▣",anchorX,anchorY+6*density,paint);paint.setTextAlign(Paint.Align.LEFT);return box;}
-        float w=Math.min(220*density,dest.width()*0.46f),h=96*density;
+        float[] boxW={150,220,300},boxH={64,96,170};float w=Math.min(boxW[boxSize]*density,dest.width()*(boxSize==2?0.7f:0.46f)),h=boxH[boxSize]*density;
         float left=Math.min(dest.right-w-6*density,anchorX+8*density);if(left<dest.left)left=dest.left+6*density;
         float top=Math.max(dest.top+6*density,Math.min(dest.bottom-h-6*density,anchorY));RectF box=new RectF(left,top,left+w,top+h);
-        paint.setColor(0xFFFFF3A6);canvas.drawRoundRect(box,10*density,10*density,paint);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,6*density,paint);
-        paint.setColor(0xFF3F3A2D);paint.setTextSize(13*density);float x=box.left+10*density,y=box.top+22*density,max=box.width()-20*density;
-        for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;line=word;if(y>box.bottom-12*density)return box;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return box;}}
+        paint.setColor(paper);canvas.drawRoundRect(box,10*density,10*density,paint);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,6*density,paint);
+        paint.setColor(0xFF3F3A2D);paint.setTextSize(fontSp*density);float lineHeight=fontSp*1.4f*density;float x=box.left+10*density,y=box.top+(fontSp+9)*density,max=box.width()-20*density;
+        for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=lineHeight;line=word;if(y>box.bottom-12*density)return box;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return box;}}
         return box;
     }
-    private void drawMemo(Canvas canvas,RectF dest,AnnotationStore.Mark m){memoHitBoxes.put(m,drawSticky(canvas,dest,m.right,m.top,m.note,m.minimized,0xFFFFB300));}
+    private void drawMemo(Canvas canvas,RectF dest,AnnotationStore.Mark m){memoHitBoxes.put(m,drawSticky(canvas,dest,m.right,m.top,m.note,m.minimized,0xFFFFB300,m.paper,m.fontSp,m.boxSize));}
     private void drawTranslation(Canvas canvas,RectF dest,AnnotationStore.TranslationNote n){noteHitBoxes.put(n,drawSticky(canvas,dest,n.right,n.top,n.translated,n.minimized,0xFF7C3AED));}
 
     private float strokeWidth(float base,float pressure,RectF dest){float p=Math.max(0.12f,Math.min(1f,pressure));return Math.max(1.5f,base*dest.width()*(0.45f+p*1.15f));}

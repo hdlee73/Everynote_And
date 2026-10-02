@@ -24,9 +24,12 @@ final class AnnotationStore {
         boolean noteOnly;
         boolean visible = true;
         boolean minimized;
+        /** Sticky-note look: paper color, text size in sp, and box size (0 small, 1 medium, 2 large). */
+        int paper = 0xFFFFF3A6, fontSp = 13, boxSize = 1;
 
         JSONObject toJson() throws JSONException {
             JSONObject o = new JSONObject();
+            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize);
             o.put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom)
                     .put("color", color).put("note", note == null ? "" : note)
@@ -47,6 +50,9 @@ final class AnnotationStore {
             m.noteOnly = o.optBoolean("noteOnly", false);
             m.visible = o.optBoolean("visible", true);
             m.minimized = o.optBoolean("minimized", false);
+            m.paper = o.optInt("paper", 0xFFFFF3A6);
+            m.fontSp = Math.max(9, Math.min(28, o.optInt("fontSp", 13)));
+            m.boxSize = Math.max(0, Math.min(2, o.optInt("boxSize", 1)));
             return m;
         }
     }
@@ -82,7 +88,7 @@ final class AnnotationStore {
         float width;
         final List<InkPoint> points=new ArrayList<>();
         JSONObject toJson() throws JSONException { JSONObject o=new JSONObject().put("page",page).put("color",color).put("width",width);JSONArray a=new JSONArray();for(InkPoint p:points)a.put(p.toJson());return o.put("points",a); }
-        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF1F1F1F);s.width=(float)o.optDouble("width",0.004);JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
+        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF1C1C1E);s.width=(float)o.optDouble("width",0.004);JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
     }
 
     static final class TranslationNote {
@@ -129,7 +135,7 @@ final class AnnotationStore {
     }
     static final class PageElement {
         static final float DEFAULT_TEXT_SIZE = .027f;
-        static final int DEFAULT_TEXT_COLOR = 0xFF1F1F1F;
+        static final int DEFAULT_TEXT_COLOR = 0xFF1C1C1E;
         /** sans=고딕, serif=명조, mono=고정폭, hand=손글씨체 */
         static final List<String> FONTS = java.util.Arrays.asList("sans", "serif", "mono", "hand");
         int page;
