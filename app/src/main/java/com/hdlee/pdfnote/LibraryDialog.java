@@ -27,7 +27,7 @@ final class LibraryDialog extends Dialog {
         default void removed(List<File> files){}
     }
     private static final int ALL=0,FAVORITES=1,RECENT=2,FOLDER=3;
-    private static final int INK=0xFF2B2F4A,MUTED=0xFF8A8FA8,ACCENT=0xFF6C7BEA,ACTIVE_BG=0xFFECEBFB,SURFACE=0xFFFCFBFF;
+    private static final int INK=0xFF1F1F1F,MUTED=0xFF8A8A8A,ACCENT=0xFF3E91FF,ACTIVE_BG=0xFFE6F0FF,SURFACE=0xFFFFFFFF;
     private final Activity activity;
     private final LibraryRepository repository;
     private final Actions actions;
@@ -111,7 +111,7 @@ final class LibraryDialog extends Dialog {
         String[] names={"전체","즐겨찾기","이름 변경","공유","복사","이동","삭제"};
         for(String action:names){
             if(action.equals("이름 변경")&&selected.size()!=1)continue;
-            TextView command=button(action,"선택 문서 "+action,v->runSelectionCommand(action));command.setTextSize(14);command.setTextColor(action.equals("삭제")?0xFFE0405F:INK);command.setTypeface(Typeface.DEFAULT_BOLD);command.setPadding(dp(14),0,dp(14),0);command.setBackground(round(0xFFF3F1FB,18));
+            TextView command=button(action,"선택 문서 "+action,v->runSelectionCommand(action));command.setTextSize(14);command.setTextColor(action.equals("삭제")?0xFFE0405F:INK);command.setTypeface(Typeface.DEFAULT_BOLD);command.setPadding(dp(14),0,dp(14),0);command.setBackground(round(0xFFF3F3F3,18));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(44));lp.setMargins(dp(4),0,dp(4),0);selectionCommands.addView(command,lp);
         }
     }
@@ -135,7 +135,7 @@ final class LibraryDialog extends Dialog {
         View dots=new View(activity);dots.setBackground(dotted());LinearLayout.LayoutParams dp1=new LinearLayout.LayoutParams(-1,dp(2));dp1.setMargins(dp(10),dp(8),dp(10),dp(8));panel.addView(dots,dp1);
         panel.addView(drawerRow(R.drawable.ic_folder_open,"폴더","drawer_count:4",null),new LinearLayout.LayoutParams(-1,dp(52)));
         tree=new FolderTreeView(activity,repository,folder,this::selectFolder);tree.setFolderMenu(this::folderMenu);tree.setBackgroundColor(Color.TRANSPARENT);panel.addView(tree,new LinearLayout.LayoutParams(-1,0,1));
-        TextView manage=button("폴더 관리","폴더 관리",this::folderManageMenu);manage.setTextColor(INK);manage.setTextSize(16);manage.setTypeface(Typeface.DEFAULT_BOLD);manage.setBackground(round(0xFFF1F0F6,24));LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,dp(48));mp.setMargins(dp(24),dp(8),dp(24),0);panel.addView(manage,mp);
+        TextView manage=button("폴더 관리","폴더 관리",this::folderManageMenu);manage.setTextColor(INK);manage.setTextSize(16);manage.setTypeface(Typeface.DEFAULT_BOLD);manage.setBackground(round(0xFFF2F2F2,24));LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,dp(48));mp.setMargins(dp(24),dp(8),dp(24),0);panel.addView(manage,mp);
         int width=Math.min(dp(320),Math.round(activity.getResources().getDisplayMetrics().widthPixels*.86f));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(width,-1,Gravity.START);lp.setMargins(dp(8),dp(8),0,dp(8));drawer.addView(panel,lp);
         content.addView(drawer,new FrameLayout.LayoutParams(-1,-1));
     }
@@ -268,6 +268,6 @@ final class LibraryDialog extends Dialog {
     private GradientDrawable round(int color,int radius){GradientDrawable bg=new GradientDrawable();bg.setColor(color);bg.setCornerRadius(dp(radius));return bg;}
     private GradientDrawable roundStroke(int color,int radius,int stroke){GradientDrawable bg=round(color,radius);bg.setStroke(dp(1),stroke);return bg;}
     private GradientDrawable roundTop(int color,int radius){GradientDrawable bg=new GradientDrawable();bg.setColor(color);float r=dp(radius);bg.setCornerRadii(new float[]{r,r,r,r,0,0,0,0});return bg;}
-    private GradientDrawable dotted(){GradientDrawable line=new GradientDrawable();line.setShape(GradientDrawable.LINE);line.setStroke(dp(2),0xFFB9BDD0,dp(2),dp(5));return line;}
+    private GradientDrawable dotted(){GradientDrawable line=new GradientDrawable();line.setShape(GradientDrawable.LINE);line.setStroke(dp(2),0xFFB4B4B4,dp(2),dp(5));return line;}
     private int dp(float n){return Math.round(n*activity.getResources().getDisplayMetrics().density);}
 }

@@ -85,7 +85,7 @@ final class PdfPageView extends View {
     private boolean verticalPageSwipe;
     private boolean outlineMode;
     private int inkMode;
-    private int inkColor=0xFF172033;
+    private int inkColor=0xFF1F1F1F;
     private float inkWidth=0.004f;
     private AnnotationStore.InkStroke activeStroke;
     private boolean stylusDrawing;

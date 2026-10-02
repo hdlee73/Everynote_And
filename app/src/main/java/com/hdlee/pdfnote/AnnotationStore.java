@@ -82,7 +82,7 @@ final class AnnotationStore {
         float width;
         final List<InkPoint> points=new ArrayList<>();
         JSONObject toJson() throws JSONException { JSONObject o=new JSONObject().put("page",page).put("color",color).put("width",width);JSONArray a=new JSONArray();for(InkPoint p:points)a.put(p.toJson());return o.put("points",a); }
-        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF172033);s.width=(float)o.optDouble("width",0.004);JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
+        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF1F1F1F);s.width=(float)o.optDouble("width",0.004);JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
     }
 
     static final class TranslationNote {
@@ -129,7 +129,7 @@ final class AnnotationStore {
     }
     static final class PageElement {
         static final float DEFAULT_TEXT_SIZE = .027f;
-        static final int DEFAULT_TEXT_COLOR = 0xFF172033;
+        static final int DEFAULT_TEXT_COLOR = 0xFF1F1F1F;
         /** sans=고딕, serif=명조, mono=고정폭, hand=손글씨체 */
         static final List<String> FONTS = java.util.Arrays.asList("sans", "serif", "mono", "hand");
         int page;
