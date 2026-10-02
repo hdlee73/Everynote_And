@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
@@ -17,6 +18,7 @@
         android:label="PDF Note"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/AppTheme">
+        <provider android:name=".ShareProvider" android:authorities="${applicationId}.shared" android:exported="false" android:grantUriPermissions="true" />
         <provider android:name=".CaptureProvider" android:authorities="${applicationId}.captures" android:exported="false" android:grantUriPermissions="true" />
         <service android:name=".OfficeConversionService" android:process=":office" android:exported="false" />
         <activity

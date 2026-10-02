@@ -35,7 +35,18 @@ final class LibraryRepository {
         List<File> items=list(directory);String q=query.trim().toLowerCase(Locale.ROOT);items.removeIf(f->!f.getName().toLowerCase(Locale.ROOT).contains(q));
         items.sort(Comparator.comparing((File f)->!f.isDirectory()).thenComparing(order()));return items;
     }
-    private Comparator<File> order(){
+    boolean favorite(File file){return preferences.getBoolean("fav:"+file.getAbsolutePath(),false);}
+    void favorite(File file,boolean on){SharedPreferences.Editor edit=preferences.edit();if(on)edit.putBoolean("fav:"+file.getAbsolutePath(),true);else edit.remove("fav:"+file.getAbsolutePath());edit.apply();}
+    boolean pinFavorites(){return preferences.getBoolean("pin_favorites",false);}
+    void pinFavorites(boolean on){preferences.edit().putBoolean("pin_favorites",on).apply();}
+    /** Favorite documents from every folder, in the current sort order. */
+    List<File> favorites(String query){List<File> items=allDocuments(query);items.removeIf(f->!favorite(f));return items;}
+    /** The most recently opened or edited documents, newest first. */
+    List<File> recent(String query,int limit){List<File> items=allDocuments(query);items.sort(Comparator.comparingLong((File f)->Math.max(preferences.getLong("opened:"+f.getAbsolutePath(),0),modified(f))).reversed());return items.size()>limit?new ArrayList<>(items.subList(0,limit)):items;}
+    int folderCount(){return countFolders(root);}
+    private int countFolders(File directory){int n=0;for(File item:list(directory))if(item.isDirectory())n+=1+countFolders(item);return n;}
+    private Comparator<File> order(){Comparator<File> base=baseOrder();return pinFavorites()?Comparator.comparing((File f)->!favorite(f)).thenComparing(base):base;}
+    private Comparator<File> baseOrder(){
         Comparator<File> byName=Comparator.comparing(File::getName,String.CASE_INSENSITIVE_ORDER);Comparator<File> order=byName;
         switch(sortMode()){case 1:order=byName.reversed();break;case 2:order=Comparator.comparingLong(this::modified).reversed().thenComparing(byName);break;case 3:order=Comparator.comparingLong((File f)->preferences.getLong("opened:"+f.getAbsolutePath(),0)).reversed().thenComparing(byName);break;}
         return order;
@@ -89,7 +100,7 @@ final class LibraryRepository {
             cloneAnnotations(Uri.fromFile(source),Uri.fromFile(target),Integer.MAX_VALUE);NotebookFiles.replace(temp,target);
             NotebookFiles.Paper paper=paper(source);if(paper!=null)putPaper(target,paper);
             if(move){if(!source.delete()){target.delete();throw new IOException("원본을 이동할 수 없습니다");}
-                SharedPreferences.Editor edit=preferences.edit().remove("paper:"+source.getAbsolutePath()).remove("opened:"+source.getAbsolutePath()).putLong("opened:"+target.getAbsolutePath(),preferences.getLong("opened:"+source.getAbsolutePath(),0));
+                SharedPreferences.Editor edit=preferences.edit().remove("fav:"+source.getAbsolutePath()).remove("paper:"+source.getAbsolutePath()).remove("opened:"+source.getAbsolutePath()).putLong("opened:"+target.getAbsolutePath(),preferences.getLong("opened:"+source.getAbsolutePath(),0));if(preferences.getBoolean("fav:"+source.getAbsolutePath(),false))edit.putBoolean("fav:"+target.getAbsolutePath(),true);
                 for(Map.Entry<String,?> entry:preferences.getAll().entrySet())if(entry.getKey().startsWith("source:")&&source.getAbsolutePath().equals(entry.getValue()))edit.putString(entry.getKey(),target.getAbsolutePath());edit.commit();
             }
             return target;

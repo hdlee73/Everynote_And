@@ -61,6 +61,9 @@ final class AnnotationPainter {
                     RectF fitted=new RectF(b.centerX()-image.getWidth()*scale/2,b.centerY()-image.getHeight()*scale/2,b.centerX()+image.getWidth()*scale/2,b.centerY()+image.getHeight()*scale/2);
                     c.drawBitmap(image,null,fitted,new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG));
                 }
+            }else if(e.kind.equals("audio")){
+                Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);float r=b.height()/2;fill.setColor(0xFFE6EAFF);c.drawRoundRect(b,r,r,fill);fill.setStyle(Paint.Style.STROKE);fill.setStrokeWidth(Math.max(1f,d.width()*.002f));fill.setColor(0xFF6C7BEA);c.drawRoundRect(b,r,r,fill);
+                float size=Math.max(8f,b.height()*.46f);text(c,"▶  녹음 "+e.text,new RectF(b.left+r*.9f,b.top+(b.height()-size*1.35f)/2f,b.right-r*.4f,b.bottom),size,0xFF5062E0);
             }else if(e.kind.equals("link")){
                 text(c,"↗ "+e.text,b,Math.max(9,d.width()*.027f),0xFF2563EB);
             }else{
