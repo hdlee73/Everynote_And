@@ -87,7 +87,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private Locale speechLocale=Locale.US;
     private boolean pageAnimating;
     private LinearLayout studySplit, studyRows, studyPanel;
-    private FrameLayout pdfArea;
+    private FrameLayout pdfArea,viewportLayer;
     private TextView studyHeading;
     private boolean studyVisible, basketOnly;
     private static final int EXPORT_STUDY=20, IMPORT_SIDECAR=21;
@@ -180,7 +180,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         tabStrip=new HorizontalScrollView(this);tabStrip.setHorizontalScrollBarEnabled(false);tabStrip.setBackgroundColor(0xFFF7F5FF);tabRow=new LinearLayout(this);tabRow.setGravity(Gravity.CENTER_VERTICAL);tabRow.setPadding(dp(6),dp(4),dp(6),dp(4));tabStrip.addView(tabRow,new HorizontalScrollView.LayoutParams(-2,-1));content.addView(tabStrip,new LinearLayout.LayoutParams(-1,dp(40)));buildSearchPanel();content.addView(searchPanel,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout viewerRow=new LinearLayout(this);viewerRow.setOrientation(LinearLayout.HORIZONTAL);
         thumbnailPanel=new ScrollView(this);thumbnailPanel.setBackgroundColor(0xFFF1EFFB);thumbnailPanel.setVisibility(View.GONE);thumbnailList=new LinearLayout(this);thumbnailList.setOrientation(LinearLayout.VERTICAL);thumbnailList.setPadding(dp(7),dp(8),dp(7),dp(8));thumbnailPanel.addView(thumbnailList,new ScrollView.LayoutParams(-1,-2));viewerRow.addView(thumbnailPanel,new LinearLayout.LayoutParams(dp(116),-1));
-        FrameLayout viewport=new FrameLayout(this);LinearLayout papers=new LinearLayout(this);
+        FrameLayout viewport=new FrameLayout(this);viewportLayer=viewport;LinearLayout papers=new LinearLayout(this);
         PageListener firstListener=new PageListener(),secondListener=new PageListener();
         firstPageView=new PdfPageView(this,firstListener);secondPageView=new PdfPageView(this,secondListener);firstListener.view=firstPageView;secondListener.view=secondPageView;pageView=firstPageView;
         papers.addView(firstPageView,new LinearLayout.LayoutParams(0,-1,1));papers.addView(secondPageView,new LinearLayout.LayoutParams(0,-1,1));secondPageView.setVisibility(twoPage?View.VISIBLE:View.GONE);viewport.addView(papers,new FrameLayout.LayoutParams(-1,-1));
