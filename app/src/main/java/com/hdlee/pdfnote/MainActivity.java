@@ -409,7 +409,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void animatePage(int direction){
         if(pageAnimating||renderer==null)return;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0)return;if(target>=renderer.getPageCount()){if(direction>0&&isNotebook(activeSession))appendPage(activeSession,library.paper(new File(activeSession.uri.getPath())));return;}
         pageAnimating=true;
-        if(twoPage&&!verticalPageSwipe){flipBook(direction,target);return;}
+        if(!verticalPageSwipe&&curlPage(direction,target))return;
         float offset=dp(26)*direction;
         boolean vertical=verticalPageSwipe;PdfPageView moving=pageView;
         moving.animate().alpha(0.45f).translationX(vertical?0:-offset).translationY(vertical?-offset:0)
@@ -420,18 +420,28 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                     .withEndAction(()->{resetPageTransforms();pageAnimating=false;}).start();
             }).start();
     }
-    /** Two-page mode: the outer page folds over the spine like a paper page, then the next spread unfolds from the other side. */
-    private void flipBook(int direction,int target){
-        final boolean forward=direction>0;
-        final PdfPageView out=forward?(secondPageView.getVisibility()==View.VISIBLE?secondPageView:firstPageView):firstPageView;
-        final float camera=getResources().getDisplayMetrics().density*9000f;
-        out.setCameraDistance(camera);out.setPivotY(out.getHeight()/2f);out.setPivotX(out==firstPageView?out.getWidth():0f);
-        out.animate().rotationY(forward?-90f:90f).alpha(.75f).setDuration(190).setInterpolator(new android.view.animation.AccelerateInterpolator(1.2f)).withEndAction(()->{
-            showPage(target);resetPageTransforms();
-            final PdfPageView in=forward?firstPageView:(secondPageView.getVisibility()==View.VISIBLE?secondPageView:firstPageView);
-            in.setCameraDistance(camera);in.setPivotY(in.getHeight()/2f);in.setPivotX(in==firstPageView?in.getWidth():0f);in.setRotationY(forward?90f:-90f);in.setAlpha(.75f);
-            in.animate().rotationY(0f).alpha(1f).setDuration(230).setInterpolator(new android.view.animation.DecelerateInterpolator(1.3f)).withEndAction(()->{resetPageTransforms();pageAnimating=false;}).start();
-        }).start();
+    private Bitmap snapshot(View view){Bitmap bitmap=Bitmap.createBitmap(Math.max(1,view.getWidth()),Math.max(1,view.getHeight()),Bitmap.Config.ARGB_8888);bitmap.eraseColor(0xFFDDDDE2);view.draw(new Canvas(bitmap));return bitmap;}
+    /** Turns the page like paper: a curling leaf with a visible back side and shadows (single page and two-page spread). Returns false when it cannot animate. */
+    private boolean curlPage(int direction,int target){
+        final View papers=viewportLayer==null?null:viewportLayer.getChildAt(0);
+        if(papers==null||papers.getWidth()<=0||papers.getHeight()<=0||firstPageView.getWidth()<=0)return false;
+        final boolean forward=direction>0,two=twoPage&&secondPageView.getWidth()>0;
+        final Bitmap oldFirst,oldSecond,newFirst,newSecond;
+        try{oldFirst=snapshot(firstPageView);oldSecond=two?snapshot(secondPageView):null;showPage(target);resetPageTransforms();newFirst=snapshot(firstPageView);newSecond=two?snapshot(secondPageView):null;}
+        catch(OutOfMemoryError error){showPage(target);pageAnimating=false;return true;}
+        final PageCurlView curl=new PageCurlView(this);
+        if(!two){
+            if(forward)curl.setup(null,newFirst,oldFirst,PageCurlView.paperBack(PageCurlView.mirror(oldFirst)),false,0f);
+            else curl.setup(null,PageCurlView.mirror(newFirst),PageCurlView.mirror(oldFirst),PageCurlView.paperBack(oldFirst),true,0f);
+        }else{
+            if(forward)curl.setup(oldFirst,newSecond,oldSecond,PageCurlView.mirror(newFirst),false,.5f);
+            else curl.setup(PageCurlView.mirror(oldSecond),PageCurlView.mirror(newFirst),PageCurlView.mirror(oldFirst),newSecond,true,.5f);
+        }
+        viewportLayer.addView(curl,1,new FrameLayout.LayoutParams(papers.getWidth(),papers.getHeight()));
+        android.animation.ValueAnimator animator=android.animation.ValueAnimator.ofFloat(0f,1f);animator.setDuration(640);animator.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        animator.addUpdateListener(a->curl.setProgress((Float)a.getAnimatedValue()));
+        animator.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator a){viewportLayer.removeView(curl);curl.release();resetPageTransforms();pageAnimating=false;}});
+        animator.start();return true;
     }
     @Override public void onOutlinePointRequested(int page,float x,float y){promptOutline(page,x,y,"");}
     private void promptOutline(int page,float x,float y,String suggested){EditText input=new EditText(this);input.setHint("예: 2. 세부 검토사항");if(suggested!=null&&!suggested.isEmpty())input.setText(suggested.length()>60?suggested.substring(0,60)+"…":suggested);input.setPadding(dp(24),dp(12),dp(24),dp(12));new AlertDialog.Builder(this).setTitle("개요 제목").setView(input).setPositiveButton("저장",(d,w)->{String title=input.getText().toString().trim();if(title.isEmpty())title="페이지 "+(page+1);AnnotationStore.OutlineItem item=new AnnotationStore.OutlineItem();item.page=page;item.x=x;item.y=y;item.title=title;store.outlines.add(item);store.save();if(sidebarVisible&&panelTab==2)rebuildOutlinePanel();outlineMode=false;pageView.setOutlineMode(false);updateToolStates();toast("개요에 저장했습니다");}).setNegativeButton("취소",null).show();}
@@ -1172,7 +1182,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         rebuildThumbnails();applySearchHighlights();
     }
     /** One width for every tab so the panel never jumps when switching between search, previews, outline and recordings. */
-    private int sidePanelWidth(){return Math.min(dp(248),Math.round(getResources().getDisplayMetrics().widthPixels*.5f));}
+    private int sidePanelWidth(){return Math.min(dp(190),Math.round(getResources().getDisplayMetrics().widthPixels*.42f));}
     private void closeSidePanel(){sidebarVisible=false;sidePanel.setVisibility(View.GONE);closeSearch();hideKeyboard();applySearchHighlights();}
     /** Icon-only floating menu for the preview panel: favorites only, all pages, add page, delete page. */
     private void showThumbnailMenu(View anchor){
@@ -1422,7 +1432,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             TextView empty=new TextView(this);empty.setTag("thumb_empty");empty.setText("즐겨찾기한 페이지가 없습니다.\n\n아래쪽 ★를 누르면\n이곳에 미리보기가 나타납니다.");empty.setTextSize(12);empty.setTextColor(0xFF8E8E93);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(4),dp(18),dp(4),dp(8));
             thumbnailList.addView(empty,new LinearLayout.LayoutParams(-1,-2));return;
         }
-        for(int i=0;i<pages.size();i++){final int page=pages.get(i);LinearLayout item=new LinearLayout(this);item.setTag(page);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(dp(4),dp(5),dp(4),dp(7));ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setAdjustViewBounds(true);preview.setBackgroundColor(Color.WHITE);preview.setElevation(dp(1));item.addView(preview,new LinearLayout.LayoutParams(dp(150),Math.round(dp(150)*thumbnailAspect())));TextView number=new TextView(this);number.setText(String.valueOf(page+1));number.setGravity(Gravity.CENTER);number.setTextSize(12);number.setTextColor(0xFF8E8E93);LinearLayout numberRow=new LinearLayout(this);numberRow.setGravity(Gravity.CENTER_VERTICAL);numberRow.addView(number,new LinearLayout.LayoutParams(0,dp(24),1));TextView pageMore=new TextView(this);pageMore.setText("⋮");pageMore.setTextSize(15);pageMore.setTextColor(0xFF8E8E93);pageMore.setGravity(Gravity.CENTER);pageMore.setContentDescription("페이지 "+(page+1)+" 메뉴");pageMore.setOnClickListener(v->showPageMenu(page));numberRow.addView(pageMore,new LinearLayout.LayoutParams(dp(28),dp(24)));item.addView(numberRow,new LinearLayout.LayoutParams(-1,dp(24)));item.setOnClickListener(v->showPage(page));item.setOnLongClickListener(v->{showPageMenu(page);return true;});thumbnailList.addView(item,new LinearLayout.LayoutParams(-1,dp(160)));}
+        for(int i=0;i<pages.size();i++){final int page=pages.get(i);LinearLayout item=new LinearLayout(this);item.setTag(page);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(dp(4),dp(5),dp(4),dp(7));ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setAdjustViewBounds(true);preview.setBackgroundColor(Color.WHITE);preview.setElevation(dp(1));item.addView(preview,new LinearLayout.LayoutParams(sidePanelWidth()-dp(36),Math.round((sidePanelWidth()-dp(36))*thumbnailAspect())));TextView number=new TextView(this);number.setText(String.valueOf(page+1));number.setGravity(Gravity.CENTER);number.setTextSize(12);number.setTextColor(0xFF8E8E93);LinearLayout numberRow=new LinearLayout(this);numberRow.setGravity(Gravity.CENTER_VERTICAL);numberRow.addView(number,new LinearLayout.LayoutParams(0,dp(24),1));TextView pageMore=new TextView(this);pageMore.setText("⋮");pageMore.setTextSize(15);pageMore.setTextColor(0xFF8E8E93);pageMore.setGravity(Gravity.CENTER);pageMore.setContentDescription("페이지 "+(page+1)+" 메뉴");pageMore.setOnClickListener(v->showPageMenu(page));numberRow.addView(pageMore,new LinearLayout.LayoutParams(dp(28),dp(24)));item.addView(numberRow,new LinearLayout.LayoutParams(-1,dp(24)));item.setOnClickListener(v->showPage(page));item.setOnLongClickListener(v->{showPageMenu(page);return true;});thumbnailList.addView(item,new LinearLayout.LayoutParams(-1,-2));}
         updateThumbnailSelection();renderThumbnail(pages,0,generation,activeSession);
     }
     /** Height/width of the document's first page, used to size thumbnail placeholders so the whole page always fits. */
