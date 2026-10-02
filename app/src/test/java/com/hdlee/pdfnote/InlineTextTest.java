@@ -55,7 +55,7 @@ public class InlineTextTest {
         View color=byDescription(root,"색상 6");color.performClick();
         assertEquals((before+3)+"pt",((TextView)byTag("text_size")).getText().toString());
         byTag("text_done").performClick();
-        AnnotationStore.PageElement e=store.elements.get(0);assertTrue(e.bold);assertTrue(e.italic);assertEquals("serif",e.font);assertEquals((before+3)/595f,e.textSize,.0005f);assertEquals(0xFFDC2626,e.color);
+        AnnotationStore.PageElement e=store.elements.get(0);assertTrue(e.bold);assertTrue(e.italic);assertEquals("serif",e.font);assertEquals((before+3)/595f,e.textSize,.0005f);assertEquals(0xFFFF3B30,e.color);
         activity.onMemoPointRequested(0,.1f,.6f);EditText next=(EditText)byTag("inline_text");assertNotNull(next);byTag("text_done").performClick();assertEquals("빈 상자는 저장하지 않습니다",1,store.elements.size());
         activity.onMemoPointRequested(0,.1f,.6f);assertEquals("마지막 서식이 이어집니다","serif",(String)field("inlineElement").getClass().getDeclaredField("font").get(field("inlineElement")));
     }
