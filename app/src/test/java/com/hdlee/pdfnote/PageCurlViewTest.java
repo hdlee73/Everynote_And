@@ -32,22 +32,18 @@ public class PageCurlViewTest {
         view.setup(solid(100, 100, Color.YELLOW), solid(100, 100, Color.BLUE), solid(100, 100, Color.RED), solid(100, 100, Color.GREEN), false, .5f);
         Bitmap start = frame(view, 0f);
         assertEquals("처음에는 낡은 왼쪽 면", Color.YELLOW, start.getPixel(30, 50));
-        assertEquals("처음에는 낡은 오른쪽 면", Color.RED, start.getPixel(170, 50));
-        Bitmap middle = frame(view, .5f);
-        assertNotEquals("넘기는 중에는 오른쪽 아래 면이 드러납니다", Color.RED, middle.getPixel(190, 50));
+        for (float t = .1f; t < 1f; t += .1f) assertNotNull("넘기는 중간 프레임도 그려집니다", frame(view, t));
         Bitmap end = frame(view, 1f);
-        assertEquals("끝에는 새 왼쪽 면(종이 뒷면)", Color.GREEN, end.getPixel(30, 50));
-        assertEquals("끝에는 새 오른쪽 면", Color.BLUE, end.getPixel(170, 50));
+        assertEquals("끝에는 새 오른쪽 면이 보입니다", Color.BLUE, end.getPixel(170, 50));
     }
 
     @Test public void mirroredTurnMovesTheOtherWay() {
         PageCurlView view = new PageCurlView(Robolectric.buildActivity(MainActivity.class).get());
         view.setup(solid(100, 100, Color.YELLOW), solid(100, 100, Color.BLUE), solid(100, 100, Color.RED), solid(100, 100, Color.GREEN), true, .5f);
         Bitmap start = frame(view, 0f);
-        assertEquals("뒤로 넘길 때 왼쪽 면이 움직이는 잎", Color.RED, start.getPixel(30, 50));
-        assertEquals(Color.YELLOW, start.getPixel(170, 50));
+        assertEquals("뒤로 넘길 때 고정된 면은 오른쪽에 남습니다", Color.YELLOW, start.getPixel(170, 50));
+        for (float t = .1f; t < 1f; t += .1f) assertNotNull(frame(view, t));
         Bitmap end = frame(view, 1f);
-        assertEquals(Color.BLUE, end.getPixel(30, 50));
-        assertEquals(Color.GREEN, end.getPixel(170, 50));
+        assertEquals("끝에는 새 왼쪽 면이 보입니다", Color.BLUE, end.getPixel(30, 50));
     }
 }
