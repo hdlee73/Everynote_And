@@ -62,8 +62,8 @@ final class AnnotationPainter {
                     c.drawBitmap(image,null,fitted,new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG));
                 }
             }else if(e.kind.equals("audio")){
-                Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);float r=b.height()/2;fill.setColor(0xFFE6EAFF);c.drawRoundRect(b,r,r,fill);fill.setStyle(Paint.Style.STROKE);fill.setStrokeWidth(Math.max(1f,d.width()*.002f));fill.setColor(0xFF6C7BEA);c.drawRoundRect(b,r,r,fill);
-                float size=Math.max(8f,b.height()*.46f);text(c,"▶  녹음 "+e.text,new RectF(b.left+r*.9f,b.top+(b.height()-size*1.35f)/2f,b.right-r*.4f,b.bottom),size,0xFF5062E0);
+                Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);float r=b.height()/2;fill.setColor(0xFFE6F0FF);c.drawRoundRect(b,r,r,fill);fill.setStyle(Paint.Style.STROKE);fill.setStrokeWidth(Math.max(1f,d.width()*.002f));fill.setColor(0xFF3E91FF);c.drawRoundRect(b,r,r,fill);
+                float size=Math.max(8f,b.height()*.46f);text(c,"▶  녹음 "+e.text,new RectF(b.left+r*.9f,b.top+(b.height()-size*1.35f)/2f,b.right-r*.4f,b.bottom),size,0xFF1C74E9);
             }else if(e.kind.equals("link")){
                 text(c,"↗ "+e.text,b,Math.max(9,d.width()*.027f),0xFF2563EB);
             }else{
@@ -93,13 +93,13 @@ final class AnnotationPainter {
             if(!m.noteOnly){p.setColor(m.color);c.drawRect(b,p);}
             if(m.visible&&m.note!=null&&!m.note.isEmpty()){
                 RectF note=new RectF(b.right,b.top,Math.min(d.right,b.right+d.width()*.35f),Math.min(d.bottom,b.top+d.height()*.12f));
-                p.setColor(0xFFFFF7D6);c.drawRect(note,p);text(c,m.minimized?"메모":m.note,note,d.width()*.023f,0xFF172033);
+                p.setColor(0xFFFFF7D6);c.drawRect(note,p);text(c,m.minimized?"메모":m.note,note,d.width()*.023f,0xFF1F1F1F);
             }
         }
         strokes(c,d,store,page);
         for(AnnotationStore.TranslationNote n:store.translations)if(n.page==page&&n.visible){
             RectF box=new RectF(d.left+n.right*d.width(),d.top+n.top*d.height(),Math.min(d.right,d.left+n.right*d.width()+d.width()*.35f),Math.min(d.bottom,d.top+n.top*d.height()+d.height()*.12f));
-            p.setColor(0xFFF3E8FF);c.drawRect(box,p);text(c,n.minimized?"번역":n.translated,box,d.width()*.023f,0xFF172033);
+            p.setColor(0xFFF3E8FF);c.drawRect(box,p);text(c,n.minimized?"번역":n.translated,box,d.width()*.023f,0xFF1F1F1F);
         }
         elements(context,c,d,store,page);
     }
