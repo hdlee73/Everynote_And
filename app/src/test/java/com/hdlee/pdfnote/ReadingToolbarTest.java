@@ -38,7 +38,7 @@ public class ReadingToolbarTest {
         View root=field("root");layout(root,360,720);View bar=root.findViewWithTag("reading_toolbar");TextView page=root.findViewWithTag("page_indicator");
         assertEquals(54,bar.getLayoutParams().height-bar.getPaddingBottom());assertEquals(86,page.getLayoutParams().width);assertTrue(page.getLayoutParams().width<bar.getWidth()/3);
         description(bar,"문서 개요").performClick();assertEquals("문서 개요",org.robolectric.Shadows.shadowOf(ShadowAlertDialog.getLatestAlertDialog()).getTitle().toString());ShadowAlertDialog.getLatestAlertDialog().dismiss();
-        description(bar,"보기 방법").performClick();assertTrue(hasText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(),"두 쪽 보기 · 꺼짐"));ShadowAlertDialog.getLatestAlertDialog().dismiss();
+        description(bar,"보기 방법").performClick();android.app.Dialog view=org.robolectric.shadows.ShadowDialog.getLatestDialog();assertTrue(hasText(view.getWindow().getDecorView(),"두 쪽 보기 · 꺼짐"));view.dismiss();assertNotNull(description(bar,"타이핑"));
         page.performClick();assertEquals("페이지로 이동",org.robolectric.Shadows.shadowOf(ShadowAlertDialog.getLatestAlertDialog()).getTitle().toString());ShadowAlertDialog.getLatestAlertDialog().dismiss();screenshot(root,"reading-toolbar.png");
     }
     @Test public void fullscreenCanAddOutlineWithoutExitingAndReturnsToNormalToolbar()throws Exception{

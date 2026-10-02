@@ -65,6 +65,13 @@ final class PdfPageView extends View {
     private final IdentityHashMap<AnnotationStore.Mark,RectF> memoHitBoxes=new IdentityHashMap<>();
     private boolean lassoMode, lassoDrawing, suppressSelection;
     private final List<PointF> lassoPoints=new ArrayList<>();
+    static final int LASSO_FREE=0,LASSO_RECT=1,LASSO_CIRCLE=2;
+    private int lassoShape=LASSO_FREE;
+    private PointF lassoAnchor;
+    private int searchPage=-1;
+    private List<RectF> searchBoxes=new ArrayList<>();
+    private RectF searchCurrent;
+    private final Paint searchPaint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint lassoPaint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private boolean textSelectMode;
     private boolean showTextBounds;
@@ -205,7 +212,7 @@ final class PdfPageView extends View {
     }
 
     void setDirectTextSelection(boolean enabled){directTextSelection=enabled;clearTextSelectionOverlay();}
-    void copyToolsFrom(PdfPageView other){directTextSelection=other.directTextSelection;highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
+    void copyToolsFrom(PdfPageView other){directTextSelection=other.directTextSelection;highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;lassoShape=other.lassoShape;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
     void setAnnotationStore(AnnotationStore store){annotationStore=store;invalidate();}
     void setFingerInk(boolean enabled){fingerInk=enabled;}
     void setPageSwipeEnabled(boolean enabled){pageSwipeEnabled=enabled;}
@@ -299,6 +306,7 @@ final class PdfPageView extends View {
                     Math.max(startX, currentX), centerY + half, paint);
         }
         AnnotationPainter.elements(getContext(),canvas,dest,annotationStore,page);
+        if(!suppressSelection&&searchPage==page)drawSearchHighlights(canvas,dest);
         if(!suppressSelection&&!lassoPoints.isEmpty()){
             Path path=lassoPath(dest);lassoPaint.setStyle(Paint.Style.FILL);lassoPaint.setColor(0x222563EB);canvas.drawPath(path,lassoPaint);
             lassoPaint.setStyle(Paint.Style.STROKE);lassoPaint.setStrokeWidth(2*getResources().getDisplayMetrics().density);lassoPaint.setColor(0xFF2563EB);
@@ -311,7 +319,38 @@ final class PdfPageView extends View {
         if(enabled){finishInkStroke();inkMode=0;highlightMode=memoMode=outlineMode=false;}
     }
     boolean isLassoMode(){return lassoMode;}
-    void clearLassoSelection(){lassoDrawing=false;lassoPoints.clear();if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);invalidate();}
+    int getLassoShape(){return lassoShape;}
+    /** Switches between freehand, rectangle and circle selection; any selection in progress is discarded. */
+    void setLassoShape(int shape){lassoShape=Math.max(LASSO_FREE,Math.min(LASSO_CIRCLE,shape));clearLassoSelection();}
+    private PointF normalizedPoint(float x,float y,RectF dest){return new PointF(Math.max(0,Math.min(1,(x-dest.left)/dest.width())),Math.max(0,Math.min(1,(y-dest.top)/dest.height())));}
+    /** Rebuilds the rectangle / ellipse polygon spanned by the touch-down point and the current finger position. */
+    private void updateLassoShape(float x,float y,RectF dest){
+        if(lassoAnchor==null||dest.width()<=0||dest.height()<=0)return;
+        PointF end=normalizedPoint(x,y,dest);lassoPoints.clear();
+        float left=Math.min(lassoAnchor.x,end.x),right=Math.max(lassoAnchor.x,end.x),top=Math.min(lassoAnchor.y,end.y),bottom=Math.max(lassoAnchor.y,end.y);
+        if(lassoShape==LASSO_RECT){
+            lassoPoints.add(new PointF(left,top));lassoPoints.add(new PointF(right,top));lassoPoints.add(new PointF(right,bottom));lassoPoints.add(new PointF(left,bottom));
+        }else{
+            int steps=72;float cx=(left+right)/2,cy=(top+bottom)/2,rx=(right-left)/2,ry=(bottom-top)/2;
+            for(int i=0;i<steps;i++){double angle=2*Math.PI*i/steps;lassoPoints.add(new PointF((float)(cx+rx*Math.cos(angle)),(float)(cy+ry*Math.sin(angle))));}
+        }
+    }
+    void setSearchHighlights(int pageNumber,List<RectF> others,RectF current){searchPage=pageNumber;searchBoxes=others==null?new ArrayList<>():new ArrayList<>(others);searchCurrent=current==null?null:new RectF(current);invalidate();}
+    void clearSearchHighlights(){searchPage=-1;searchBoxes=new ArrayList<>();searchCurrent=null;invalidate();}
+    private RectF searchRect(RectF b,RectF dest,float pad){return new RectF(dest.left+b.left*dest.width()-pad,dest.top+b.top*dest.height()-pad,dest.left+b.right*dest.width()+pad,dest.top+b.bottom*dest.height()+pad);}
+    private void drawSearchHighlights(Canvas canvas,RectF dest){
+        float density=getResources().getDisplayMetrics().density;
+        searchPaint.setStyle(Paint.Style.FILL);searchPaint.setColor(0x66FFD54F);
+        for(RectF b:searchBoxes)canvas.drawRoundRect(searchRect(b,dest,density),3*density,3*density,searchPaint);
+        if(searchCurrent!=null){
+            RectF b=searchRect(searchCurrent,dest,2*density);
+            searchPaint.setStyle(Paint.Style.FILL);searchPaint.setColor(0x99FF9800);canvas.drawRoundRect(b,4*density,4*density,searchPaint);
+            searchPaint.setStyle(Paint.Style.STROKE);searchPaint.setStrokeWidth(2*density);searchPaint.setColor(0xFFEA580C);canvas.drawRoundRect(b,4*density,4*density,searchPaint);
+            searchPaint.setStyle(Paint.Style.FILL);
+        }
+    }
+    float pageAspect(){return bitmap==null||bitmap.getWidth()==0?1.414f:(float)bitmap.getHeight()/bitmap.getWidth();}
+    void clearLassoSelection(){lassoAnchor=null;lassoDrawing=false;lassoPoints.clear();if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);invalidate();}
     private void addLassoPoint(float x,float y,RectF dest){
         if(dest.width()<=0||dest.height()<=0)return;
         PointF point=new PointF(Math.max(0,Math.min(1,(x-dest.left)/dest.width())),Math.max(0,Math.min(1,(y-dest.top)/dest.height())));
@@ -425,11 +464,11 @@ final class PdfPageView extends View {
         }
         if(lassoMode){
             int action=e.getActionMasked();
-            if(action==MotionEvent.ACTION_DOWN){listener.onSelectionAdjustStarted();clearLassoSelection();clearTextSelectionOverlay();if(dest.contains(e.getX(),e.getY())){lassoDrawing=true;getParent().requestDisallowInterceptTouchEvent(true);addLassoPoint(e.getX(),e.getY(),dest);}invalidate();return true;}
+            if(action==MotionEvent.ACTION_DOWN){listener.onSelectionAdjustStarted();clearLassoSelection();clearTextSelectionOverlay();if(dest.contains(e.getX(),e.getY())){lassoDrawing=true;getParent().requestDisallowInterceptTouchEvent(true);lassoAnchor=normalizedPoint(e.getX(),e.getY(),dest);if(lassoShape==LASSO_FREE)addLassoPoint(e.getX(),e.getY(),dest);}invalidate();return true;}
             if(action==MotionEvent.ACTION_CANCEL){clearLassoSelection();return true;}
             if(e.getPointerCount()!=1||scalingOccurred)return true;
-            if(action==MotionEvent.ACTION_MOVE&&lassoDrawing){for(int i=0;i<e.getHistorySize();i++)addLassoPoint(e.getHistoricalX(i),e.getHistoricalY(i),dest);addLassoPoint(e.getX(),e.getY(),dest);invalidate();return true;}
-            if(action==MotionEvent.ACTION_UP&&lassoDrawing){addLassoPoint(e.getX(),e.getY(),dest);lassoDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);if(validLasso(dest))listener.onLassoSelectionFinished();else clearLassoSelection();invalidate();return true;}
+            if(action==MotionEvent.ACTION_MOVE&&lassoDrawing){if(lassoShape==LASSO_FREE){for(int i=0;i<e.getHistorySize();i++)addLassoPoint(e.getHistoricalX(i),e.getHistoricalY(i),dest);addLassoPoint(e.getX(),e.getY(),dest);}else updateLassoShape(e.getX(),e.getY(),dest);invalidate();return true;}
+            if(action==MotionEvent.ACTION_UP&&lassoDrawing){if(lassoShape==LASSO_FREE)addLassoPoint(e.getX(),e.getY(),dest);else updateLassoShape(e.getX(),e.getY(),dest);lassoDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);if(validLasso(dest))listener.onLassoSelectionFinished();else clearLassoSelection();invalidate();return true;}
             return true;
         }
         if(inkMode!=0&&(stylus||fingerInk)&&e.getPointerCount()==1&&!scalingOccurred){int action=e.getActionMasked();boolean erase=inkMode==2||temporaryEraser(e);if(action==MotionEvent.ACTION_DOWN){getParent().requestDisallowInterceptTouchEvent(true);stylusDrawing=true;if(erase)eraseAt(e,dest);else if(dest.contains(e.getX(),e.getY())){activeStroke=new AnnotationStore.InkStroke();activeStroke.page=page;activeStroke.color=inkColor;activeStroke.width=inkWidth;addInkPoint(e,dest);if(strokes!=null)strokes.add(activeStroke);}invalidate();return true;}if(action==MotionEvent.ACTION_MOVE&&stylusDrawing){if(erase)eraseAt(e,dest);else{for(int i=0;inkMode!=3&&i<e.getHistorySize();i++){if(activeStroke!=null&&dest.contains(e.getHistoricalX(i),e.getHistoricalY(i))){float x=(e.getHistoricalX(i)-dest.left)/dest.width(),y=(e.getHistoricalY(i)-dest.top)/dest.height(),p=stylus?Math.max(0.05f,Math.min(1f,e.getHistoricalPressure(i))):0.65f;activeStroke.points.add(new AnnotationStore.InkPoint(x,y,p));}}addInkPoint(e,dest);}invalidate();return true;}if((action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&stylusDrawing){if(!erase&&activeStroke!=null){if(action==MotionEvent.ACTION_CANCEL){if(strokes!=null)strokes.remove(activeStroke);}else{addInkPoint(e,dest);if(!activeStroke.points.isEmpty())listener.onInkChanged();}}activeStroke=null;stylusDrawing=false;getParent().requestDisallowInterceptTouchEvent(false);invalidate();return true;}}
