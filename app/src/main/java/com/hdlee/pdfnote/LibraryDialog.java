@@ -34,7 +34,7 @@ final class LibraryDialog extends Dialog {
     private File folder;
     private int mode=FOLDER;
     private FolderTreeView tree;
-    private FrameLayout content,drawer;
+    private FrameLayout content,drawer;private View drawerPanel,drawerScrim;private float drawerP;private int drawerWidth;private android.animation.ValueAnimator drawerAnim;
     private LinearLayout page,grid,rail,selectionBar,selectionCommands;
     private ScrollView shelf;
     private TextView heading,subtitle,upButton,selectionCount;
@@ -51,7 +51,28 @@ final class LibraryDialog extends Dialog {
     LibraryDialog(Activity activity,LibraryRepository repository,File folder,Actions actions){
         super(activity);this.activity=activity;this.repository=repository;this.folder=folder;this.actions=actions;requestWindowFeature(Window.FEATURE_NO_TITLE);
         wide=activity.getResources().getConfiguration().screenWidthDp>=600;
-        content=new FrameLayout(activity);content.setTag("library_root");content.setBackgroundColor(SURFACE);content.setFitsSystemWindows(true);
+        content=new FrameLayout(activity){
+            float downX,downY,startX,startP;boolean dragging;VelocityTracker velocity;
+            @Override public boolean onInterceptTouchEvent(MotionEvent e){
+                if(e.getActionMasked()==MotionEvent.ACTION_DOWN){downX=e.getX();downY=e.getY();dragging=false;}
+                else if(e.getActionMasked()==MotionEvent.ACTION_MOVE&&!dragging&&drawer!=null){
+                    float dx=e.getX()-downX,dy=e.getY()-downY;boolean open=drawer.getVisibility()==View.VISIBLE&&drawerP>.5f;int slop=ViewConfiguration.get(activity).getScaledTouchSlop();
+                    if(Math.abs(dx)>slop&&Math.abs(dx)>Math.abs(dy)*1.5f&&((!open&&dx>0&&downX<(wide?dp(68):dp(24)))||(open&&dx<0))){beginDrawerDrag();dragging=true;startX=e.getX();startP=drawerP;velocity=VelocityTracker.obtain();velocity.addMovement(e);return true;}
+                }
+                return false;
+            }
+            @Override public boolean onTouchEvent(MotionEvent e){
+                if(!dragging)return true;
+                velocity.addMovement(e);
+                switch(e.getActionMasked()){
+                    case MotionEvent.ACTION_MOVE:setDrawerProgress(Math.max(0,Math.min(1,startP+(e.getX()-startX)/drawerWidth)));return true;
+                    case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:
+                        velocity.computeCurrentVelocity(1000);float vx=velocity.getXVelocity();velocity.recycle();dragging=false;
+                        boolean open=Math.abs(vx)>900?vx>0:drawerP>.45f;if(open)settleDrawer(1);else settleDrawer(0);return true;
+                }
+                return true;
+            }
+        };content.setTag("library_root");content.setBackgroundColor(SURFACE);content.setFitsSystemWindows(true);
         LinearLayout main=new LinearLayout(activity);main.setOrientation(LinearLayout.HORIZONTAL);content.addView(main,new FrameLayout.LayoutParams(-1,-1));
         buildRail(main);
         page=new LinearLayout(activity);page.setOrientation(LinearLayout.VERTICAL);main.addView(page,new LinearLayout.LayoutParams(0,-1,1));
@@ -127,16 +148,16 @@ final class LibraryDialog extends Dialog {
     }
     private void buildDrawer(){
         drawer=new FrameLayout(activity);drawer.setTag("library_drawer");drawer.setVisibility(View.GONE);
-        View scrim=new View(activity);scrim.setBackgroundColor(0x40000000);scrim.setOnClickListener(v->closeDrawer());drawer.addView(scrim,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);panel.setBackground(round(Color.WHITE,30));panel.setElevation(dp(14));panel.setPadding(dp(10),dp(8),dp(10),dp(12));
-        LinearLayout top=new LinearLayout(activity);top.setGravity(Gravity.CENTER_VERTICAL);top.addView(icon(R.drawable.ic_menu,"폴더 트리 닫기",v->closeDrawer()),new LinearLayout.LayoutParams(dp(48),dp(48)));top.addView(new View(activity),new LinearLayout.LayoutParams(0,1,1));panel.addView(top,new LinearLayout.LayoutParams(-1,dp(48)));
+        View scrim=new View(activity);drawerScrim=scrim;scrim.setBackgroundColor(0x40000000);scrim.setOnClickListener(v->closeDrawer());drawer.addView(scrim,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);GradientDrawable panelShape=new GradientDrawable();panelShape.setColor(Color.WHITE);panelShape.setCornerRadii(new float[]{0,0,dp(28),dp(28),dp(28),dp(28),0,0});panel.setBackground(panelShape);panel.setElevation(dp(14));panel.setPadding(dp(6),dp(14),dp(10),dp(12));drawerPanel=panel;
+        LinearLayout top=new LinearLayout(activity);top.setGravity(Gravity.CENTER_VERTICAL);top.addView(icon(R.drawable.ic_menu,"폴더 트리 닫기",v->closeDrawer()),new LinearLayout.LayoutParams(dp(56),dp(48)));top.addView(new View(activity),new LinearLayout.LayoutParams(0,1,1));panel.addView(top,new LinearLayout.LayoutParams(-1,dp(48)));
         int[] icons={R.drawable.ic_document_tab,R.drawable.ic_star_outline,R.drawable.ic_clock,R.drawable.ic_delete};String[] names={"전체 문서","즐겨찾기","최근 문서","휴지통"};
         for(int i=0;i<4;i++){final int index=i;panel.addView(drawerRow(icons[i],names[i],"drawer_count:"+i,v->{closeDrawer();if(index==3)showTrash();else showMode(index);}),new LinearLayout.LayoutParams(-1,dp(52)));}
         View dots=new View(activity);dots.setBackground(dotted());LinearLayout.LayoutParams dp1=new LinearLayout.LayoutParams(-1,dp(2));dp1.setMargins(dp(10),dp(8),dp(10),dp(8));panel.addView(dots,dp1);
         panel.addView(drawerRow(R.drawable.ic_folder_open,"폴더","drawer_count:4",null),new LinearLayout.LayoutParams(-1,dp(52)));
         tree=new FolderTreeView(activity,repository,folder,this::selectFolder);tree.setFolderMenu(this::folderMenu);tree.setBackgroundColor(Color.TRANSPARENT);panel.addView(tree,new LinearLayout.LayoutParams(-1,0,1));
         TextView manage=button("폴더 관리","폴더 관리",this::folderManageMenu);manage.setTextColor(INK);manage.setTextSize(16);manage.setTypeface(Typeface.DEFAULT_BOLD);manage.setBackground(round(0xFFF2F2F7,24));LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,dp(48));mp.setMargins(dp(24),dp(8),dp(24),0);panel.addView(manage,mp);
-        int width=Math.min(dp(320),Math.round(activity.getResources().getDisplayMetrics().widthPixels*.86f));FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(width,-1,Gravity.START);lp.setMargins(dp(8),dp(8),0,dp(8));drawer.addView(panel,lp);
+        int width=Math.min(dp(320),Math.round(activity.getResources().getDisplayMetrics().widthPixels*.86f));drawerWidth=width;drawer.addView(panel,new FrameLayout.LayoutParams(width,-1,Gravity.START));
         content.addView(drawer,new FrameLayout.LayoutParams(-1,-1));
     }
     private View drawerRow(int iconRes,String title,String countTag,View.OnClickListener click){
@@ -151,8 +172,17 @@ final class LibraryDialog extends Dialog {
         for(int i=0;i<counts.length;i++){View v=drawer.findViewWithTag("drawer_count:"+i);if(v instanceof TextView)((TextView)v).setText(i==2?"":String.valueOf(counts[i]));}
         for(int i=0;i<4;i++){View row=drawer.findViewWithTag("drawer_row:"+new String[]{"전체 문서","즐겨찾기","최근 문서","휴지통"}[i]);if(row!=null)row.setBackground(round(i<3&&mode==i?ACTIVE_BG:0x00000000,26));}
     }
-    private void openDrawer(){tree.select(folder);updateDrawerCounts();drawer.setVisibility(View.VISIBLE);}
-    private void closeDrawer(){drawer.setVisibility(View.GONE);}
+    private void beginDrawerDrag(){if(drawerAnim!=null)drawerAnim.cancel();if(drawer.getVisibility()!=View.VISIBLE){tree.select(folder);updateDrawerCounts();setDrawerProgress(0);drawer.setVisibility(View.VISIBLE);}}
+    private void setDrawerProgress(float p){drawerP=p;if(drawerPanel!=null){drawerPanel.setTranslationX(-drawerWidth*(1-p));drawerScrim.setAlpha(p);}}
+    private void settleDrawer(float target){
+        if(drawerAnim!=null)drawerAnim.cancel();drawer.setVisibility(View.VISIBLE);
+        android.animation.ValueAnimator a=android.animation.ValueAnimator.ofFloat(drawerP,target);drawerAnim=a;a.setDuration(Math.max(80,Math.round(220*Math.abs(target-drawerP))));a.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        a.addUpdateListener(v->setDrawerProgress((Float)v.getAnimatedValue()));
+        a.addListener(new android.animation.AnimatorListenerAdapter(){boolean cancelled;@Override public void onAnimationCancel(android.animation.Animator x){cancelled=true;}@Override public void onAnimationEnd(android.animation.Animator x){if(!cancelled){setDrawerProgress(target);if(target==0)drawer.setVisibility(View.GONE);}}});
+        a.start();
+    }
+    private void openDrawer(){tree.select(folder);updateDrawerCounts();if(drawer.getVisibility()!=View.VISIBLE)setDrawerProgress(0);drawer.setVisibility(View.VISIBLE);settleDrawer(1);}
+    private void closeDrawer(){if(drawer.getVisibility()==View.VISIBLE)settleDrawer(0);}
     private void toggleSearch(){
         boolean show=searchRow.getVisibility()!=View.VISIBLE;searchRow.setVisibility(show?View.VISIBLE:View.GONE);
         if(show){search.requestFocus();InputMethodManager keyboard=(InputMethodManager)activity.getSystemService(Context.INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.showSoftInput(search,InputMethodManager.SHOW_IMPLICIT);}

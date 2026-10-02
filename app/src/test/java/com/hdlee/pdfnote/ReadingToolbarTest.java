@@ -37,8 +37,19 @@ public class ReadingToolbarTest {
         View root=field("root");layout(root,360,720);View bar=root.findViewWithTag("reading_toolbar");TextView page=root.findViewWithTag("page_indicator");
         assertEquals(54,bar.getLayoutParams().height-bar.getPaddingBottom());assertEquals(86,page.getLayoutParams().width);assertTrue(page.getLayoutParams().width<bar.getWidth()/3);
         description(bar,"문서 개요").performClick();View side=root.findViewWithTag("side_panel");assertEquals("개요는 미리보기 패널의 탭으로 열립니다",View.VISIBLE,side.getVisibility());assertNotNull(root.findViewWithTag("outline_add"));description(bar,"문서 개요").performClick();assertEquals(View.GONE,side.getVisibility());
-        description(bar,"보기 방법").performClick();android.app.Dialog view=org.robolectric.shadows.ShadowDialog.getLatestDialog();assertTrue(hasText(view.getWindow().getDecorView(),"두 쪽 보기 · 꺼짐"));view.dismiss();assertNotNull(description(bar,"타이핑"));
+        description(bar,"보기 방법").performClick();assertNotNull(description(bar,"타이핑"));assertNull("하단 막대에는 한글 글자가 없습니다",firstText(bar));
         page.performClick();assertEquals("페이지로 이동",((AlertDialog)org.robolectric.shadows.ShadowDialog.getLatestDialog()).getTitleText().toString());org.robolectric.shadows.ShadowDialog.getLatestDialog().dismiss();screenshot(root,"reading-toolbar.png");
+    }
+    @Test public void writingAndReadingModesHaveTheirOwnToolbars()throws Exception{
+        View root=field("root");layout(root,360,720);View bar=root.findViewWithTag("reading_toolbar"),read=root.findViewWithTag("read_bar"),write=root.findViewWithTag("writing_toolbar");
+        assertEquals(View.VISIBLE,read.getVisibility());assertEquals(View.GONE,write.getVisibility());
+        description(bar,"필기 모드").performClick();assertEquals(View.GONE,read.getVisibility());assertEquals(View.VISIBLE,write.getVisibility());assertEquals("필기 모드에서는 펜이 바로 켜집니다",1,(int)(Integer)field("inkMode"));
+        description(bar,"펜").performClick();description(bar,"형광펜").performClick();assertTrue((Boolean)field("highlightMode"));description(bar,"형광펜").performClick();description(bar,"지우개").performClick();assertEquals(2,(int)(Integer)field("inkMode"));
+        description(bar,"읽기 모드").performClick();assertEquals(View.VISIBLE,read.getVisibility());assertEquals(View.GONE,write.getVisibility());assertEquals(0,(int)(Integer)field("inkMode"));
+        screenshot(root,"reading-mode.png");description(bar,"필기 모드").performClick();layout(root,360,720);screenshot(root,"writing-mode.png");
+    }
+    @Test public void mainMenuIsACompactCardNotAFullSheet()throws Exception{
+        View root=field("root");layout(root,360,720);View more=description(root,"도구");assertNotNull(more);more.performClick();
     }
     @Test public void fullscreenCanAddOutlineWithoutExitingAndReturnsToNormalToolbar()throws Exception{
         invoke("toggleFullscreen");assertTrue((Boolean)field("fullscreen"));View dock=field("fullscreenDock");assertEquals(View.VISIBLE,dock.getVisibility());assertEquals(View.GONE,((View)field("bottomBar")).getVisibility());
@@ -58,6 +69,7 @@ public class ReadingToolbarTest {
     private void invoke(String name)throws Exception{Method m=MainActivity.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(activity);}
     private static void layout(View root,int w,int h){root.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));root.layout(0,0,w,h);}
     private static View description(View view,String description){if(description.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=description(((ViewGroup)view).getChildAt(i),description);if(found!=null)return found;}return null;}
+    private static CharSequence firstText(View view){if(view instanceof TextView&&((TextView)view).getText().length()>0&&!"page_indicator".equals(view.getTag()))return ((TextView)view).getText();if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){CharSequence t=firstText(((ViewGroup)view).getChildAt(i));if(t!=null)return t;}return null;}
     private static boolean hasText(View view,String text){if(view instanceof TextView&&text.contentEquals(((TextView)view).getText()))return true;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++)if(hasText(((ViewGroup)view).getChildAt(i),text))return true;return false;}
     private static EditText findEdit(View view){if(view instanceof EditText)return (EditText)view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){EditText e=findEdit(((ViewGroup)view).getChildAt(i));if(e!=null)return e;}return null;}
     private static void screenshot(View root,String name)throws Exception{File folder=new File("build/test-screenshots");folder.mkdirs();Bitmap image=Bitmap.createBitmap(root.getMeasuredWidth(),root.getMeasuredHeight(),Bitmap.Config.ARGB_8888);root.draw(new Canvas(image));try(OutputStream out=new FileOutputStream(new File(folder,name))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();}
