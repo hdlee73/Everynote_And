@@ -14,7 +14,7 @@ final class FolderShapeDrawable extends Drawable {
         paint.setShader(null);paint.setColor(mix(color,.5f));
         canvas.drawRoundRect(new RectF(0,h*.1f,w,h),r,r,paint);canvas.drawRoundRect(new RectF(0,0,w*.42f,h*.22f),r*.8f,r*.8f,paint);
         paint.setColor(0xFFFFFFFF);canvas.drawRoundRect(new RectF(w*.12f,h*.2f,w*.88f,h*.6f),r*.6f,r*.6f,paint);
-        paint.setColor(0xFFF2F2F2);canvas.drawRoundRect(new RectF(w*.18f,h*.15f,w*.82f,h*.5f),r*.6f,r*.6f,paint);
+        paint.setColor(0xFFF2F2F7);canvas.drawRoundRect(new RectF(w*.18f,h*.15f,w*.82f,h*.5f),r*.6f,r*.6f,paint);
         paint.setColor(0xFFFFFFFF);canvas.drawRoundRect(new RectF(w*.12f,h*.22f,w*.88f,h*.6f),r*.6f,r*.6f,paint);
         paint.setShader(new LinearGradient(0,h*.3f,0,h,mix(color,.8f),mix(color,.6f),Shader.TileMode.CLAMP));
         canvas.drawRoundRect(new RectF(0,h*.3f,w,h),r,r,paint);paint.setShader(null);
