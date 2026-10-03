@@ -70,8 +70,8 @@ final class LibraryRepository {
     }
     synchronized File createFolder(File parent,String title)throws IOException{folder(parent);File result=new File(parent,NotebookFiles.name(title));if(result.exists()||!result.mkdir())throw new IOException("같은 이름의 폴더가 있습니다");return result;}
     synchronized File createNote(File parent,String title,NotebookFiles.Paper paper)throws IOException{folder(parent);File file=NotebookFiles.create(parent,title,1,paper);putPaper(file,paper);return file;}
-    NotebookFiles.Paper paper(File file){String value=preferences.getString("paper:"+file.getAbsolutePath(),null);if(value==null)return null;try{String[] parts=value.split(":");return new NotebookFiles.Paper(Integer.parseInt(parts[0]),Integer.parseInt(parts[1]));}catch(RuntimeException error){return null;}}
-    private void putPaper(File file,NotebookFiles.Paper paper){preferences.edit().putString("paper:"+file.getAbsolutePath(),paper.kind+":"+paper.color).commit();}
+    NotebookFiles.Paper paper(File file){String value=preferences.getString("paper:"+file.getAbsolutePath(),null);if(value==null)return null;try{return NotebookFiles.Paper.parse(value);}catch(RuntimeException error){return null;}}
+    private void putPaper(File file,NotebookFiles.Paper paper){preferences.edit().putString("paper:"+file.getAbsolutePath(),paper.spec()).commit();}
     File imported(Uri uri){String path=preferences.getString("source:"+uri.toString(),null);File file=path==null?null:new File(path);return file!=null&&managed(file)&&!inTrash(file)&&file.isFile()?file:null;}
     synchronized File importPdf(Uri source,String title,File destination)throws IOException,JSONException{
         folder(destination);File existing=imported(source);if(existing!=null)return existing;
@@ -83,7 +83,7 @@ final class LibraryRepository {
             }
             try(PDDocument pdf=PDDocument.load(temp,MemoryUsageSetting.setupTempFileOnly().setTempDir(context.getCacheDir()))){
                 count=pdf.getNumberOfPages();if(count==0)throw new IOException("빈 PDF입니다");
-                if("true".equals(pdf.getDocumentInformation().getCustomMetadataValue("PDFNoteNotebook"))){try{String[] spec=pdf.getDocumentInformation().getCustomMetadataValue("PDFNotePaper").split(":");paper=new NotebookFiles.Paper(Integer.parseInt(spec[0]),Integer.parseInt(spec[1]));}catch(RuntimeException ignored){}}
+                if("true".equals(pdf.getDocumentInformation().getCustomMetadataValue("PDFNoteNotebook"))){try{paper=NotebookFiles.Paper.parse(pdf.getDocumentInformation().getCustomMetadataValue("PDFNotePaper"));}catch(RuntimeException ignored){}}
             }
             cloneAnnotations(source,Uri.fromFile(target),count);NotebookFiles.replace(temp,target);if(paper!=null)putPaper(target,paper);
             preferences.edit().putString("source:"+source,target.getAbsolutePath()).commit();return target;
