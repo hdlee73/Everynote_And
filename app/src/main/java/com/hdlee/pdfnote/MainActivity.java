@@ -865,7 +865,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(!library.managed(session.uri)){toast("문서함에 저장한 뒤 이름을 변경하세요");return;}onSelectionAdjustStarted();session.store.save();File before=new File(session.uri.getPath());EditText input=new EditText(this);input.setSingleLine();input.setText(session.title.replaceFirst("(?i)\\.pdf$",""));input.selectAll();
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("이름 변경").setView(input).setPositiveButton("저장",null).setNegativeButton("취소",null).create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{String name=NotebookFiles.pdfName(input.getText().toString());dialog.getButton(-1).setEnabled(false);new Thread(()->{try{File after=library.transfer(before,before.getParentFile(),name,true);runOnUiThread(()->{dialog.dismiss();libraryChanged(before,after);});}catch(Exception error){runOnUiThread(()->{dialog.getButton(-1).setEnabled(true);input.setError(error.getMessage());});}},"rename-pdf").start();}catch(Exception error){input.setError(error.getMessage());}}));dialog.show();
     }
-    private void saveToLibrary(){if(activeSession==null)return;if(library.managed(activeSession.uri)){showLibrary();return;}final DocumentSession session=activeSession;final Uri source=session.officePreview==null?session.uri:Uri.fromFile(session.officePreview);if(session.officePreview!=null)try{AnnotationStore copy=new AnnotationStore(this);copy.open(source);copy.importJson(session.store.exportJson(session.uri,session.title),session.renderer.getPageCount());}catch(JSONException error){toast("주석 저장 실패");return;}importPdfToLibrary(source,session.title.replaceFirst("(?i)\\.[^.]+$","")+".pdf",currentPage,true);}
     /** Saves the untouched source file (no ink, notes or other annotations) wherever the user picks. */
     private void exportOriginal(){
         if(activeSession==null||documentUri==null){toast("문서를 먼저 여세요");return;}
@@ -1430,7 +1429,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("주석 백업",R.drawable.ic_copy,this::exportAnnotations));
                 t.add(new Tile("주석 백업 복원",R.drawable.ic_undo,this::importSidecar));
                 t.add(new Tile("원본 파일 내보내기",R.drawable.ic_folder_open,this::exportOriginal));
-                t.add(new Tile("앱 서재에 PDF로 저장",R.drawable.ic_folder_open,this::saveToLibrary));
                 break;
         }
         return t;
