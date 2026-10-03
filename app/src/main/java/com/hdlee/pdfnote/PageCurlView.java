@@ -52,10 +52,8 @@ final class PageCurlView extends View {
      * so the part near the finger is lifted first and the rest follows in sequence (like a peeled page). All rows are done at t = 1.
      */
     private float rowProgress(float f, float t) {
-        float reach = Math.max(touch, 1f - touch);
-        float d = ((float) Math.sqrt((f - touch) * (f - touch) + .004f) - .0632f) / Math.max(.05f, reach);
-        d = Math.min(1f, d / 1.0f);
-        return Math.max(0f, Math.min(1f, t - 1.05f * d * (1f - t)));
+        float d = Math.min(1f, Math.abs(f - touch) / .38f);
+        return Math.max(0f, Math.min(1f, t - 2.4f * d * (1f - t)));
     }
 
     @Override protected void onDraw(Canvas canvas) {
