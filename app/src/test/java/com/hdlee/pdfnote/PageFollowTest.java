@@ -52,4 +52,14 @@ public class PageFollowTest {
         float contentLeft=after.left+box.left*after.width(),contentRight=after.left+box.right*after.width();
         assertTrue("잘린 영역은 화면을 채웁니다",contentLeft>=-1&&contentRight<=1001&&(contentRight-contentLeft>=999||after.height()*box.height()>=999));
     }
+    @Test public void dragKeepsFollowingEvenWhenStartingItClearsTheSelectionState(){
+        final List<Float> moves=new ArrayList<>();
+        view.setPageDrag(new PdfPageView.PageDrag(){
+            @Override public boolean start(int direction){view.clearTextSelectionOverlay();return true;}
+            @Override public void move(float distance){moves.add(distance);}
+            @Override public void end(float velocity){log.add("end");}
+        });
+        event(0,800,500,0);event(2,700,505,40);event(2,600,505,80);event(2,400,505,120);event(2,300,505,160);event(1,300,505,200);
+        assertTrue("전환 중에도 손가락 이동이 전달됩니다",moves.size()>=3);assertTrue(moves.get(moves.size()-1)>moves.get(0));assertEquals("end",log.get(log.size()-1));
+    }
 }

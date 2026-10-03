@@ -68,6 +68,8 @@ final class AnnotationPainter {
                 if(frame!=null){c.drawBitmap(frame,null,b,paint);}else{paint.setColor(0xFF2C2C2E);c.drawRoundRect(b,b.width()*.03f,b.width()*.03f,paint);}
                 paint.setColor(0x55000000);c.drawRect(b,paint);float r=Math.min(b.width(),b.height())*.17f;paint.setColor(0xE6FFFFFF);c.drawCircle(b.centerX(),b.centerY(),r,paint);
                 android.graphics.Path tri=new android.graphics.Path();tri.moveTo(b.centerX()-r*.32f,b.centerY()-r*.5f);tri.lineTo(b.centerX()-r*.32f,b.centerY()+r*.5f);tri.lineTo(b.centerX()+r*.55f,b.centerY());tri.close();paint.setColor(0xFF1C1C1E);c.drawPath(tri,paint);
+            }else if(e.kind.equals("shape")){Shapes.drawShape(c,b,e.text,d.width());
+            }else if(e.kind.equals("table")){Shapes.drawTable(c,b,e.text,d.width());
             }else if(e.kind.equals("hyperlink")){
                 Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(0x24007AFF);c.drawRoundRect(b,b.height()*.12f,b.height()*.12f,paint);paint.setColor(0xFF007AFF);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(Math.max(1.5f,d.width()*.0028f));c.drawLine(b.left,b.bottom-paint.getStrokeWidth(),b.right,b.bottom-paint.getStrokeWidth(),paint);
             }else if(e.kind.equals("audio")){

@@ -75,4 +75,17 @@ public class AttachmentTest {
         assertEquals("이미지가 그려집니다",Color.RED,out.getPixel(100,100));
         int under=out.getPixel(280,238);assertTrue("링크 밑줄이 그려집니다",Color.blue(under)>Color.red(under)+40);
     }
+    @Test public void shapesAndTablesSurviveSavingAndAreDrawn()throws Exception{
+        AnnotationStore.PageElement shape=element("shape",.1f,.1f,.5f,.5f);shape.text=Shapes.shapeSpec("rect",0xFF000000,0x66FF0000,4);
+        AnnotationStore.PageElement table=element("table",.1f,.6f,.9f,.9f);Shapes.Table t=Shapes.Table.create(2,3,0xFF000000,0xFFE5F0FF,0x00FFFFFF);t.cells[0]="이름";t.cells[4]="값";table.text=t.serialize();
+        assertEquals(shape.text,AnnotationStore.PageElement.fromJson(shape.toJson()).text);
+        Shapes.Table back=Shapes.Table.parse(AnnotationStore.PageElement.fromJson(table.toJson()).text);assertEquals(2,back.rows);assertEquals(3,back.cols);assertEquals("이름",back.cells[0]);assertEquals("값",back.cells[4]);
+        Shapes.Table bigger=back.resized(3,4);assertEquals("이름",bigger.cells[0]);assertEquals("값",bigger.cells[1*4+1]);
+        for(String bad:new String[]{"rect|FF0000|00000000|3","hexagon|FF000000|00000000|3","rect|FF000000|00000000|300"}){AnnotationStore.PageElement e=element("shape",.1f,.1f,.5f,.5f);e.text=bad;try{AnnotationStore.PageElement.fromJson(e.toJson());fail(bad);}catch(org.json.JSONException expected){}}
+        AnnotationStore.PageElement badTable=element("table",.1f,.1f,.5f,.5f);badTable.text="99,99,FF000000,FF000000,FF000000";try{AnnotationStore.PageElement.fromJson(badTable.toJson());fail("table size");}catch(org.json.JSONException expected){}
+        store.elements.removeIf(x->x!=shape&&x!=table);
+        Bitmap out=Bitmap.createBitmap(400,400,Bitmap.Config.ARGB_8888);out.eraseColor(Color.WHITE);AnnotationPainter.elements(activity,new Canvas(out),new RectF(0,0,400,400),store,0);
+        assertTrue("도형 안쪽이 채워집니다",Color.red(out.getPixel(120,120))>Color.green(out.getPixel(120,120))+40);
+        assertTrue("표 머리글 칸이 칠해집니다",Color.blue(out.getPixel(60,250))>Color.red(out.getPixel(60,250)));
+    }
 }

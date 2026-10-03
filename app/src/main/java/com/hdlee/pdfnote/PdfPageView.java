@@ -97,12 +97,15 @@ final class PdfPageView extends View {
     /** Lets the host follow a finger while it turns the page (Kindle style). */
     interface PageDrag { boolean start(int direction); void move(float distance); void end(float velocity); }
     void setPageDrag(PageDrag drag) { pageDrag = drag; }
+    /** Converts a point in this view to normalized page coordinates (clamped to the page). */
+    float[] toPage(float vx,float vy){RectF d=contentRect();if(d.width()<=0||d.height()<=0)return new float[]{.5f,.5f};return new float[]{Math.max(0f,Math.min(1f,(vx-d.left)/d.width())),Math.max(0f,Math.min(1f,(vy-d.top)/d.height()))};}
     private AnnotationStore.PageElement selectedElement;
     private int elementDrag; private boolean elementMoved; private float elementStartX, elementStartY; private final RectF elementOrigin = new RectF();
     /** Shows move and resize handles around an attached picture, sticker, video or link box. */
     void selectElement(AnnotationStore.PageElement element) { selectedElement = element; invalidate(); }
     AnnotationStore.PageElement selectedElement() { return selectedElement; }
     private static boolean resizable(AnnotationStore.PageElement e) { return e != null && !e.kind.equals("text") && !e.kind.equals("audio"); }
+    static boolean selectable(AnnotationStore.PageElement e){return e.kind.equals("image")||e.kind.equals("sticker")||e.kind.equals("video")||e.kind.equals("shape")||e.kind.equals("table");}
     private static boolean aspectLocked(AnnotationStore.PageElement e) { return e.kind.equals("image") || e.kind.equals("sticker") || e.kind.equals("video"); }
     private void drawElementHandles(Canvas canvas, RectF dest) {
         if (selectedElement == null || selectedElement.page != page || annotationStore == null || !annotationStore.elements.contains(selectedElement) || dest.width() <= 0) return;
@@ -613,6 +616,7 @@ final class PdfPageView extends View {
             if(directTextSelection||stylus){beginTextSelectionNow();updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));return true;}
             selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;panning=scale>1f;
         }
+        if(dragging&&e.getActionMasked()==MotionEvent.ACTION_MOVE){dragTracker.addMovement(e);float ddx=e.getX()-startX;pageDrag.move(Math.max(0f,dragDirection>0?-ddx:ddx));return true;}
         if(bodySwipeCandidate&&!selectingText&&e.getActionMasked()==MotionEvent.ACTION_MOVE){if(Math.hypot(e.getX()-startX,e.getY()-startY)>touchSlop()){gestureMoved=true;selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;
             if(pageDrag!=null&&!verticalPageSwipe){float dx=e.getX()-startX,dy=e.getY()-startY;
                 if(!dragging&&Math.abs(dx)>Math.abs(dy)*1.5f){dragDirection=dx<0?1:-1;dragging=pageDrag.start(dragDirection);if(dragging){dragTracker=android.view.VelocityTracker.obtain();getParent().requestDisallowInterceptTouchEvent(true);}}
@@ -693,7 +697,7 @@ final class PdfPageView extends View {
             if (Math.hypot(e.getX() - startX, e.getY() - startY) < 20 && marks != null) {
                 float nx = (e.getX() - dest.left) / dest.width();
                 float ny = (e.getY() - dest.top) / dest.height();
-                if(annotationStore!=null)for(int i=annotationStore.elements.size()-1;i>=0;i--){AnnotationStore.PageElement element=annotationStore.elements.get(i);if(element.page==page&&nx>=element.left&&nx<=element.right&&ny>=element.top&&ny<=element.bottom){if(element.kind.equals("image")||element.kind.equals("sticker")||element.kind.equals("video")){if(element==selectedElement)listener.onElementTapped(element);else{selectedElement=element;invalidate();}}else listener.onElementTapped(element);return true;}}
+                if(annotationStore!=null)for(int i=annotationStore.elements.size()-1;i>=0;i--){AnnotationStore.PageElement element=annotationStore.elements.get(i);if(element.page==page&&nx>=element.left&&nx<=element.right&&ny>=element.top&&ny<=element.bottom){if(selectable(element)){if(element==selectedElement)listener.onElementTapped(element);else{selectedElement=element;invalidate();}}else listener.onElementTapped(element);return true;}}
                 for (int i = marks.size() - 1; i >= 0; i--) {
                     AnnotationStore.Mark m = marks.get(i);
                     if (m.page == page && nx >= m.left && nx <= m.right && ny >= m.top && ny <= m.bottom) {
