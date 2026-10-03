@@ -1536,7 +1536,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         inlineDelete=new TextView(this);inlineDelete.setText("✕");inlineDelete.setTextSize(14);inlineDelete.setTextColor(Color.WHITE);inlineDelete.setGravity(Gravity.CENTER);inlineDelete.setBackground(round(0xFFEF5B7C,15));inlineDelete.setElevation(dp(3));inlineDelete.setContentDescription("글상자 삭제");inlineDelete.setTag("inline_delete");inlineDelete.setOnClickListener(v->deleteInlineText());viewportLayer.addView(inlineDelete,new FrameLayout.LayoutParams(dp(30),dp(30),Gravity.TOP|Gravity.START));
         buildInlineBar(e);applyInlineStyle();positionInlineText();
         inlineTracker=()->{positionInlineText();return true;};viewportLayer.getViewTreeObserver().addOnPreDrawListener(inlineTracker);
-        inlineEdit.requestFocus();InputMethodManager keyboard=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.showSoftInput(inlineEdit,InputMethodManager.SHOW_IMPLICIT);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);inlineEdit.requestFocus();InputMethodManager keyboard=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.showSoftInput(inlineEdit,InputMethodManager.SHOW_IMPLICIT);
     }
     private interface HandleDrag{void moved(float dx,float dy,RectF page);}
     private View inlineHandle(String glyph,String description,HandleDrag drag){
@@ -1564,16 +1564,16 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         placeHandle(inlineMove,left-dp(8),top-dp(34));placeHandle(inlineDelete,left+width-dp(22),top-dp(34));placeHandle(inlineResize,left+width-dp(12),editBottom-dp(10));
         placeInlineBar(top,editBottom);
     }
-    /** Keeps the style card clear of the text being typed: below it when there is room, else above it, else docked at the bottom. */
+    /** Keeps the toolbar clear of the text being typed: above the box first (the keyboard covers the lower part), else below, else at the top. */
     private void placeInlineBar(int editTop,int editBottom){
         if(inlineBar==null||viewportLayer==null||viewportLayer.getHeight()<=0)return;
-        int barH=inlineBar.getHeight()>0?inlineBar.getHeight():dp(150),H=viewportLayer.getHeight(),gap=dp(10);
+        int barH=inlineBar.getHeight()>0?inlineBar.getHeight():dp(42),H=viewportLayer.getHeight(),gap=dp(4);
         FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)inlineBar.getLayoutParams();
         int topMargin;
-        if(H-editBottom>=barH+gap+dp(8))topMargin=editBottom+gap;
-        else if(editTop-dp(38)>=barH+gap)topMargin=editTop-dp(38)-barH-gap+dp(30);
-        else topMargin=Math.max(0,H-barH-dp(10));
-        topMargin=Math.max(0,Math.min(topMargin,H-barH));
+        if(editTop-dp(36)-barH-gap>=dp(2))topMargin=editTop-dp(36)-barH-gap;
+        else if(H-editBottom-dp(14)>=barH+gap)topMargin=editBottom+dp(14)+gap;
+        else topMargin=dp(4);
+        topMargin=Math.max(0,Math.min(topMargin,Math.max(0,H-barH)));
         if(lp.topMargin!=topMargin||(lp.gravity&Gravity.VERTICAL_GRAVITY_MASK)!=Gravity.TOP){lp.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;lp.topMargin=topMargin;lp.bottomMargin=0;inlineBar.setLayoutParams(lp);}
     }
     private void placeHandle(View handle,int left,int top){
@@ -1589,30 +1589,35 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void changeInlineSize(int delta){
         if(inlineElement==null)return;int points=Math.max(8,Math.min(72,pointsOf(inlineElement)+delta));inlineElement.textSize=points/(float)TEXT_PAGE_POINTS;applyInlineStyle();
     }
-    /** Compact three-row style card (font / bold·italic·size·actions / colors) that floats above the keyboard while typing. */
+    /** Slim one-row toolbar (Aa · B · I · size · delete · done); the font and colour rows open only when "Aa" is tapped. */
     private void buildInlineBar(AnnotationStore.PageElement e){
-        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(8),dp(4),dp(8),dp(4));card.setTag("inline_style_bar");
-        LinearLayout faces=segmented(FONT_NAMES,()->Math.max(0,Arrays.asList(FONT_IDS).indexOf(e.font)),i->{e.font=FONT_IDS[i];applyInlineStyle();});faces.setTag("text_fonts");faces.setPadding(0,dp(2),0,dp(2));card.addView(faces,new LinearLayout.LayoutParams(-1,dp(40)));
+        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(6),dp(2),dp(6),dp(2));card.setTag("inline_style_bar");
+        final LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setVisibility(View.GONE);
+        LinearLayout faces=segmented(FONT_NAMES,()->Math.max(0,Arrays.asList(FONT_IDS).indexOf(e.font)),i->{e.font=FONT_IDS[i];applyInlineStyle();});faces.setTag("text_fonts");faces.setPadding(0,dp(2),0,dp(2));panel.addView(faces,new LinearLayout.LayoutParams(-1,dp(40)));
+        LinearLayout palette=swatches(TEXT_COLORS,()->e.color|0xFF000000,c->{e.color=c|0xFF000000;applyInlineStyle();},26,1);palette.setTag("text_colors");palette.setPadding(0,dp(2),0,dp(2));panel.addView(palette,new LinearLayout.LayoutParams(-1,dp(34)));
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
         final boolean[] bold={e.bold},italic={e.italic};
+        TextView style=stepButton("Aa","글꼴·색 펼치기");style.setTextSize(14);style.setTypeface(Typeface.DEFAULT_BOLD);style.setTag("text_style_toggle");
+        style.setOnClickListener(v->{boolean open=panel.getVisibility()!=View.VISIBLE;panel.setVisibility(open?View.VISIBLE:View.GONE);style.setBackground(round(open?0xFFD6E6FF:0xFFF2F2F7,18));});
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(38),dp(32));sp.setMargins(dp(2),0,dp(6),0);row.addView(style,sp);
         TextView boldChip=toggleChip("B",Typeface.BOLD,bold,()->{e.bold=bold[0];applyInlineStyle();});boldChip.setTag("text_bold");TextView italicChip=toggleChip("I",Typeface.ITALIC,italic,()->{e.italic=italic[0];applyInlineStyle();});italicChip.setTag("text_italic");
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(34),dp(32));cp.setMargins(dp(2),0,dp(2),0);row.addView(boldChip,cp);LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(dp(34),dp(32));ip.setMargins(dp(2),0,dp(8),0);row.addView(italicChip,ip);
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(32),dp(32));cp.setMargins(dp(2),0,dp(2),0);row.addView(boldChip,cp);LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(dp(32),dp(32));ip.setMargins(dp(2),0,dp(6),0);row.addView(italicChip,ip);
         TextView minus=stepButton("−","글자 작게");minus.setOnClickListener(v->changeInlineSize(-1));row.addView(minus,new LinearLayout.LayoutParams(dp(30),dp(32)));
         inlineSize=new TextView(this);inlineSize.setTag("text_size");inlineSize.setTextSize(12);inlineSize.setTextColor(NAVY);inlineSize.setGravity(Gravity.CENTER);inlineSize.setTypeface(Typeface.DEFAULT_BOLD);row.addView(inlineSize,new LinearLayout.LayoutParams(dp(40),dp(32)));
         TextView plus=stepButton("＋","글자 크게");plus.setOnClickListener(v->changeInlineSize(1));row.addView(plus,new LinearLayout.LayoutParams(dp(30),dp(32)));
         row.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
-        ImageButton remove=icon(R.drawable.ic_delete,"글상자 삭제",0xFFFF3B30,v->deleteInlineText());remove.setPadding(dp(7),dp(7),dp(7),dp(7));row.addView(remove,new LinearLayout.LayoutParams(dp(36),dp(36)));
-        ImageButton done=icon(R.drawable.ic_check,"입력 완료",Color.WHITE,v->commitInlineText());done.setTag("text_done");done.setBackground(round(ACCENT,18));done.setPadding(dp(7),dp(7),dp(7),dp(7));LinearLayout.LayoutParams dp2=new LinearLayout.LayoutParams(dp(36),dp(36));dp2.setMargins(dp(4),0,0,0);row.addView(done,dp2);
-        card.addView(row,new LinearLayout.LayoutParams(-1,dp(38)));
-        LinearLayout palette=swatches(TEXT_COLORS,()->e.color|0xFF000000,c->{e.color=c|0xFF000000;applyInlineStyle();},26,1);palette.setTag("text_colors");palette.setPadding(0,dp(2),0,dp(2));card.addView(palette,new LinearLayout.LayoutParams(-1,dp(34)));
-        inlineBar=card;card.setBackground(round(0xFAFFFFFF,20));card.setElevation(dp(8));
-        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(Math.min(dp(330),getResources().getDisplayMetrics().widthPixels-dp(16)),-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);lp.setMargins(dp(8),0,dp(8),dp(10));viewportLayer.addView(inlineBar,lp);
+        ImageButton remove=icon(R.drawable.ic_delete,"글상자 삭제",0xFFFF3B30,v->deleteInlineText());remove.setPadding(dp(7),dp(7),dp(7),dp(7));row.addView(remove,new LinearLayout.LayoutParams(dp(34),dp(34)));
+        ImageButton done=icon(R.drawable.ic_check,"입력 완료",Color.WHITE,v->commitInlineText());done.setTag("text_done");done.setBackground(round(ACCENT,17));done.setPadding(dp(7),dp(7),dp(7),dp(7));LinearLayout.LayoutParams dp2=new LinearLayout.LayoutParams(dp(34),dp(34));dp2.setMargins(dp(4),0,0,0);row.addView(done,dp2);
+        card.addView(row,new LinearLayout.LayoutParams(-1,dp(38)));card.addView(panel,new LinearLayout.LayoutParams(-1,-2));
+        inlineBar=card;card.setBackground(round(0xF2FFFFFF,20));card.setElevation(dp(6));
+        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(Math.min(dp(330),getResources().getDisplayMetrics().widthPixels-dp(16)),-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);lp.setMargins(dp(8),0,dp(8),0);viewportLayer.addView(inlineBar,lp);
     }
     private TextView stepButton(String label,String description){TextView b=new TextView(this);b.setText(label);b.setTextSize(18);b.setTextColor(NAVY);b.setGravity(Gravity.CENTER);b.setContentDescription(description);b.setBackground(round(0xFFF2F2F7,18));return b;}
     private void removeInlineViews(){
         AnnotationPainter.skip=null;
         if(inlineTracker!=null&&viewportLayer!=null)viewportLayer.getViewTreeObserver().removeOnPreDrawListener(inlineTracker);inlineTracker=null;
         for(View v:new View[]{inlineEdit,inlineMove,inlineResize,inlineDelete,inlineBar})if(v!=null)viewportLayer.removeView(v);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         if(inlineEdit!=null){InputMethodManager keyboard=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.hideSoftInputFromWindow(inlineEdit.getWindowToken(),0);}
         inlineEdit=null;inlineMove=inlineResize=inlineDelete=null;inlineBar=null;inlineSize=null;inlineElement=null;inlineStore=null;inlineView=null;
     }
