@@ -261,14 +261,14 @@ final class PdfPageView extends View {
     private void analyze() {
         bounds.set(0, 0, 1, 1); crop.set(0, 0, 1, 1); paperColor = 0xFFFFFFFF;
         try {
-            int w = Math.min(120, bitmap.getWidth()), h = Math.max(1, Math.round(bitmap.getHeight() * (w / (float) bitmap.getWidth())));
-            Bitmap small = Bitmap.createScaledBitmap(bitmap, w, h, true); int[] px = new int[w * h]; small.getPixels(px, 0, w, 0, 0, w, h); if (small != bitmap) small.recycle();
+            int w = Math.min(200, bitmap.getWidth()), h = Math.min(Math.max(1, Math.round(bitmap.getHeight() * (w / (float) bitmap.getWidth()))), bitmap.getHeight()); int[] px = new int[w * h];
+            for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) px[y * w + x] = bitmap.getPixel(Math.min(bitmap.getWidth() - 1, x * bitmap.getWidth() / w), Math.min(bitmap.getHeight() - 1, y * bitmap.getHeight() / h));
             java.util.HashMap<Integer, Integer> votes = new java.util.HashMap<>(); int best = 0, bestVotes = 0;
             for (int i = 0; i < w * h; i++) { int x = i % w, y = i / w; if (x > 2 && x < w - 3 && y > 2 && y < h - 3) continue; int key = (px[i] & 0xFFF0F0F0); int n = votes.merge(key, 1, Integer::sum); if (n > bestVotes) { bestVotes = n; best = px[i]; } }
             paperColor = best | 0xFF000000; int minX = w, minY = h, maxX = -1, maxY = -1;
             for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) { int c = px[y * w + x]; int diff = Math.abs(Color.red(c) - Color.red(paperColor)) + Math.abs(Color.green(c) - Color.green(paperColor)) + Math.abs(Color.blue(c) - Color.blue(paperColor)); if (diff > 60) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; } }
             if (maxX >= minX && maxY >= minY) {
-                float pad = 0.025f; bounds.set(Math.max(0f, minX / (float) w - pad), Math.max(0f, minY / (float) h - pad), Math.min(1f, (maxX + 1) / (float) w + pad), Math.min(1f, (maxY + 1) / (float) h + pad));
+                float pad = 0.03f; bounds.set(Math.max(0f, minX / (float) w - pad), Math.max(0f, minY / (float) h - pad), Math.min(1f, (maxX + 1) / (float) w + pad), Math.min(1f, (maxY + 1) / (float) h + pad));
                 if (bounds.width() * bounds.height() < 0.1f) bounds.set(0, 0, 1, 1);
             }
         } catch (RuntimeException ignored) { bounds.set(0, 0, 1, 1); }
