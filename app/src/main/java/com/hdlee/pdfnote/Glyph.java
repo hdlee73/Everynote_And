@@ -20,15 +20,15 @@ final class Glyph {
     }
 
     /** An icon followed by a label; pass an empty label for an icon alone. */
-    static CharSequence leading(Context context, int resource, int color, int sizeDp, String label) {
+    static CharSequence leading(Context context, int resource, int color, int sizeDp, CharSequence label) {
         SpannableStringBuilder text = new SpannableStringBuilder("￼");
         text.setSpan(span(context, resource, color, sizeDp), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        if (label != null && !label.isEmpty()) text.append("  ").append(label);
+        if (label != null && label.length() > 0) text.append("  ").append(label);
         return text;
     }
 
     /** A round accent badge with a clean check mark. */
-    static CharSequence check(Context context, int color, String label) {
+    static CharSequence check(Context context, int color, CharSequence label) {
         return leading(context, R.drawable.ic_check_bold, color, 18, label);
     }
 }
