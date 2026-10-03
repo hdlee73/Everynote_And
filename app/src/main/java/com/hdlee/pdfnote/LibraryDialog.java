@@ -57,7 +57,7 @@ final class LibraryDialog extends Dialog {
                 if(e.getActionMasked()==MotionEvent.ACTION_DOWN){downX=e.getX();downY=e.getY();dragging=false;}
                 else if(e.getActionMasked()==MotionEvent.ACTION_MOVE&&!dragging&&drawer!=null){
                     float dx=e.getX()-downX,dy=e.getY()-downY;boolean open=drawer.getVisibility()==View.VISIBLE&&drawerP>.5f;int slop=ViewConfiguration.get(activity).getScaledTouchSlop();
-                    if(Math.abs(dx)>slop&&Math.abs(dx)>Math.abs(dy)*1.5f&&((!open&&dx>0&&downX<(wide?dp(68):dp(24)))||(open&&dx<0))){beginDrawerDrag();dragging=true;startX=e.getX();startP=drawerP;velocity=VelocityTracker.obtain();velocity.addMovement(e);return true;}
+                    if(Math.abs(dx)>slop&&Math.abs(dx)>Math.abs(dy)*1.5f&&((!open&&dx>0&&downX>=dp(28)&&downX<=dp(150))||(open&&dx<0))){beginDrawerDrag();dragging=true;startX=e.getX();startP=drawerP;velocity=VelocityTracker.obtain();velocity.addMovement(e);return true;}
                 }
                 return false;
             }
@@ -199,7 +199,7 @@ final class LibraryDialog extends Dialog {
         String title=mode==ALL?"전체 문서":mode==FAVORITES?"즐겨찾기":mode==RECENT?"최근 문서":folder.equals(repository.root)?"문서함":folder.getName();heading.setText(title);
         int folders=0,docs=0;for(File f:items){if(f.isDirectory())folders++;else docs++;}
         subtitle.setText(selectionMode?selected.size()+"개 선택됨":(folders>0?"폴더 "+folders+"개 · ":"")+"문서 "+docs+"개");
-        boolean nested=mode==FOLDER&&!folder.equals(repository.root);upButton.setVisibility(nested?View.VISIBLE:View.GONE);if(nested)upButton.setText("‹  "+(folder.getParentFile().equals(repository.root)?"문서함":folder.getParentFile().getName()));
+        boolean nested=mode==FOLDER&&!folder.equals(repository.root);upButton.setVisibility(nested?View.VISIBLE:View.GONE);if(nested)upButton.setText(Glyph.leading(activity,R.drawable.ic_chevron_left,upButton.getCurrentTextColor(),18,folder.getParentFile().equals(repository.root)?"문서함":folder.getParentFile().getName()));
     }
     private void refreshGrid(){
         if(previews.isShutdown()||grid==null)return;final int version=++generation;grid.removeAllViews();List<File> items=items();updateHeading(items);
