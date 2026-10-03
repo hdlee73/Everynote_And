@@ -47,98 +47,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         @Override public void onTranslationTapped(AnnotationStore.TranslationNote note){active();MainActivity.this.onTranslationTapped(note);}
         @Override public void onSelectionAdjustStarted(){active();MainActivity.this.onSelectionAdjustStarted();}
         @Override public void onLassoSelectionFinished(){active();MainActivity.this.onLassoSelectionFinished();}
-        @Override public void onElementTapped(AnnotationStore.PageElement element){
-        if("audio".equals(element.kind)){showAudioPlayer(element);return;}
-        if("text".equals(element.kind)){beginInlineText(element,false);return;}
-        if("hyperlink".equals(element.kind)){showHyperlinkMenu(element);return;}
-        String kind=element.kind;
-        String[] labels=kind.equals("image")||kind.equals("sticker")?new String[]{"위치·크기","삭제"}:kind.equals("video")?new String[]{"재생","위치·크기","삭제"}:kind.equals("link")?new String[]{"링크 열기","수정","위치·크기","삭제"}:new String[]{"수정","위치·크기","삭제"};
-        new AlertDialog.Builder(this).setTitle("페이지 "+(element.page+1)).setItems(labels,(d,index)->{String action=labels[index];
-            if(action.equals("링크 열기")){if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}}
-            else if(action.equals("재생"))showVideoPlayer(element);
-            else if(action.equals("수정"))editPageElement(element,false);
-            else if(action.equals("위치·크기"))editElementGeometry(element);
-            else deleteElement(element);}).show();
-    }
-    private void deleteElement(AnnotationStore.PageElement element){
-        if(store==null)return;
-        if(element.kind.equals("hyperlink")){store.elements.removeIf(e->e.kind.equals("hyperlink")&&e.page==element.page&&e.color==element.color&&e.text.equals(element.text));}
-        else store.elements.remove(element);
-        if(element.kind.equals("video")){File video=new File(new File(getFilesDir(),"videos"),element.text);video.delete();}
-        store.save();pageView.selectElement(null);redrawPages();
-    }
-    // ---- pictures, stickers, videos
-    private void pickImage(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),IMPORT_IMAGE);}
-    private void pickVideo(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("video/*"),IMPORT_VIDEO);}
-    private static final String[] STICKERS={"⭐","❤️","👍","👀","💡","📌","✅","❗","❓","🔥","⚠️","📝","🎯","🔖","💬","✨","😀","😮","🤔","🙏","📚","🔎","⏰","🚩"};
-    private void showStickerPicker(){
-        if(renderer==null){toast("문서를 먼저 여세요");return;}
-        final AlertDialog[] holder=new AlertDialog[1];
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(8),dp(4),dp(8),dp(4));
-        LinearLayout rowView=null;
-        for(int i=0;i<STICKERS.length;i++){
-            if(i%6==0){rowView=new LinearLayout(this);box.addView(rowView,new LinearLayout.LayoutParams(-1,dp(52)));}
-            final String sticker=STICKERS[i];TextView cell=new TextView(this);cell.setText(sticker);cell.setTextSize(28);cell.setGravity(Gravity.CENTER);cell.setContentDescription("스티커 "+sticker);
-            cell.setOnClickListener(v->{if(holder[0]!=null)holder[0].dismiss();placementText=sticker;placeElement("sticker","");});
-            rowView.addView(cell,new LinearLayout.LayoutParams(0,-1,1));
-        }
-        TextView mine=pill("내 이미지로 스티커 만들기","이미지 선택",ACTIVE_BG,ACTIVE_FG,v->{if(holder[0]!=null)holder[0].dismiss();pickImage();});LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,dp(44));mp.topMargin=dp(8);box.addView(mine,mp);
-        holder[0]=new AlertDialog.Builder(this).setTitle("스티커").setView(box).setNegativeButton("닫기",null).create();holder[0].show();
-    }
-    private void importVideo(Uri source){
-        final DocumentSession session=activeSession;toast("동영상을 가져오는 중…");
-        new Thread(()->{try{
-            File folder=new File(getFilesDir(),"videos");folder.mkdirs();String name=UUID.randomUUID()+".mp4";File target=new File(folder,name);long copied=0;
-            try(InputStream in=getContentResolver().openInputStream(source);OutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[1<<16];int n;while((n=in.read(buffer))>0){out.write(buffer,0,n);copied+=n;if(copied>600L*1024*1024)throw new IOException("600MB 이하의 동영상만 넣을 수 있습니다");}}
-            catch(IOException error){target.delete();throw error;}
-            Bitmap frame=null;android.media.MediaMetadataRetriever retriever=new android.media.MediaMetadataRetriever();
-            try{retriever.setDataSource(target.getPath());frame=retriever.getFrameAtTime(500000,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);}catch(RuntimeException ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
-            if(frame==null){target.delete();throw new IOException("동영상을 읽을 수 없습니다");}
-            float shrink=Math.min(1f,900f/Math.max(frame.getWidth(),frame.getHeight()));if(shrink<1f){Bitmap small=Bitmap.createScaledBitmap(frame,Math.max(1,Math.round(frame.getWidth()*shrink)),Math.max(1,Math.round(frame.getHeight()*shrink)),true);frame.recycle();frame=small;}
-            File images=new File(getFilesDir(),"images");images.mkdirs();String thumb=UUID.randomUUID()+".png";
-            try(OutputStream out=new FileOutputStream(new File(images,thumb))){if(!frame.compress(Bitmap.CompressFormat.PNG,100,out))throw new IOException("미리보기 저장 실패");}finally{frame.recycle();}
-            runOnUiThread(()->{if(session!=null&&sessions.contains(session)){switchDocument(session);placementText=name;placeElement("video",thumb);}});
-        }catch(Exception error){runOnUiThread(()->toast("동영상 가져오기 실패: "+error.getMessage()));}},"video-import").start();
-    }
-    private void showVideoPlayer(AnnotationStore.PageElement element){
-        File file=new File(new File(getFilesDir(),"videos"),element.text);if(!file.isFile()){toast("동영상 파일을 찾을 수 없습니다");return;}
-        final Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);
-        VideoView video=new VideoView(this);MediaController controller=new MediaController(this);controller.setAnchorView(video);video.setMediaController(controller);video.setVideoURI(Uri.fromFile(file));frame.addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
-        ImageButton close=icon(R.drawable.ic_close,"동영상 닫기",Color.WHITE,v->dialog.dismiss());FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|Gravity.END);cp.setMargins(0,dp(24),dp(8),0);frame.addView(close,cp);
-        dialog.setContentView(frame);dialog.setOnDismissListener(d->video.stopPlayback());video.setOnPreparedListener(m->video.start());dialog.show();
-    }
-    // ---- hyperlinks
-    private void startHyperlink(){if(renderer==null){toast("문서를 먼저 여세요");return;}startTextSelection();toast("링크를 걸 글자를 드래그해 선택한 뒤 ‘링크’를 누르세요");}
-    /** Accepts a web address or a page number and returns the stored target, or null when it is not valid. */
-    private String linkTarget(String input){
-        String text=input==null?"":input.trim();if(text.isEmpty())return null;
-        if(text.matches("\\d{1,6}")){int page=Integer.parseInt(text);return renderer!=null&&page>=1&&page<=renderer.getPageCount()?"page:"+(page-1):null;}
-        if(!text.contains("://")&&text.contains(".")&&!text.contains(" "))text="https://"+text;
-        return validWebUrl(text)&&!text.contains(" ")?text:null;
-    }
-    private void createHyperlink(PdfPageView.TextSelection selection){
-        if(store==null)return;final AnnotationStore target=store;final int page=currentPage;
-        EditText input=new EditText(this);input.setHint("https://… 또는 페이지 번호");input.setSingleLine();input.setPadding(dp(24),dp(12),dp(24),dp(12));
-        new AlertDialog.Builder(this).setTitle("하이퍼링크").setView(input).setPositiveButton("만들기",(d,w)->{
-            String link=linkTarget(input.getText().toString());if(link==null){toast("http(s) 주소나 문서 안 페이지 번호를 입력하세요");return;}
-            int group=new Random().nextInt(Integer.MAX_VALUE)+1;List<RectF> pieces=selection.bounds==null||selection.bounds.isEmpty()?Collections.singletonList(selection.unionBounds):selection.bounds;
-            for(RectF b:pieces){AnnotationStore.PageElement e=new AnnotationStore.PageElement();e.page=page;e.kind="hyperlink";e.text=link;e.color=group;e.left=Math.max(0f,b.left);e.top=Math.max(0f,b.top);e.right=Math.min(1f,b.right);e.bottom=Math.min(1f,b.bottom);if(e.right-e.left<.005f||e.bottom-e.top<.003f)continue;target.elements.add(e);}
-            target.save();redrawPages();toast("링크를 만들었습니다. 글자를 탭하면 열 수 있습니다");
-        }).setNegativeButton("취소",null).show();
-    }
-    private void openHyperlink(AnnotationStore.PageElement element){
-        if(element.text.startsWith("page:")){try{showPage(Integer.parseInt(element.text.substring(5)));}catch(NumberFormatException ignored){}return;}
-        if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}
-    }
-    private void showHyperlinkMenu(AnnotationStore.PageElement element){
-        String title=element.text.startsWith("page:")?"페이지 "+(Integer.parseInt(element.text.substring(5))+1)+"(으)로 이동":element.text;String[] labels={"열기","링크 수정","링크 삭제"};
-        new AlertDialog.Builder(this).setTitle(title.length()>60?title.substring(0,60)+"…":title).setItems(labels,(d,index)->{
-            if(index==0)openHyperlink(element);
-            else if(index==1){EditText input=new EditText(this);input.setSingleLine();input.setText(element.text.startsWith("page:")?String.valueOf(Integer.parseInt(element.text.substring(5))+1):element.text);input.setPadding(dp(24),dp(12),dp(24),dp(12));
-                new AlertDialog.Builder(this).setTitle("링크 수정").setView(input).setPositiveButton("저장",(dd,w)->{String link=linkTarget(input.getText().toString());if(link==null){toast("http(s) 주소나 문서 안 페이지 번호를 입력하세요");return;}String old=element.text;for(AnnotationStore.PageElement e:store.elements)if(e.kind.equals("hyperlink")&&e.page==element.page&&e.color==element.color&&e.text.equals(old))e.text=link;store.save();redrawPages();}).setNegativeButton("취소",null).show();}
-            else deleteElement(element);
-        }).show();
-    }
+        @Override public void onElementTapped(AnnotationStore.PageElement element){active();MainActivity.this.onElementTapped(element);}
     }
     private static final class DocumentSession {
         Uri uri; String title; ParcelFileDescriptor descriptor; PdfRenderer renderer;
@@ -948,7 +857,98 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         element.left=Math.min(.75f,x);element.top=Math.min(.8f,y);element.right=Math.min(.97f,element.left+.6f);element.bottom=Math.min(.98f,element.top+.07f);placementKind="";memoMode=false;pageView.setMemoMode(false);updateToolStates();editPageElement(element,true);}
     private void editPageElement(AnnotationStore.PageElement element,boolean fresh){if("text".equals(element.kind)){beginInlineText(element,fresh);return;}final AnnotationStore target=store;EditText input=new EditText(this);input.setText(element.text);input.setHint(element.kind.equals("link")?"https://… 또는 YouTube 주소":"타이핑할 내용");input.setMinLines(3);new AlertDialog.Builder(this).setTitle(element.kind.equals("link")?"웹·유튜브 링크":"타이핑").setView(input).setPositiveButton("저장",(d,w)->{String text=input.getText().toString().trim();if(text.isEmpty())return;if(element.kind.equals("link")&&!validWebUrl(text)){toast("http 또는 https 주소를 입력하세요");return;}element.text=text;if(fresh)target.elements.add(element);target.save();pageView.invalidate();}).setNegativeButton("취소",null).setNeutralButton(fresh?"닫기":"삭제",(d,w)->{if(!fresh){target.elements.remove(element);target.save();pageView.invalidate();}}).show();}
     private boolean validWebUrl(String value){Uri uri=Uri.parse(value);return ("https".equalsIgnoreCase(uri.getScheme())||"http".equalsIgnoreCase(uri.getScheme()))&&uri.getHost()!=null;}
-    @Override public void onElementTapped(AnnotationStore.PageElement element){if("audio".equals(element.kind)){showAudioPlayer(element);return;}if("text".equals(element.kind)){beginInlineText(element,false);return;}String[] labels=element.kind.equals("image")?new String[]{"위치·크기","삭제"}:element.kind.equals("link")?new String[]{"링크 열기","수정","위치·크기","삭제"}:new String[]{"수정","위치·크기","삭제"};new AlertDialog.Builder(this).setTitle("페이지 "+(element.page+1)).setItems(labels,(d,index)->{String action=labels[index];if(action.equals("링크 열기")){if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}}else if(action.equals("수정"))editPageElement(element,false);else if(action.equals("위치·크기"))editElementGeometry(element);else{store.elements.remove(element);store.save();pageView.invalidate();}}).show();}
+    @Override public void onElementTapped(AnnotationStore.PageElement element){
+        if("audio".equals(element.kind)){showAudioPlayer(element);return;}
+        if("text".equals(element.kind)){beginInlineText(element,false);return;}
+        if("hyperlink".equals(element.kind)){showHyperlinkMenu(element);return;}
+        String kind=element.kind;
+        String[] labels=kind.equals("image")||kind.equals("sticker")?new String[]{"위치·크기","삭제"}:kind.equals("video")?new String[]{"재생","위치·크기","삭제"}:kind.equals("link")?new String[]{"링크 열기","수정","위치·크기","삭제"}:new String[]{"수정","위치·크기","삭제"};
+        new AlertDialog.Builder(this).setTitle("페이지 "+(element.page+1)).setItems(labels,(d,index)->{String action=labels[index];
+            if(action.equals("링크 열기")){if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}}
+            else if(action.equals("재생"))showVideoPlayer(element);
+            else if(action.equals("수정"))editPageElement(element,false);
+            else if(action.equals("위치·크기"))editElementGeometry(element);
+            else deleteElement(element);}).show();
+    }
+    private void deleteElement(AnnotationStore.PageElement element){
+        if(store==null)return;
+        if(element.kind.equals("hyperlink")){store.elements.removeIf(e->e.kind.equals("hyperlink")&&e.page==element.page&&e.color==element.color&&e.text.equals(element.text));}
+        else store.elements.remove(element);
+        if(element.kind.equals("video")){File video=new File(new File(getFilesDir(),"videos"),element.text);video.delete();}
+        store.save();pageView.selectElement(null);redrawPages();
+    }
+    // ---- pictures, stickers, videos
+    private void pickImage(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),IMPORT_IMAGE);}
+    private void pickVideo(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("video/*"),IMPORT_VIDEO);}
+    private static final String[] STICKERS={"⭐","❤️","👍","👀","💡","📌","✅","❗","❓","🔥","⚠️","📝","🎯","🔖","💬","✨","😀","😮","🤔","🙏","📚","🔎","⏰","🚩"};
+    private void showStickerPicker(){
+        if(renderer==null){toast("문서를 먼저 여세요");return;}
+        final AlertDialog[] holder=new AlertDialog[1];
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(8),dp(4),dp(8),dp(4));
+        LinearLayout rowView=null;
+        for(int i=0;i<STICKERS.length;i++){
+            if(i%6==0){rowView=new LinearLayout(this);box.addView(rowView,new LinearLayout.LayoutParams(-1,dp(52)));}
+            final String sticker=STICKERS[i];TextView cell=new TextView(this);cell.setText(sticker);cell.setTextSize(28);cell.setGravity(Gravity.CENTER);cell.setContentDescription("스티커 "+sticker);
+            cell.setOnClickListener(v->{if(holder[0]!=null)holder[0].dismiss();placementText=sticker;placeElement("sticker","");});
+            rowView.addView(cell,new LinearLayout.LayoutParams(0,-1,1));
+        }
+        TextView mine=pill("내 이미지로 스티커 만들기","이미지 선택",ACTIVE_BG,ACTIVE_FG,v->{if(holder[0]!=null)holder[0].dismiss();pickImage();});LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,dp(44));mp.topMargin=dp(8);box.addView(mine,mp);
+        holder[0]=new AlertDialog.Builder(this).setTitle("스티커").setView(box).setNegativeButton("닫기",null).create();holder[0].show();
+    }
+    private void importVideo(Uri source){
+        final DocumentSession session=activeSession;toast("동영상을 가져오는 중…");
+        new Thread(()->{try{
+            File folder=new File(getFilesDir(),"videos");folder.mkdirs();String name=UUID.randomUUID()+".mp4";File target=new File(folder,name);long copied=0;
+            try(InputStream in=getContentResolver().openInputStream(source);OutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[1<<16];int n;while((n=in.read(buffer))>0){out.write(buffer,0,n);copied+=n;if(copied>600L*1024*1024)throw new IOException("600MB 이하의 동영상만 넣을 수 있습니다");}}
+            catch(IOException error){target.delete();throw error;}
+            Bitmap frame=null;android.media.MediaMetadataRetriever retriever=new android.media.MediaMetadataRetriever();
+            try{retriever.setDataSource(target.getPath());frame=retriever.getFrameAtTime(500000,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);}catch(RuntimeException ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
+            if(frame==null){target.delete();throw new IOException("동영상을 읽을 수 없습니다");}
+            float shrink=Math.min(1f,900f/Math.max(frame.getWidth(),frame.getHeight()));if(shrink<1f){Bitmap small=Bitmap.createScaledBitmap(frame,Math.max(1,Math.round(frame.getWidth()*shrink)),Math.max(1,Math.round(frame.getHeight()*shrink)),true);frame.recycle();frame=small;}
+            File images=new File(getFilesDir(),"images");images.mkdirs();String thumb=UUID.randomUUID()+".png";
+            try(OutputStream out=new FileOutputStream(new File(images,thumb))){if(!frame.compress(Bitmap.CompressFormat.PNG,100,out))throw new IOException("미리보기 저장 실패");}finally{frame.recycle();}
+            runOnUiThread(()->{if(session!=null&&sessions.contains(session)){switchDocument(session);placementText=name;placeElement("video",thumb);}});
+        }catch(Exception error){runOnUiThread(()->toast("동영상 가져오기 실패: "+error.getMessage()));}},"video-import").start();
+    }
+    private void showVideoPlayer(AnnotationStore.PageElement element){
+        File file=new File(new File(getFilesDir(),"videos"),element.text);if(!file.isFile()){toast("동영상 파일을 찾을 수 없습니다");return;}
+        final Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);
+        VideoView video=new VideoView(this);MediaController controller=new MediaController(this);controller.setAnchorView(video);video.setMediaController(controller);video.setVideoURI(Uri.fromFile(file));frame.addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        ImageButton close=icon(R.drawable.ic_close,"동영상 닫기",Color.WHITE,v->dialog.dismiss());FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|Gravity.END);cp.setMargins(0,dp(24),dp(8),0);frame.addView(close,cp);
+        dialog.setContentView(frame);dialog.setOnDismissListener(d->video.stopPlayback());video.setOnPreparedListener(m->video.start());dialog.show();
+    }
+    // ---- hyperlinks
+    private void startHyperlink(){if(renderer==null){toast("문서를 먼저 여세요");return;}startTextSelection();toast("링크를 걸 글자를 드래그해 선택한 뒤 ‘링크’를 누르세요");}
+    /** Accepts a web address or a page number and returns the stored target, or null when it is not valid. */
+    private String linkTarget(String input){
+        String text=input==null?"":input.trim();if(text.isEmpty())return null;
+        if(text.matches("\\d{1,6}")){int page=Integer.parseInt(text);return renderer!=null&&page>=1&&page<=renderer.getPageCount()?"page:"+(page-1):null;}
+        if(!text.contains("://")&&text.contains(".")&&!text.contains(" "))text="https://"+text;
+        return validWebUrl(text)&&!text.contains(" ")?text:null;
+    }
+    private void createHyperlink(PdfPageView.TextSelection selection){
+        if(store==null)return;final AnnotationStore target=store;final int page=currentPage;
+        EditText input=new EditText(this);input.setHint("https://… 또는 페이지 번호");input.setSingleLine();input.setPadding(dp(24),dp(12),dp(24),dp(12));
+        new AlertDialog.Builder(this).setTitle("하이퍼링크").setView(input).setPositiveButton("만들기",(d,w)->{
+            String link=linkTarget(input.getText().toString());if(link==null){toast("http(s) 주소나 문서 안 페이지 번호를 입력하세요");return;}
+            int group=new Random().nextInt(Integer.MAX_VALUE)+1;List<RectF> pieces=selection.bounds==null||selection.bounds.isEmpty()?Collections.singletonList(selection.unionBounds):selection.bounds;
+            for(RectF b:pieces){AnnotationStore.PageElement e=new AnnotationStore.PageElement();e.page=page;e.kind="hyperlink";e.text=link;e.color=group;e.left=Math.max(0f,b.left);e.top=Math.max(0f,b.top);e.right=Math.min(1f,b.right);e.bottom=Math.min(1f,b.bottom);if(e.right-e.left<.005f||e.bottom-e.top<.003f)continue;target.elements.add(e);}
+            target.save();redrawPages();toast("링크를 만들었습니다. 글자를 탭하면 열 수 있습니다");
+        }).setNegativeButton("취소",null).show();
+    }
+    private void openHyperlink(AnnotationStore.PageElement element){
+        if(element.text.startsWith("page:")){try{showPage(Integer.parseInt(element.text.substring(5)));}catch(NumberFormatException ignored){}return;}
+        if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}
+    }
+    private void showHyperlinkMenu(AnnotationStore.PageElement element){
+        String title=element.text.startsWith("page:")?"페이지 "+(Integer.parseInt(element.text.substring(5))+1)+"(으)로 이동":element.text;String[] labels={"열기","링크 수정","링크 삭제"};
+        new AlertDialog.Builder(this).setTitle(title.length()>60?title.substring(0,60)+"…":title).setItems(labels,(d,index)->{
+            if(index==0)openHyperlink(element);
+            else if(index==1){EditText input=new EditText(this);input.setSingleLine();input.setText(element.text.startsWith("page:")?String.valueOf(Integer.parseInt(element.text.substring(5))+1):element.text);input.setPadding(dp(24),dp(12),dp(24),dp(12));
+                new AlertDialog.Builder(this).setTitle("링크 수정").setView(input).setPositiveButton("저장",(dd,w)->{String link=linkTarget(input.getText().toString());if(link==null){toast("http(s) 주소나 문서 안 페이지 번호를 입력하세요");return;}String old=element.text;for(AnnotationStore.PageElement e:store.elements)if(e.kind.equals("hyperlink")&&e.page==element.page&&e.color==element.color&&e.text.equals(old))e.text=link;store.save();redrawPages();}).setNegativeButton("취소",null).show();}
+            else deleteElement(element);
+        }).show();
+    }
     private void editElementGeometry(AnnotationStore.PageElement element){LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);String[] labels={"왼쪽 (%)","위쪽 (%)","너비 (%)","높이 (%)"};float[] values={element.left*100,element.top*100,(element.right-element.left)*100,(element.bottom-element.top)*100};EditText[] inputs=new EditText[4];for(int i=0;i<4;i++){inputs[i]=new EditText(this);inputs[i].setHint(labels[i]);inputs[i].setInputType(8194);inputs[i].setText(String.format(Locale.US,"%.1f",values[i]));panel.addView(inputs[i]);}new AlertDialog.Builder(this).setTitle("위치·크기 · %").setView(panel).setPositiveButton("적용",(d,w)->{try{float x=Float.parseFloat(inputs[0].getText().toString())/100,y=Float.parseFloat(inputs[1].getText().toString())/100,width=Float.parseFloat(inputs[2].getText().toString())/100,height=Float.parseFloat(inputs[3].getText().toString())/100;if(!Float.isFinite(x)||!Float.isFinite(y)||!Float.isFinite(width)||!Float.isFinite(height)||x<0||y<0||width<=0||height<=0||x+width>1||y+height>1)throw new IllegalArgumentException();element.left=x;element.top=y;element.right=x+width;element.bottom=y+height;store.save();pageView.invalidate();}catch(Exception error){toast("페이지 안에 들어가는 위치와 크기를 입력하세요");}}).setNegativeButton("취소",null).show();}
     private void pasteImage(){if(renderer==null)return;ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData data=clipboard.getPrimaryClip();Uri image=data!=null&&data.getItemCount()>0?data.getItemAt(0).getUri():null;if(image!=null&&"content".equals(image.getScheme()))importImage(image);else new AlertDialog.Builder(this).setTitle("이미지 붙여넣기").setMessage("클립보드에 이미지가 없습니다. 브라우저의 ‘이미지 복사’를 사용하거나 저장된 이미지를 선택하세요.").setPositiveButton("이미지 선택",(d,w)->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),IMPORT_IMAGE)).setNegativeButton("닫기",null).show();}
     private void importImage(Uri source){final DocumentSession session=activeSession;new Thread(()->{try{BitmapFactory.Options options=new BitmapFactory.Options();options.inJustDecodeBounds=true;try(InputStream in=getContentResolver().openInputStream(source)){BitmapFactory.decodeStream(in,null,options);}if(options.outWidth<=0||options.outHeight<=0)throw new IOException("이미지를 읽을 수 없습니다");options.inJustDecodeBounds=false;options.inSampleSize=1;while(Math.max(options.outWidth,options.outHeight)/options.inSampleSize>1600)options.inSampleSize*=2;Bitmap image;try(InputStream in=getContentResolver().openInputStream(source)){image=BitmapFactory.decodeStream(in,null,options);}if(image==null)throw new IOException("이미지 형식이 지원되지 않습니다");File folder=new File(getFilesDir(),"images");folder.mkdirs();String name=UUID.randomUUID()+".png";try(OutputStream out=new FileOutputStream(new File(folder,name))){if(!image.compress(Bitmap.CompressFormat.PNG,100,out))throw new IOException("이미지 저장 실패");}finally{image.recycle();}runOnUiThread(()->{if(session!=null&&sessions.contains(session)){switchDocument(session);placeElement("image",name);}});}catch(Exception error){runOnUiThread(()->toast("이미지 가져오기 실패: "+error.getMessage()));}},"image-paste").start();}
