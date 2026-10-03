@@ -48,6 +48,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         @Override public void onSelectionAdjustStarted(){active();MainActivity.this.onSelectionAdjustStarted();}
         @Override public void onLassoSelectionFinished(){active();MainActivity.this.onLassoSelectionFinished();}
         @Override public void onElementTapped(AnnotationStore.PageElement element){active();MainActivity.this.onElementTapped(element);}
+        @Override public void onBlankLongPress(int page,float x,float y,float viewX,float viewY){active();MainActivity.this.showInsertMenuAt(view,page,x,y,viewX,viewY);}
     }
     private static final class DocumentSession {
         Uri uri; String title; ParcelFileDescriptor descriptor; PdfRenderer renderer;
@@ -538,8 +539,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         @Override public boolean start(int direction){
             if(pageAnimating||renderer==null||verticalPageSwipe)return false;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0||target>=renderer.getPageCount())return false;
             pageAnimating=true;PageCurlView curl=beginCurl(direction,target);if(curl==null){pageAnimating=curlConsumed;return false;}
-            dragCurl=curl;dragSpan=Math.max(dp(120),curl.getLayoutParams().width*(twoPage?.5f:1f)*.7f);return true;
+            dragCurl=curl;dragSpan=Math.max(dp(120),curl.getLayoutParams().width*(twoPage?.5f:1f)*.85f);return true;
         }
+        @Override public void touchAt(float fraction){if(dragCurl!=null)dragCurl.setTouch(fraction);}
         @Override public void move(float distance){if(dragCurl!=null)dragCurl.setProgress(distance/dragSpan);}
         @Override public void end(float velocity){if(dragCurl==null)return;PageCurlView curl=dragCurl;dragCurl=null;float p=curl.progress();boolean commit=velocity>dp(350)||(velocity>-dp(350)&&p>.2f);finishCurl(curl,p,commit?1f:0f);}
     };
@@ -845,7 +847,16 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void exportPdf(){if(activeSession==null)return;try{exportSource=activeSession.officePreview==null?documentUri:Uri.fromFile(activeSession.officePreview);exportSnapshot=store.exportJson(documentUri,documentTitle);exportPageCount=renderer.getPageCount();startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/pdf").putExtra(Intent.EXTRA_TITLE,documentTitle.replaceAll("(?i)\\.pdf$","")+"_notes.pdf"),EXPORT_PDF);}catch(JSONException error){toast("PDF 준비 실패");}}
     private void receivePdfExport(int result,Intent data){if(result!=RESULT_OK||data==null||data.getData()==null)return;final Uri source=exportSource,target=data.getData();final String snapshot=exportSnapshot;final int count=exportPageCount;if(source==null||snapshot==null){toast("다시 내보내세요");return;}ProgressDialog progress=ProgressDialog.show(this,"PDF 내보내기","필기·타이핑·이미지를 PDF에 담는 중입니다…",true,false);new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(target,"wt")){if(out==null)throw new IOException("출력 파일을 열 수 없습니다");AnnotationStore annotations=new AnnotationStore(this);annotations.importJson(snapshot,count);DocumentExporter.export(this,source,annotations,out);runOnUiThread(()->{progress.dismiss();toast("PDF를 내보냈습니다");});}catch(Exception error){runOnUiThread(()->{progress.dismiss();toast("PDF 내보내기 실패: "+error.getMessage());});}},"pdf-export").start();}
     private String placementText="";
-    private void placeElement(String kind,String asset){if(renderer==null){toast("문서를 먼저 여세요");return;}stopInk();highlightMode=outlineMode=false;memoMode=true;placementKind=kind;placementAsset=asset;if(!kind.equals("sticker")&&!kind.equals("video")&&!kind.equals("shape")&&!kind.equals("table")&&!kind.equals("youtube"))placementText="";pageView.setHighlightMode(false,selectedColor);pageView.setOutlineMode(false);pageView.setMemoMode(true);updateToolStates();toast(kind.equals("text")?"글을 넣을 위치를 탭하세요. 이미 쓴 글은 탭하면 수정합니다. 끝나면 ‘텍스트’ 버튼을 다시 누르세요":"넣을 위치를 터치하세요");}
+    private void placeElement(String kind,String asset){
+        float[] t=freshDrop();
+        if(renderer!=null&&t!=null&&!kind.equals("text")){
+            if(!kind.equals("sticker")&&!kind.equals("video")&&!kind.equals("shape")&&!kind.equals("table")&&!kind.equals("youtube"))placementText="";
+            stopInk();highlightMode=outlineMode=false;placementKind=kind;placementAsset=asset;createPlacedElement((int)t[0],t[1],t[2]);return;
+        }
+        placeElementArmed(kind,asset);
+    }
+    private float[] freshDrop(){float[] t=dropTarget;dropTarget=null;return t!=null&&System.currentTimeMillis()-dropTime<=90000?t:null;}
+    private void placeElementArmed(String kind,String asset){if(renderer==null){toast("문서를 먼저 여세요");return;}stopInk();highlightMode=outlineMode=false;memoMode=true;placementKind=kind;placementAsset=asset;if(!kind.equals("sticker")&&!kind.equals("video")&&!kind.equals("shape")&&!kind.equals("table")&&!kind.equals("youtube"))placementText="";pageView.setHighlightMode(false,selectedColor);pageView.setOutlineMode(false);pageView.setMemoMode(true);updateToolStates();toast(kind.equals("text")?"글을 넣을 위치를 탭하세요. 이미 쓴 글은 탭하면 수정합니다. 끝나면 ‘텍스트’ 버튼을 다시 누르세요":"넣을 위치를 터치하세요");}
     private void createPlacedElement(int page,float x,float y){
         if("text".equals(placementKind)){
             commitInlineText();
@@ -945,9 +956,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         dialog.setContentView(frame);dialog.setOnDismissListener(d->video.stopPlayback());video.setOnPreparedListener(m->video.start());dialog.show();
     }
     // ---- insert menu, shapes, tables, drag and drop
-    private void showInsertMenu(View anchor){
-        if(renderer==null){toast("문서를 먼저 여세요");return;}
-        List<AnchoredMenu.Row> rows=AnchoredMenu.rows(
+    private List<AnchoredMenu.Row> insertRows(){
+        return AnchoredMenu.rows(
             new AnchoredMenu.Row("사진·이미지",R.drawable.ic_image,this::pickImage).tint(0xFF007AFF),
             new AnchoredMenu.Row("스티커",R.drawable.ic_sticker,this::showStickerPicker).tint(0xFFFF9500),
             new AnchoredMenu.Row("도형",R.drawable.ic_rect,()->showShapeDialog(null)).tint(0xFFAF52DE),
@@ -955,8 +965,23 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             new AnchoredMenu.Row("동영상",R.drawable.ic_video,this::pickVideo).tint(0xFFFF3B30),
             new AnchoredMenu.Row("유튜브 링크",R.drawable.ic_video,this::askYoutube).tint(0xFFFF0000),
             new AnchoredMenu.Row("하이퍼링크",R.drawable.ic_link,this::startHyperlink).tint(0xFF5856D6),
-            new AnchoredMenu.Row("이미지 붙여넣기",R.drawable.ic_copy,this::pasteImage).tint(0xFF8E8E93));
-        AnchoredMenu.show(this,anchor,true,rows,null);
+            new AnchoredMenu.Row("붙여넣기",R.drawable.ic_copy,this::pasteImage).tint(0xFF8E8E93));
+    }
+    private void showInsertMenu(View anchor){
+        if(renderer==null){toast("문서를 먼저 여세요");return;}
+        dropTarget=null;
+        AnchoredMenu.show(this,anchor,true,insertRows(),null);
+    }
+    private View tapAnchor;
+    /** Long press on empty paper: the same insert menu, and whatever is chosen is placed right there. */
+    void showInsertMenuAt(PdfPageView view,int page,float x,float y,float viewX,float viewY){
+        if(renderer==null||view==null||viewportLayer==null)return;
+        dropTarget=new float[]{page,x,y};dropTime=System.currentTimeMillis();
+        View papers=viewportLayer.getChildAt(0);
+        if(tapAnchor==null){tapAnchor=new View(this);viewportLayer.addView(tapAnchor,new FrameLayout.LayoutParams(dp(2),dp(2),Gravity.TOP|Gravity.START));}
+        FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)tapAnchor.getLayoutParams();lp.leftMargin=Math.round(viewX+view.getLeft()+papers.getLeft());lp.topMargin=Math.round(viewY+view.getTop()+papers.getTop());tapAnchor.setLayoutParams(lp);
+        final boolean above=viewY>view.getHeight()*.5f;
+        tapAnchor.post(()->AnchoredMenu.show(this,tapAnchor,above,insertRows(),null));
     }
     private LinearLayout colorRow(int[] colors,int[] chosen){
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);final View[] swatches=new View[colors.length];final Runnable[] refresh=new Runnable[1];
@@ -1059,12 +1084,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         },"youtube-import").start();
     }
     private float[] dropTarget;private long dropTime;
-    private void placeOrDrop(String kind,String asset){
-        float[] t=dropTarget;dropTarget=null;
-        if(t==null||System.currentTimeMillis()-dropTime>120000){placeElement(kind,asset);return;}
-        if(kind.equals("image"))placementText="";
-        placementKind=kind;placementAsset=asset;createPlacedElement((int)t[0],t[1],t[2]);
-    }
+    private void placeOrDrop(String kind,String asset){placeElement(kind,asset);}
     private void installDrop(View target){
         target.setOnDragListener((v,e)->{
             switch(e.getAction()){

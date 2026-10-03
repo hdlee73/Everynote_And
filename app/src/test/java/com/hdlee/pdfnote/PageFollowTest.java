@@ -62,4 +62,17 @@ public class PageFollowTest {
         event(0,800,500,0);event(2,700,505,40);event(2,600,505,80);event(2,400,505,120);event(2,300,505,160);event(1,300,505,200);
         assertTrue("전환 중에도 손가락 이동이 전달됩니다",moves.size()>=3);assertTrue(moves.get(moves.size()-1)>moves.get(0));assertEquals("end",log.get(log.size()-1));
     }
+    @Test public void longPressOnEmptyPaperOffersInsertionAtThatPoint(){
+        final List<float[]> presses=new ArrayList<>();
+        Activity activity=Robolectric.buildActivity(Activity.class).setup().get();
+        PdfPageView.Listener listener=(PdfPageView.Listener)Proxy.newProxyInstance(PdfPageView.Listener.class.getClassLoader(),new Class<?>[]{PdfPageView.Listener.class},(p,m,a)->{if(m.getName().equals("onBlankLongPress"))presses.add(new float[]{(Integer)a[0],(Float)a[1],(Float)a[2]});return null;});
+        PdfPageView page=new PdfPageView(activity,listener);FrameLayout parent=new FrameLayout(activity);parent.addView(page);activity.setContentView(parent);parent.layout(0,0,1000,1000);page.layout(0,0,1000,1000);
+        Bitmap bitmap=Bitmap.createBitmap(500,700,Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.WHITE);
+        page.showPage(bitmap,0,new ArrayList<>(),new ArrayList<>(),new ArrayList<>());
+        long t=android.os.SystemClock.uptimeMillis();
+        MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,500,500,0);page.onTouchEvent(down);down.recycle();
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(900,java.util.concurrent.TimeUnit.MILLISECONDS);
+        assertEquals("빈 종이를 오래 누르면 삽입 메뉴 요청이 옵니다",1,presses.size());
+        assertEquals(.5f,presses.get(0)[1],.05f);assertEquals(.5f,presses.get(0)[2],.05f);
+    }
 }

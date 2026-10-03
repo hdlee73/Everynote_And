@@ -34,6 +34,8 @@ final class PdfPageView extends View {
         void onSelectionAdjustStarted();
         void onLassoSelectionFinished();
         void onElementTapped(AnnotationStore.PageElement element);
+        /** Long press on empty paper: offers to insert something there (page, normalized point, view point). */
+        default void onBlankLongPress(int page, float x, float y, float viewX, float viewY) {}
     }
 
     static final class TextRegion {
@@ -95,9 +97,11 @@ final class PdfPageView extends View {
     private int paperColor = 0xFFDDDDDD;
     private PageDrag pageDrag; private boolean dragging; private int dragDirection; private android.view.VelocityTracker dragTracker;
     /** Lets the host follow a finger while it turns the page (Kindle style). */
-    interface PageDrag { boolean start(int direction); void move(float distance); void end(float velocity); }
+    interface PageDrag { boolean start(int direction); void move(float distance); void end(float velocity); /** Finger height as a fraction of the page height (0 = top), so the curl can start where the finger is. */ default void touchAt(float yFraction) {} }
     void setPageDrag(PageDrag drag) { pageDrag = drag; }
     /** Converts a point in this view to normalized page coordinates (clamped to the page). */
+    private float pageFraction(float y){RectF r=pageRect();return r.height()<=0?.5f:Math.max(0f,Math.min(1f,(y-r.top)/r.height()));}
+    private final Runnable blankPress=()->{if(scalingOccurred||dragging||selectingText)return;RectF d=contentRect();if(d.width()<=0||!d.contains(startX,startY))return;performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);bodySwipeCandidate=false;gestureMoved=true;float[] n=toPage(startX,startY);listener.onBlankLongPress(page,n[0],n[1],startX,startY);};
     float[] toPage(float vx,float vy){RectF d=contentRect();if(d.width()<=0||d.height()<=0)return new float[]{.5f,.5f};return new float[]{Math.max(0f,Math.min(1f,(vx-d.left)/d.width())),Math.max(0f,Math.min(1f,(vy-d.top)/d.height()))};}
     private AnnotationStore.PageElement selectedElement;
     private int elementDrag; private boolean elementMoved; private float elementStartX, elementStartY; private final RectF elementOrigin = new RectF();
@@ -546,6 +550,7 @@ final class PdfPageView extends View {
         if (scaleDetector.isInProgress()) return true;
         RectF dest = contentRect();
         boolean stylus=isStylus(e);
+        {int am=e.getActionMasked();if(am==MotionEvent.ACTION_UP||am==MotionEvent.ACTION_CANCEL||am==MotionEvent.ACTION_POINTER_DOWN||(am==MotionEvent.ACTION_MOVE&&Math.hypot(e.getX()-startX,e.getY()-startY)>touchSlop()))selectionHandler.removeCallbacks(blankPress);}
         if(handleElementGesture(e,dest))return true;
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN)scalingOccurred=false;
         if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){finishInkStroke();clearLassoSelection();}
@@ -603,6 +608,7 @@ final class PdfPageView extends View {
             gestureMoved = false; scalingOccurred = false;bodySwipeCandidate=pageSwipeEnabled&&!stylus&&!directTextSelection&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk)&&scale<=1f;
             drawing = highlightMode && dest.contains(startX, startY);
             selectionStartRegion=(!drawing&&!memoMode&&!outlineMode&&inkMode==0)?textRegionAt(startX,startY,dest):null;selectionEndRegion=selectionStartRegion;selectionCandidate=selectionStartRegion!=null;selectingText=false;if(selectionCandidate)selectionHandler.postDelayed(beginTextSelection,420);
+            selectionHandler.removeCallbacks(blankPress);if(!selectionCandidate&&!drawing&&!memoMode&&!outlineMode&&inkMode==0&&!lassoMode&&!directTextSelection&&!stylus&&scale<=1.05f&&dest.contains(startX,startY))selectionHandler.postDelayed(blankPress,650);
             panning = scale > 1f && !outlineMode && !selectionCandidate;
             getParent().requestDisallowInterceptTouchEvent(drawing || panning || selectionCandidate);
             invalidate(); return true;
@@ -616,10 +622,10 @@ final class PdfPageView extends View {
             if(directTextSelection||stylus){beginTextSelectionNow();updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));return true;}
             selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;panning=scale>1f;
         }
-        if(dragging&&e.getActionMasked()==MotionEvent.ACTION_MOVE){dragTracker.addMovement(e);float ddx=e.getX()-startX;pageDrag.move(Math.max(0f,dragDirection>0?-ddx:ddx));return true;}
+        if(dragging&&e.getActionMasked()==MotionEvent.ACTION_MOVE){dragTracker.addMovement(e);pageDrag.touchAt(pageFraction(e.getY()));float ddx=e.getX()-startX;pageDrag.move(Math.max(0f,dragDirection>0?-ddx:ddx));return true;}
         if(bodySwipeCandidate&&!selectingText&&e.getActionMasked()==MotionEvent.ACTION_MOVE){if(Math.hypot(e.getX()-startX,e.getY()-startY)>touchSlop()){gestureMoved=true;selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=false;
             if(pageDrag!=null&&!verticalPageSwipe){float dx=e.getX()-startX,dy=e.getY()-startY;
-                if(!dragging&&Math.abs(dx)>Math.abs(dy)*1.5f){dragDirection=dx<0?1:-1;dragging=pageDrag.start(dragDirection);if(dragging){dragTracker=android.view.VelocityTracker.obtain();getParent().requestDisallowInterceptTouchEvent(true);}}
+                if(!dragging&&Math.abs(dx)>Math.abs(dy)*1.5f){dragDirection=dx<0?1:-1;dragging=pageDrag.start(dragDirection);if(dragging){pageDrag.touchAt(pageFraction(e.getY()));dragTracker=android.view.VelocityTracker.obtain();getParent().requestDisallowInterceptTouchEvent(true);}}
                 if(dragging){dragTracker.addMovement(e);pageDrag.move(Math.max(0f,dragDirection>0?-dx:dx));}
             }}return true;}
         if(dragging&&(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL)){dragging=false;bodySwipeCandidate=false;getParent().requestDisallowInterceptTouchEvent(false);dragTracker.addMovement(e);dragTracker.computeCurrentVelocity(1000);float v=dragTracker.getXVelocity()*(dragDirection>0?-1:1);dragTracker.recycle();dragTracker=null;pageDrag.end(e.getActionMasked()==MotionEvent.ACTION_CANCEL?-1e6f:v);return true;}
