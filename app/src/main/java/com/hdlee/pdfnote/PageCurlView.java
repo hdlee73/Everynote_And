@@ -52,11 +52,10 @@ final class PageCurlView extends View {
      * so the part near the finger is lifted first and the rest follows in sequence (like a peeled page). All rows are done at t = 1.
      */
     private float rowProgress(float f, float t) {
-        // One straight diagonal fold through the finger: rows above it lag behind (the page peels from the finger upwards),
-        // rows below it are slightly ahead, so there is never a second kink in the fold line.
-        float sgn = (touch - f) / Math.max(.4f, touch);
-        float p = sgn >= 0f ? t - 1.5f * sgn * (1f - t) : t - 1.5f * sgn * t;
-        return Math.max(0f, Math.min(1f, p));
+        // The rows at and below the finger follow it exactly; the rows above lag a little (a gentle, straight diagonal fold,
+        // like a page peeled from its lower corner). Nothing runs ahead of the finger, so the page is never over-turned.
+        float d = Math.max(0f, (touch - f) / Math.max(.5f, touch));
+        return Math.max(0f, Math.min(1f, t - .9f * d * (1f - t)));
     }
 
     @Override protected void onDraw(Canvas canvas) {
