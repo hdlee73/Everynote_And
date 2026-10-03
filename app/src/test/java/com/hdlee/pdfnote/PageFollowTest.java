@@ -70,7 +70,7 @@ public class PageFollowTest {
         Bitmap bitmap=Bitmap.createBitmap(500,700,Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.WHITE);
         page.showPage(bitmap,0,new ArrayList<>(),new ArrayList<>(),new ArrayList<>());
         long t=android.os.SystemClock.uptimeMillis();
-        MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,500,500,0);page.onTouchEvent(down);down.recycle();
+        MotionEvent down=MotionEvent.obtain(t,t,MotionEvent.ACTION_DOWN,160,235,0);page.onTouchEvent(down);down.recycle();
         org.robolectric.shadows.ShadowLooper shadow=org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper());
         assertNotEquals("오래 누르기 확인이 예약됩니다",java.time.Duration.ZERO,shadow.getNextScheduledTaskTime());
         shadow.idleFor(java.time.Duration.ofMillis(900));
