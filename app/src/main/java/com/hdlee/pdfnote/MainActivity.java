@@ -544,7 +544,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         }
         @Override public void touchAt(float fraction){if(dragCurl!=null)dragCurl.setTouch(fraction);}
         @Override public void move(float distance){if(dragCurl!=null)dragCurl.setProgress(distance/dragSpan);}
-        @Override public void end(float velocity){if(dragCurl==null)return;PageCurlView curl=dragCurl;dragCurl=null;float p=curl.progress();boolean commit=velocity>dp(350)||(velocity>-dp(350)&&p>.2f);finishCurl(curl,p,commit?1f:0f);}
+        @Override public void end(float velocity){if(dragCurl==null)return;PageCurlView curl=dragCurl;dragCurl=null;float p=curl.progress();boolean commit=velocity>dp(700)||(velocity>-dp(700)&&p>.4f);finishCurl(curl,p,commit?1f:0f);}
     };
     /** Builds the curl overlay for the page rectangle and switches the pages underneath it; returns null when it cannot. */
     private PageCurlView beginCurl(int direction,int target){
@@ -571,7 +571,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(w,h,Gravity.TOP|Gravity.START);lp.leftMargin=rl+papers.getLeft();lp.topMargin=rt+papers.getTop();viewportLayer.addView(curl,1,lp);return curl;
     }
     private void finishCurl(PageCurlView curl,float from,float to){
-        android.animation.ValueAnimator animator=android.animation.ValueAnimator.ofFloat(from,to);animator.setDuration(Math.max(140,Math.round(820*Math.abs(to-from))));animator.setInterpolator(from==0f?new android.view.animation.AccelerateDecelerateInterpolator():new android.view.animation.DecelerateInterpolator());
+        android.animation.ValueAnimator animator=android.animation.ValueAnimator.ofFloat(from,to);animator.setDuration(Math.max(200,Math.round(1000*Math.abs(to-from))));animator.setInterpolator(from==0f?new android.view.animation.AccelerateDecelerateInterpolator():new android.view.animation.DecelerateInterpolator());
         animator.addUpdateListener(a->curl.setProgress((Float)a.getAnimatedValue()));
         animator.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator a){if(to<.5f)showPage(curlOrigin);viewportLayer.removeView(curl);curl.release();resetPageTransforms();pageAnimating=false;}});
         animator.start();

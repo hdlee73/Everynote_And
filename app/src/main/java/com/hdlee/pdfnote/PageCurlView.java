@@ -47,10 +47,15 @@ final class PageCurlView extends View {
     /** Finger height as a fraction of the page: the curl starts there and the far rows follow later, like a peeled corner. */
     void setTouch(float fraction) { float v = Math.max(0f, Math.min(1f, fraction)); if (v != touch) { touch = v; invalidate(); } }
 
-    /** Fold position of one row (f = 0 top .. 1 bottom): exactly at the finger's row, lagging smoothly further away from it, and straight at both ends. */
-    private float foldAt(float f, float w, float lw, float t) {
-        float dist = (float) Math.sqrt((f - touch) * (f - touch) + .02f) - .1414f;
-        return w - t * lw + lw * .62f * (float) Math.pow(1f - t, .85f) * dist;
+    /**
+     * How far one row of the leaf has turned (0..1). The row under the finger follows it exactly; rows further away start later,
+     * so the part near the finger is lifted first and the rest follows in sequence (like a peeled page). All rows are done at t = 1.
+     */
+    private float rowProgress(float f, float t) {
+        float reach = Math.max(touch, 1f - touch);
+        float d = ((float) Math.sqrt((f - touch) * (f - touch) + .004f) - .0632f) / Math.max(.05f, reach);
+        d = Math.min(1f, d / 1.0f);
+        return Math.max(0f, Math.min(1f, t - 1.05f * d * (1f - t)));
     }
 
     @Override protected void onDraw(Canvas canvas) {
@@ -60,12 +65,12 @@ final class PageCurlView extends View {
         if (mirrored) canvas.scale(-1f, 1f, w / 2f, 0f);
         if (fixedHalf != null) canvas.drawBitmap(fixedHalf, 0, 0, null);
         canvas.drawBitmap(under, s, 0, null);
-        final float t = progress, r = lw * 0.06f * (float) Math.sqrt(Math.sin(Math.PI * t)), flat = (float) Math.PI * r;
+        final float t = progress;
         if (t > 0.01f && t < 0.995f) drawShadow(canvas, s, w, h, lw, t);
-        fill(false, s, w, lw, r, flat, h, t);
+        fill(false, s, w, lw, h, t);
         canvas.drawBitmapMesh(front, COLUMNS, ROWS, verts, 0, colors, 0, paint);
         if (t > 0.01f) {
-            fill(true, s, w, lw, r, flat, h, t);
+            fill(true, s, w, lw, h, t);
             canvas.drawBitmapMesh(back, COLUMNS, ROWS, verts, 0, colors, 0, paint);
         }
         canvas.restore();
@@ -76,7 +81,7 @@ final class PageCurlView extends View {
         if (dark == null) { dark = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888); dark.eraseColor(0xFF000000); }
         final float reach = lw * 0.09f;
         for (int j = 0; j <= ROWS; j++) {
-            float f = (float) j / ROWS, fold = foldAt(f, w, lw, t);
+            float f = (float) j / ROWS, fold = w - rowProgress(f, t) * lw;
             for (int i = 0; i <= COLUMNS; i++) {
                 float u = (float) i / COLUMNS, x = Math.min(w, fold + reach * u);
                 int k = j * (COLUMNS + 1) + i;
@@ -89,19 +94,19 @@ final class PageCurlView extends View {
     }
 
     /** Fills the mesh for the front (backSide=false) or back (true) of the leaf; vertices of the other side collapse onto the fold. */
-    private void fill(boolean backSide, float s, float w, float lw, float r, float flat, float h, float t) {
+    private void fill(boolean backSide, float s, float w, float lw, float h, float t) {
         for (int j = 0; j <= ROWS; j++) {
-            float f = (float) j / ROWS, fold = foldAt(f, w, lw, t);
+            float f = (float) j / ROWS, p = rowProgress(f, t), fold = w - p * lw;
+            float r = lw * 0.06f * (float) Math.sqrt(Math.sin(Math.PI * p)), flat = (float) Math.PI * r;
             for (int i = 0; i <= COLUMNS; i++) {
                 float x = s + lw * i / COLUMNS, d = x - fold, px, inset = 0f;
                 int shade = 0;
                 if (d <= 0f) { px = backSide ? fold : x; }
                 else if (r > .5f && d <= flat) {
-                    px = backSide ? fold : fold + r * (float) Math.sin(d / r); inset = h * 0.012f * (1f - (float) Math.cos(d / r));
-                    shade = backSide ? 0 : (int) (46f * Math.sin(Math.PI * d / flat));
+                    px = backSide ? fold : fold + r * (float) Math.sin(d / r); inset = h * 0.010f * (1f - (float) Math.cos(d / r));
+                    shade = backSide ? 0 : (int) (30f * Math.sin(Math.PI * d / flat));
                 } else {
                     px = backSide ? fold - (d - flat) : fold;
-                    if (backSide) { float near = Math.max(0f, 1f - (d - flat) / (lw * 0.22f)); shade = (int) (30f * near * near); }
                 }
                 int k = j * (COLUMNS + 1) + i;
                 verts[k * 2] = px; verts[k * 2 + 1] = inset + (h - 2 * inset) * f;
