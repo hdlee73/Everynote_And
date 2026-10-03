@@ -163,7 +163,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         showTranslationResult(source,translated==null?"":translated.toString(),bounds);
     }
 
-    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",false);buildUi();pageView.setLassoShape(lassoShape);pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
+    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",false);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
     private void applyKeepAwake(){if(recentPrefs.getBoolean("keep_awake",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
     @Override protected void onResume(){super.onResume();applyKeepAwake();if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
         .setMessage("문서 앱에서 PDF로 내보냈다면 파일을 가져와 필기와 주석을 이어갈 수 있습니다.")
@@ -279,6 +279,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             new AnchoredMenu.Row("페이지로 이동",R.drawable.ic_page,this::goToPage).tint(0xFF30B0C7),
             new AnchoredMenu.Row("전체 화면",R.drawable.ic_fullscreen,this::toggleFullscreen).tint(0xFFAF52DE),
             new AnchoredMenu.Row("여백 자르기",R.drawable.ic_scan,()->{recentPrefs.edit().putBoolean("crop_margins",!cropMargins()).apply();applyCrop();toast(cropMargins()?"문서 여백을 잘라 화면에 꽉 채웁니다":"원래 여백을 그대로 보여줍니다");}).tint(0xFF34C759).selected(cropMargins()),
+            new AnchoredMenu.Row("검은 문서 배경",R.drawable.ic_circle,this::toggleDarkPage).tint(0xFF3A3A3C).selected(darkPage()),
             new AnchoredMenu.Row("페이지 넘김 설정",R.drawable.ic_sliders,this::choosePageSwipeDirection).tint(0xFF8E8E93),
             AnchoredMenu.Row.divider(),
             new AnchoredMenu.Row("페이지 추가",R.drawable.ic_note_add,()->choosePageToInsert(currentPage)).tint(0xFF34C759),
@@ -498,7 +499,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         fullscreenDock.animate().alpha(1f).translationY(0).setDuration(180).start();fullscreenDock.postDelayed(dockHider,brief?3500:6000);
     }
     private void hideFullscreenDock(boolean animate){
-        dockShown=false;fullscreenDock.removeCallbacks(dockHider);dockHandle.setVisibility(fullscreen?View.VISIBLE:View.GONE);
+        dockShown=false;fullscreenDock.removeCallbacks(dockHider);dockHandle.setVisibility(View.GONE);
         if(!fullscreen||!animate){fullscreenDock.animate().cancel();fullscreenDock.setVisibility(View.GONE);return;}
         fullscreenDock.animate().alpha(0f).translationY(dp(60)).setDuration(160).withEndAction(()->{if(!dockShown)fullscreenDock.setVisibility(View.GONE);}).start();
     }
@@ -525,7 +526,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                     .withEndAction(()->{resetPageTransforms();pageAnimating=false;}).start();
             }).start();
     }
-    private Bitmap snapshot(View view){Bitmap bitmap=Bitmap.createBitmap(Math.max(1,view.getWidth()),Math.max(1,view.getHeight()),Bitmap.Config.ARGB_8888);bitmap.eraseColor(Color.WHITE);view.draw(new Canvas(bitmap));return bitmap;}
+    private Bitmap snapshot(View view){Bitmap bitmap=Bitmap.createBitmap(Math.max(1,view.getWidth()),Math.max(1,view.getHeight()),Bitmap.Config.ARGB_8888);bitmap.eraseColor(darkPage()?Color.BLACK:Color.WHITE);view.draw(new Canvas(bitmap));return bitmap;}
     private static Bitmap slice(Bitmap source,int x,int y,int w,int h){Bitmap part=Bitmap.createBitmap(Math.max(1,w),Math.max(1,h),Bitmap.Config.ARGB_8888);new Canvas(part).drawBitmap(source,-x,-y,null);return part;}
     /** The part of the reading area that is really paper: the page rectangles (both pages for a spread), never the screen around them. */
     private RectF curlRegion(View papers,boolean two){
@@ -581,6 +582,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(curl==null){if(curlConsumed){pageAnimating=false;return true;}return false;}
         finishCurl(curl,0f,1f);return true;
     }
+    private boolean darkPage(){return recentPrefs.getBoolean("dark_page",false);}
+    private void applyDarkPage(){boolean on=darkPage();PageCurlView.backTint=on?0xCC000000:0xCCFFFFFF;if(firstPageView!=null)firstPageView.setDarkPage(on);if(secondPageView!=null)secondPageView.setDarkPage(on);}
+    private void toggleDarkPage(){recentPrefs.edit().putBoolean("dark_page",!darkPage()).apply();applyDarkPage();toast(darkPage()?"문서 배경을 검게 표시합니다. 어두운 글씨 필기는 밝게 보입니다":"문서를 원래 색으로 표시합니다");}
     private boolean cropMargins(){return recentPrefs.getBoolean("crop_margins",true);}
     /** Trims blank page margins so the printed area fills the screen (not for notebooks, where the margins are writing space). */
     private void applyCrop(){

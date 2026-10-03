@@ -84,4 +84,15 @@ public class PageFollowTest {
         assertEquals("빈 종이를 오래 누르면 삽입 메뉴 요청이 옵니다 "+state,1,presses.size());
         assertEquals(.5f,presses.get(0)[1],.05f);assertEquals(.5f,presses.get(0)[2],.05f);
     }
+    @Test public void darkPageInvertsPaperAndLightensDarkInk(){
+        Bitmap before=Bitmap.createBitmap(1000,1000,Bitmap.Config.ARGB_8888);view.draw(new Canvas(before));
+        int[] c={view.getWidth()/2,view.getHeight()/2};
+        view.setDarkPage(true);
+        Bitmap after=Bitmap.createBitmap(1000,1000,Bitmap.Config.ARGB_8888);view.draw(new Canvas(after));
+        int paper=after.getPixel(view.getWidth()/2,5);
+        assertTrue("종이 바탕이 검게 보입니다",Color.red(paper)<40&&Color.green(paper)<40);
+        assertTrue("글자·그림 영역은 밝게 보입니다",Color.red(after.getPixel(c[0],c[1]))>200);
+        AnnotationPainter.dark=true;try{assertTrue("어두운 필기는 밝게 바뀝니다",Color.red(AnnotationPainter.adj(0xFF000000))>180);assertEquals("밝은 색은 그대로",0xFFFFDE59,AnnotationPainter.adj(0xFFFFDE59));}finally{AnnotationPainter.dark=false;}
+        view.setDarkPage(false);assertEquals(0xFFFFFFFF,view.paperColor());
+    }
 }

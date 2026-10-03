@@ -55,6 +55,14 @@ final class AnnotationPainter {
         for(AnnotationStore.PageElement o:store.elements){if(o==e){after=true;continue;}if(after&&o.kind.equals("hyperlink")&&o.page==e.page&&o.color==e.color&&o.text.equals(e.text))return false;}
         return true;
     }
+    /** True while a page is drawn on a dark paper: dark ink and text are lightened so they stay readable. */
+    static boolean dark;
+    static int adj(int color){
+        if(!dark)return color;
+        int r=Color.red(color),g=Color.green(color),b=Color.blue(color);
+        if(.299f*r+.587f*g+.114f*b>120)return color;
+        return Color.argb(Color.alpha(color),r+(int)((255-r)*.88f),g+(int)((255-g)*.88f),b+(int)((255-b)*.88f));
+    }
     static void elements(Context context,Canvas c,RectF d,AnnotationStore store,int page){
         if(store==null)return;
         for(AnnotationStore.PageElement e:store.elements){
@@ -90,7 +98,7 @@ final class AnnotationPainter {
             }else if(e.kind.equals("link")){
                 text(c,"↗ "+e.text,b,Math.max(9,d.width()*.027f),0xFF007AFF);
             }else{
-                text(c,e.text,b,Math.max(9,d.width()*e.textSize),e.color,typeface(e.font,e.bold,e.italic));
+                text(c,e.text,b,Math.max(9,d.width()*e.textSize),adj(e.color),typeface(e.font,e.bold,e.italic));
             }
         }
     }
@@ -99,7 +107,7 @@ final class AnnotationPainter {
     static void strokes(Canvas c,RectF d,AnnotationStore store,int page){
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
         for(AnnotationStore.InkStroke s:store.strokes)if(s.page==page){
-            p.setColor(s.color);p.setStrokeCap(Paint.Cap.ROUND);
+            p.setColor(adj(s.color));p.setStrokeCap(Paint.Cap.ROUND);
             for(int i=0;i<s.points.size();i++){
                 AnnotationStore.InkPoint b=s.points.get(i),a=s.points.get(Math.max(0,i-1));
                 float width=Math.max(1.5f,s.width*d.width()*(.45f+(a.pressure+b.pressure)/2*1.15f));p.setStrokeWidth(width);

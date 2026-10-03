@@ -34,7 +34,7 @@ final class Shapes {
     static void drawShape(Canvas c, RectF b, String spec, float pageWidth) {
         if (!validShape(spec)) return;
         String[] p = spec.split("\\|");
-        int stroke = parseColor(p[1]), fill = parseColor(p[2]);
+        int stroke = AnnotationPainter.adj(parseColor(p[1])), fill = parseColor(p[2]);
         float width = Math.max(1f, Integer.parseInt(p[3]) * pageWidth * .0016f);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setStrokeJoin(Paint.Join.ROUND);
@@ -138,7 +138,7 @@ final class Shapes {
         if ((t.fill >>> 24) > 0) { paint.setColor(t.fill); c.drawRect(b, paint); }
         if ((t.head >>> 24) > 0) { paint.setColor(t.head); c.drawRect(b.left, b.top, b.right, b.top + ch, paint); }
         float width = Math.max(1f, pageWidth * .0022f);
-        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(width); paint.setColor(t.line);
+        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(width); paint.setColor(AnnotationPainter.adj(t.line));
         c.drawRect(b, paint);
         for (int i = 1; i < t.rows; i++) c.drawLine(b.left, b.top + i * ch, b.right, b.top + i * ch, paint);
         for (int j = 1; j < t.cols; j++) c.drawLine(b.left + j * cw, b.top, b.left + j * cw, b.bottom, paint);
@@ -153,6 +153,8 @@ final class Shapes {
             float avail = cw - size * .6f;
             if (avail <= 0) continue;
             CharSequence shown = android.text.TextUtils.ellipsize(s, new android.text.TextPaint(tp), avail, android.text.TextUtils.TruncateAt.END);
+            boolean lit = (r == 0 && (t.head >>> 24) > 0) || (r > 0 && (t.fill >>> 24) > 0);
+            tp.setColor(lit ? 0xFF1C1C1E : AnnotationPainter.adj(0xFF1C1C1E));
             tp.setFakeBoldText(r == 0 && (t.head >>> 24) > 0);
             c.drawText(shown.toString(), b.left + col * cw + size * .3f, b.top + r * ch + ch / 2f - (fm.ascent + fm.descent) / 2f, tp);
         }

@@ -183,7 +183,7 @@ final class PdfPageView extends View {
     PdfPageView(Context context, Listener listener) {
         super(context);
         this.listener = listener;
-        setBackgroundColor(paperColor);
+        applyBackground();
         scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override public boolean onScaleBegin(ScaleGestureDetector detector) {
                 clearLassoSelection();
@@ -242,7 +242,7 @@ final class PdfPageView extends View {
         noteHitBoxes.clear(); memoHitBoxes.clear();
         if (bitmap != null) bitmap.recycle();
         bitmap = null;
-        bounds.set(0, 0, 1, 1); crop.set(0, 0, 1, 1); paperColor = 0xFFDDDDDD; setBackgroundColor(paperColor);
+        bounds.set(0, 0, 1, 1); crop.set(0, 0, 1, 1); paperColor = 0xFFDDDDDD; applyBackground();
         marks = null;
         strokes = null;
         translations=null; textRegions.clear(); selectedTextRegions.clear(); textSelectMode=false;
@@ -287,7 +287,7 @@ final class PdfPageView extends View {
     }
 
     void setDirectTextSelection(boolean enabled){directTextSelection=enabled;clearTextSelectionOverlay();}
-    void copyToolsFrom(PdfPageView other){directTextSelection=other.directTextSelection;highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;lassoShape=other.lassoShape;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
+    void copyToolsFrom(PdfPageView other){darkPage=other.darkPage;applyBackground();directTextSelection=other.directTextSelection;highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;lassoShape=other.lassoShape;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
     void setAnnotationStore(AnnotationStore store){annotationStore=store;invalidate();}
     void setFingerInk(boolean enabled){fingerInk=enabled;}
     void setPageSwipeEnabled(boolean enabled){pageSwipeEnabled=enabled;}
@@ -339,11 +339,23 @@ final class PdfPageView extends View {
                 if (bounds.width() * bounds.height() < 0.1f) bounds.set(0, 0, 1, 1);
             }
         } catch (RuntimeException ignored) { bounds.set(0, 0, 1, 1); }
-        setBackgroundColor(paperColor);
+        applyBackground();
     }
     /** Normalised box around the printed content (the whole page when it is nearly blank). */
     RectF contentBounds() { return new RectF(bounds); }
     int paperColor() { return paperColor; }
+    private boolean darkPage;
+    private static final android.graphics.ColorMatrixColorFilter DARK_FILTER;
+    static {
+        android.graphics.ColorMatrix invert = new android.graphics.ColorMatrix(new float[]{-1,0,0,0,255, 0,-1,0,0,255, 0,0,-1,0,255, 0,0,0,1,0});
+        android.graphics.ColorMatrix hue = new android.graphics.ColorMatrix(new float[]{-0.574f,1.430f,0.144f,0,0, 0.426f,0.430f,0.144f,0,0, 0.426f,1.430f,-0.856f,0,0, 0,0,0,1,0});
+        invert.postConcat(hue);
+        DARK_FILTER = new android.graphics.ColorMatrixColorFilter(invert);
+    }
+    /** Black paper with light text: the page picture is inverted (keeping hues) and dark ink is lightened. */
+    void setDarkPage(boolean enabled) { darkPage = enabled; applyBackground(); invalidate(); }
+    boolean isDarkPage() { return darkPage; }
+    private void applyBackground() { setBackgroundColor(darkPage ? 0xFF000000 : paperColor); }
     /** Zooms the base view onto this normalised box so margins disappear; null shows the whole page. */
     void setCrop(RectF box) {
         if (box == null || box.width() < 0.2f || box.height() < 0.2f) crop.set(0, 0, 1, 1); else crop.set(box);
@@ -386,8 +398,12 @@ final class PdfPageView extends View {
         if (bitmap == null) return;
         RectF dest = contentRect();
         paint.setColor(Color.WHITE);
+        if (darkPage) paint.setColor(Color.BLACK);
         canvas.drawRect(dest, paint);
+        if (darkPage) paint.setColorFilter(DARK_FILTER);
         canvas.drawBitmap(bitmap, null, dest, paint);
+        paint.setColorFilter(null);
+        AnnotationPainter.dark = darkPage;
         if(!suppressSelection&&textSelectMode&&showTextBounds){paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.5f*getResources().getDisplayMetrics().density);paint.setColor(0xAA2563EB);for(TextRegion r:textRegions){RectF b=r.wordBounds;canvas.drawRoundRect(new RectF(dest.left+b.left*dest.width(),dest.top+b.top*dest.height(),dest.left+b.right*dest.width(),dest.top+b.bottom*dest.height()),4,4,paint);}paint.setStyle(Paint.Style.FILL);}
         if(!suppressSelection&&!selectedTextRegions.isEmpty()){
             paint.setStyle(Paint.Style.FILL);paint.setColor(0x663B82F6);
@@ -401,7 +417,7 @@ final class PdfPageView extends View {
                         dest.left + m.right * dest.width(), dest.top + m.bottom * dest.height(), paint);
             }
         }
-        if(strokes!=null){paint.setStyle(Paint.Style.STROKE);paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);for(AnnotationStore.InkStroke s:strokes)if(s.page==page&&s.points.size()>0){paint.setColor(s.color);if(s.points.size()==1){AnnotationStore.InkPoint p=s.points.get(0);paint.setStyle(Paint.Style.FILL);canvas.drawCircle(dest.left+p.x*dest.width(),dest.top+p.y*dest.height(),strokeWidth(s.width,p.pressure,dest)/2f,paint);paint.setStyle(Paint.Style.STROKE);}else for(int i=1;i<s.points.size();i++){AnnotationStore.InkPoint a=s.points.get(i-1),b=s.points.get(i);paint.setStrokeWidth(strokeWidth(s.width,(a.pressure+b.pressure)/2f,dest));canvas.drawLine(dest.left+a.x*dest.width(),dest.top+a.y*dest.height(),dest.left+b.x*dest.width(),dest.top+b.y*dest.height(),paint);}}paint.setStyle(Paint.Style.FILL);}
+        if(strokes!=null){paint.setStyle(Paint.Style.STROKE);paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);for(AnnotationStore.InkStroke s:strokes)if(s.page==page&&s.points.size()>0){paint.setColor(AnnotationPainter.adj(s.color));if(s.points.size()==1){AnnotationStore.InkPoint p=s.points.get(0);paint.setStyle(Paint.Style.FILL);canvas.drawCircle(dest.left+p.x*dest.width(),dest.top+p.y*dest.height(),strokeWidth(s.width,p.pressure,dest)/2f,paint);paint.setStyle(Paint.Style.STROKE);}else for(int i=1;i<s.points.size();i++){AnnotationStore.InkPoint a=s.points.get(i-1),b=s.points.get(i);paint.setStrokeWidth(strokeWidth(s.width,(a.pressure+b.pressure)/2f,dest));canvas.drawLine(dest.left+a.x*dest.width(),dest.top+a.y*dest.height(),dest.left+b.x*dest.width(),dest.top+b.y*dest.height(),paint);}}paint.setStyle(Paint.Style.FILL);}
         memoHitBoxes.clear();if(marks!=null)for(AnnotationStore.Mark m:marks)if(m.page==page&&m.visible&&(m.noteOnly||(m.note!=null&&!m.note.isEmpty())))drawMemo(canvas,dest,m);
         noteHitBoxes.clear();if(translations!=null)for(AnnotationStore.TranslationNote n:translations)if(n.page==page&&n.visible)drawTranslation(canvas,dest,n);
         if (!suppressSelection && drawing) {
@@ -412,6 +428,7 @@ final class PdfPageView extends View {
                     Math.max(startX, currentX), centerY + half, paint);
         }
         AnnotationPainter.elements(getContext(),canvas,dest,annotationStore,page);
+        AnnotationPainter.dark = false;
         if(!suppressSelection)drawElementHandles(canvas,dest);
         if(!suppressSelection&&searchPage==page)drawSearchHighlights(canvas,dest);
         if(!suppressSelection&&!lassoPoints.isEmpty()){
