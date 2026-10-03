@@ -281,6 +281,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             new AnchoredMenu.Row("여백 자르기",R.drawable.ic_scan,()->{recentPrefs.edit().putBoolean("crop_margins",!cropMargins()).apply();applyCrop();toast(cropMargins()?"문서 여백을 잘라 화면에 꽉 채웁니다":"원래 여백을 그대로 보여줍니다");}).tint(0xFF34C759).selected(cropMargins()),
             new AnchoredMenu.Row("검은 문서 배경",R.drawable.ic_circle,this::toggleDarkPage).tint(0xFF3A3A3C).selected(darkPage()),
             new AnchoredMenu.Row("페이지 넘김 설정",R.drawable.ic_sliders,this::choosePageSwipeDirection).tint(0xFF8E8E93),
+            new AnchoredMenu.Row("넘김 효과",R.drawable.ic_sliders,this::choosePageAnimation).tint(0xFF8E8E93),
             AnchoredMenu.Row.divider(),
             new AnchoredMenu.Row("페이지 추가",R.drawable.ic_note_add,()->choosePageToInsert(currentPage)).tint(0xFF34C759),
             new AnchoredMenu.Row("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).danger());
@@ -515,7 +516,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void animatePage(int direction){
         if(pageAnimating||renderer==null)return;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0)return;if(target>=renderer.getPageCount()){if(direction>0&&isNotebook(activeSession))appendPage(activeSession,library.paper(new File(activeSession.uri.getPath())));return;}
         pageAnimating=true;
-        if(!verticalPageSwipe&&curlPage(direction,target))return;
+        if(pageAnimStyle()==2){showPage(target);resetPageTransforms();pageAnimating=false;return;}
+        if(pageAnimStyle()==0&&!verticalPageSwipe&&curlPage(direction,target))return;
         float offset=dp(26)*direction;
         boolean vertical=verticalPageSwipe;PdfPageView moving=pageView;
         moving.animate().alpha(0.45f).translationX(vertical?0:-offset).translationY(vertical?-offset:0)
@@ -538,7 +540,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private PageCurlView dragCurl;private int curlOrigin;private float dragSpan;private boolean curlConsumed;
     private final PdfPageView.PageDrag pageDragHandler=new PdfPageView.PageDrag(){
         @Override public boolean start(int direction){
-            if(pageAnimating||renderer==null||verticalPageSwipe)return false;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0||target>=renderer.getPageCount())return false;
+            if(pageAnimating||renderer==null||verticalPageSwipe||pageAnimStyle()!=0)return false;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0||target>=renderer.getPageCount())return false;
             pageAnimating=true;PageCurlView curl=beginCurl(direction,target);if(curl==null){pageAnimating=curlConsumed;return false;}
             dragCurl=curl;dragSpan=Math.max(dp(120),curl.getLayoutParams().width*(twoPage?.5f:1f)*1.1f);return true;
         }
@@ -564,8 +566,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         }else{
             int spine=secondPageView.getLeft(),half=Math.min(spine,papers.getWidth()-spine);rl=spine-half;w=half*2;
             Bitmap oldFirst=slice(oldFull,spine-half,rt,half,h),oldSecond=slice(oldFull,spine,rt,half,h),newFirst=slice(newFull,spine-half,rt,half,h),newSecond=slice(newFull,spine,rt,half,h);
-            if(forward)curl.setup(oldFirst,newSecond,oldSecond,PageCurlView.mirror(newFirst),false,.5f);
-            else curl.setup(PageCurlView.mirror(oldSecond),PageCurlView.mirror(newFirst),PageCurlView.mirror(oldFirst),newSecond,true,.5f);
+            if(forward)curl.setup(oldFirst,newSecond,oldSecond,PageCurlView.paperBack(PageCurlView.mirror(newFirst)),false,.5f);
+            else curl.setup(PageCurlView.mirror(oldSecond),PageCurlView.mirror(newFirst),PageCurlView.mirror(oldFirst),PageCurlView.paperBack(newSecond),true,.5f);
         }
         oldFull.recycle();newFull.recycle();
         FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(w,h,Gravity.TOP|Gravity.START);lp.leftMargin=rl+papers.getLeft();lp.topMargin=rt+papers.getTop();viewportLayer.addView(curl,1,lp);return curl;
@@ -582,8 +584,11 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(curl==null){if(curlConsumed){pageAnimating=false;return true;}return false;}
         finishCurl(curl,0f,1f);return true;
     }
+    /** Page-turn effect: 0 = paper curl (default), 1 = slide and fade, 2 = none. */
+    private int pageAnimStyle(){return recentPrefs.getInt("page_anim_style",0);}
+    private void choosePageAnimation(){String[] choices={"책장 넘김 (종이처럼 접히며 넘어감)","슬라이드 (밀리며 나타남)","효과 없음 (바로 전환)"};new AlertDialog.Builder(this).setTitle("넘김 효과").setSingleChoiceItems(choices,pageAnimStyle(),(dialog,which)->{recentPrefs.edit().putInt("page_anim_style",which).apply();dialog.dismiss();toast("넘김 효과: "+choices[which].split(" \\(")[0]);}).setNegativeButton("취소",null).show();}
     private boolean darkPage(){return recentPrefs.getBoolean("dark_page",false);}
-    private void applyDarkPage(){boolean on=darkPage();PageCurlView.backTint=on?0xCC000000:0xCCFFFFFF;if(firstPageView!=null)firstPageView.setDarkPage(on);if(secondPageView!=null)secondPageView.setDarkPage(on);}
+    private void applyDarkPage(){boolean on=darkPage();PageCurlView.backTint=on?0xE6000000:0xE6FFFFFF;if(firstPageView!=null)firstPageView.setDarkPage(on);if(secondPageView!=null)secondPageView.setDarkPage(on);}
     private void toggleDarkPage(){recentPrefs.edit().putBoolean("dark_page",!darkPage()).apply();applyDarkPage();toast(darkPage()?"문서 배경을 검게 표시합니다. 어두운 글씨 필기는 밝게 보입니다":"문서를 원래 색으로 표시합니다");}
     private boolean cropMargins(){return recentPrefs.getBoolean("crop_margins",true);}
     /** Trims blank page margins so the printed area fills the screen (not for notebooks, where the margins are writing space). */
@@ -1325,7 +1330,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).tint(0xFFFF3B30));
                 t.add(new Tile("두 쪽 보기 · "+(twoPage?"켜짐":"꺼짐"),R.drawable.ic_thumbnails,this::toggleTwoPage).selected(twoPage));
                 t.add(new Tile("전체 화면",R.drawable.ic_fullscreen,this::toggleFullscreen));
-                t.add(new Tile("페이지 넘김 설정",R.drawable.ic_sliders,this::choosePageSwipeDirection));
+                t.add(new Tile("페이지 넘김 설정",R.drawable.ic_sliders,this::choosePageSwipeDirection));t.add(new Tile("넘김 효과",R.drawable.ic_sliders,this::choosePageAnimation));
                 t.add(new Tile("읽기·페이지 넘김",R.drawable.ic_book,()->setInkMode(0)));
                 break;
             case 2:

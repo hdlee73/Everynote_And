@@ -25,7 +25,7 @@ final class PageCurlView extends View {
     private float progress;
     private final Paint shade = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** Tint laid over the mirrored page to make the back of the leaf (white on light pages, black on dark ones). */
-    static int backTint = 0xCCFFFFFF;
+    static int backTint = 0xE6FFFFFF;
 
     PageCurlView(Context context) { super(context); }
 
@@ -67,8 +67,9 @@ final class PageCurlView extends View {
 
     /** The turning leaf: the grabbed corner C goes to the finger point G, the fold is their perpendicular bisector. */
     private void drawFold(Canvas canvas, float s, float w, float h, float lw, float t) {
-        final float cy = touch > .5f ? h : 0f, ty = touch * h, dir = cy > 0f ? -1f : 1f;
-        final float dy = Math.max(Math.abs(ty - cy), .35f * h) * (float) Math.pow(1f - t, .6f), dx = 2.04f * lw * t;
+        final float cy = touch > .5f ? h : 0f, dir = cy > 0f ? -1f : 1f;
+        // the lifted corner starts small and grows with the drag; the fold starts steeply diagonal and straightens as the page goes over
+        final float dx = 2.04f * lw * t, dy = dx * .8f * (float) Math.pow(1f - t, 1.2f) * (h / Math.max(1f, lw));
         float gx = w - dx, gy = cy + dir * dy;
         float nx = gx - w, ny = gy - cy, len = (float) Math.hypot(nx, ny);
         nx /= len; ny /= len;                                  // normal pointing from the corner toward the finger
