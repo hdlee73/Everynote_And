@@ -569,7 +569,7 @@ final class PdfPageView extends View {
     private TextRegion textRegionAt(float x,float y,RectF dest){
         if(!textSelectMode||dest.width()==0||!dest.contains(x,y))return null;
         float nx=(x-dest.left)/dest.width(),ny=(y-dest.top)/dest.height();
-        float tolerance=16f*getResources().getDisplayMetrics().density;
+        float tolerance=(directTextSelection?10f:3f)*getResources().getDisplayMetrics().density;
         TextRegion best=null;float bestDistance=Float.MAX_VALUE;
         for(TextRegion r:textRegions){
             float dx=(nx-Math.max(r.wordBounds.left,Math.min(nx,r.wordBounds.right)))*dest.width();

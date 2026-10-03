@@ -56,7 +56,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         final Deque<AnnotationStore.InkStroke> redoStrokes=new ArrayDeque<>();
         final Map<Integer,List<PdfPageView.TextRegion>> textRegions=new HashMap<>();
     }
-    private static final int EXPORT_PDF=30,IMPORT_IMAGE=31,IMPORT_VIDEO=32,IMPORT_TEMPLATE=33;
+    private static final int EXPORT_PDF=30,IMPORT_IMAGE=31,IMPORT_VIDEO=32,IMPORT_TEMPLATE=33,EXPORT_ORIGINAL=34;
     private PaperChoiceView templateTarget;
     private LibraryRepository library; private LibraryDialog libraryDialog;
     private final Set<String> importing=new HashSet<>(); private final Set<DocumentSession> appending=new HashSet<>(); private boolean restoringSessions;
@@ -215,12 +215,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         bookmarkButton=barIcon(readBar,R.drawable.ic_star_outline,"즐겨찾기",0xFFF5A623,v->toggleBookmark());
         barIcon(readBar,R.drawable.ic_insert,"삽입 · 사진 스티커 도형 표",0xFFFF2D55,v->showInsertMenu(v));
         inkButton=barIcon(readBar,R.drawable.ic_ink,"필기 모드",0xFF5856D6,v->setWriteMode(true));
+        textButton=barIcon(readBar,R.drawable.ic_text,"타이핑",0xFF34C759,v->toggleTyping());
         barIcon(writeBar,R.drawable.ic_book,"읽기 모드",0xFF007AFF,v->setWriteMode(false));
         penButton=barIcon(writeBar,R.drawable.ic_ink,"펜",0xFF1C1C1E,v->penTap(v));
         hlButton=barIcon(writeBar,R.drawable.ic_highlight,"형광펜",0xFFF5C400,v->highlightTap(v));
         eraserButton=barIcon(writeBar,R.drawable.ic_eraser,"지우개",0xFFFF6B8A,v->{if(renderer==null)toast("문서를 먼저 여세요");else setInkMode(2);});
         lassoButton=barIcon(writeBar,R.drawable.ic_lasso,"올가미 선택",0xFFAF52DE,v->toggleLasso());
-        textButton=barIcon(writeBar,R.drawable.ic_text,"타이핑",0xFF34C759,v->toggleTyping());
         memoButton=barIcon(writeBar,R.drawable.ic_note_add,"메모 추가",0xFFFF9500,v->toggleMemoMode());
         barIcon(writeBar,R.drawable.ic_insert,"삽입 · 사진 스티커 도형 표",0xFFFF2D55,v->showInsertMenu(v));
         barIcon(writeBar,R.drawable.ic_undo,"실행 취소",0xFF8E8E93,v->undoInk());
@@ -328,7 +328,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void choosePdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/pdf","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/x-hwp","application/vnd.hancom.hwp","application/vnd.hancom.hwpx","application/octet-stream"});startActivityForResult(i,OPEN_PDF);}
     private void chooseConvertedPdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/pdf");startActivityForResult(i,OPEN_PDF);}
-    @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req==EXPORT_PDF){receivePdfExport(result,data);return;}if(req==IMPORT_IMAGE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importImage(data.getData());return;}if(req==IMPORT_TEMPLATE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)receiveTemplate(data.getData());return;}if(req==IMPORT_VIDEO){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importVideo(data.getData());return;}if(req==EXPORT_CAPTURE){receiveCaptureExport(result,data);return;}if(req==EXPORT_STUDY||req==IMPORT_SIDECAR){receiveStudyResult(req,result,data);return;}if(req==TRANSLATE_EXTERNAL){receiveExternalTranslation(result,data);return;}if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri u=data.getData();if(req==OPEN_PDF){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}openPdf(u);}else if(req==EXPORT_JSON){try(OutputStream out=getContentResolver().openOutputStream(u,"wt")){if(out==null||pendingJsonExport==null)throw new IOException("다시 백업하세요");out.write(pendingJsonExport.getBytes(java.nio.charset.StandardCharsets.UTF_8));toast("주석을 내보냈습니다");}catch(Exception e){toast("내보내기 실패: "+e.getMessage());}}}
+    @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req==EXPORT_PDF){receivePdfExport(result,data);return;}if(req==EXPORT_ORIGINAL){receiveOriginalExport(result,data);return;}if(req==IMPORT_IMAGE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importImage(data.getData());return;}if(req==IMPORT_TEMPLATE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)receiveTemplate(data.getData());return;}if(req==IMPORT_VIDEO){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importVideo(data.getData());return;}if(req==EXPORT_CAPTURE){receiveCaptureExport(result,data);return;}if(req==EXPORT_STUDY||req==IMPORT_SIDECAR){receiveStudyResult(req,result,data);return;}if(req==TRANSLATE_EXTERNAL){receiveExternalTranslation(result,data);return;}if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri u=data.getData();if(req==OPEN_PDF){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}openPdf(u);}else if(req==EXPORT_JSON){try(OutputStream out=getContentResolver().openOutputStream(u,"wt")){if(out==null||pendingJsonExport==null)throw new IOException("다시 백업하세요");out.write(pendingJsonExport.getBytes(java.nio.charset.StandardCharsets.UTF_8));toast("주석을 내보냈습니다");}catch(Exception e){toast("내보내기 실패: "+e.getMessage());}}}
     private boolean isOfficeDocument(String name){String value=name.toLowerCase(Locale.ROOT);return value.endsWith(".hwp")||value.endsWith(".hwpx")||value.endsWith(".doc")||value.endsWith(".docx")||value.endsWith(".ppt")||value.endsWith(".pptx")||value.endsWith(".xls")||value.endsWith(".xlsx");}
     private boolean canConvertOffice(String name){String lower=name.toLowerCase(Locale.ROOT);return lower.endsWith(".doc")||lower.endsWith(".docx")||lower.endsWith(".ppt")||lower.endsWith(".pptx")||lower.endsWith(".xls")||lower.endsWith(".xlsx");}
     private void convertHwp(Uri source,String name){
@@ -629,33 +629,24 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         tile.setOnClickListener(v->action.run());
         return title;
     }
+    /** One menu for everything: the selection actions on top, then the same insert rows as the long-press menu, in the same card style. */
     private void showTextSelectionPopup(PdfPageView.TextSelection selection,float anchorX,float anchorY){
         onSelectionAdjustStarted();
-        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(7),dp(7),dp(7),dp(7));panel.setBackground(round(Color.WHITE,20));
+        final PdfPageView view=pageView;final int page=currentPage;
+        Runnable[] after=new Runnable[1];after[0]=()->{onSelectionAdjustStarted();view.clearTextSelectionOverlay();};
+        List<AnchoredMenu.Row> rows=new ArrayList<>();
         String[] labels={"하이라이트","복사","번역","읽어주기","단어장","개요","메모","발췌","링크"};
-        int[] icons={R.drawable.ic_highlight,R.drawable.ic_copy,R.drawable.ic_translate,R.drawable.ic_speaker,
-            R.drawable.ic_dictionary,R.drawable.ic_outline,R.drawable.ic_note_add,R.drawable.ic_copy,R.drawable.ic_link};
+        int[] icons={R.drawable.ic_highlight,R.drawable.ic_copy,R.drawable.ic_translate,R.drawable.ic_speaker,R.drawable.ic_dictionary,R.drawable.ic_outline,R.drawable.ic_note_add,R.drawable.ic_copy,R.drawable.ic_link};
+        int[] tints={0xFFF5A623,0xFF8E8E93,0xFF007AFF,0xFF34C759,0xFF30B0C7,0xFF5856D6,0xFFFF9500,0xFFAF52DE,0xFF5856D6};
         Runnable[] actions={()->addOcrHighlights(selection.bounds),()->copySelectedText(selection.text),()->translateText(selection.text,selection.unionBounds),
-            ()->readAloud(selection.text),()->openDictionary(selection.text),()->promptOutline(currentPage,selection.unionBounds.left,selection.unionBounds.top,selection.text),
-            ()->onMemoPointRequested(currentPage,selection.unionBounds.right,selection.unionBounds.top),
+            ()->readAloud(selection.text),()->openDictionary(selection.text),()->promptOutline(page,selection.unionBounds.left,selection.unionBounds.top,selection.text),
+            ()->onMemoPointRequested(page,selection.unionBounds.right,selection.unionBounds.top),
             ()->addStudyEntry(selection.text,selection.unionBounds.left,selection.unionBounds.top,true),()->createHyperlink(selection)};
-        for(int row=0;row<3;row++){
-            LinearLayout group=new LinearLayout(this);panel.addView(group);
-            for(int col=0;col<4;col++){
-                int index=row*4+col;
-                if(index>=labels.length){View empty=new View(this);group.addView(empty,new LinearLayout.LayoutParams(0,dp(71),1));continue;}
-                menuTile(group,labels[index],icons[index],()->{onSelectionAdjustStarted();actions[index].run();pageView.clearTextSelectionOverlay();});
-            }
-        }
-        int width=Math.min(dp(376),root.getWidth()-dp(20));
-        selectionPopup=new PopupWindow(panel,width,dp(227),false);selectionPopup.setBackgroundDrawable(round(Color.WHITE,20));selectionPopup.setElevation(dp(12));
-        selectionPopup.setOutsideTouchable(true);
-        if(android.os.Build.VERSION.SDK_INT>=29)selectionPopup.setTouchModal(false);
-        int[] location=new int[2];pageView.getLocationOnScreen(location);
-        int[] rootLocation=new int[2];root.getLocationOnScreen(rootLocation);
-        int y=location[1]+Math.round(anchorY)+dp(20);
-        if(y+dp(160)>rootLocation[1]+root.getHeight())y=location[1]+Math.round(anchorY)-dp(176);
-        selectionPopup.showAtLocation(root,Gravity.TOP|Gravity.LEFT,rootLocation[0]+(root.getWidth()-width)/2,Math.max(rootLocation[1]+dp(8),y));
+        for(int i=0;i<labels.length;i++){final int index=i;rows.add(new AnchoredMenu.Row(labels[i],icons[i],()->{actions[index].run();after[0].run();}).tint(tints[i]));}
+        rows.add(AnchoredMenu.Row.divider());
+        dropTarget=new float[]{page,selection.unionBounds.left,selection.unionBounds.bottom};dropTime=System.currentTimeMillis();
+        for(AnchoredMenu.Row row:insertRows())if(!"하이퍼링크".equals(row.label))rows.add(row);
+        showMenuAt(view,anchorX,anchorY,rows,view::clearTextSelectionOverlay);
     }
     private void copySelectedText(String text){ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("PDF 선택 문장",text));toast("선택한 내용을 복사했습니다");}
     private void openDictionary(String word){try{Intent i=new Intent();i.setClassName("com.hdlee73.sajeonapp","com.hdlee73.sajeonapp.MainActivity");i.putExtra("query",word.replaceAll("^[^A-Za-z]+|[^A-Za-z'-]+$","").trim());i.putExtra("return_to_pdf",true);i.putExtra("source_title",documentTitle);i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);startActivity(i);}catch(ActivityNotFoundException e){new AlertDialog.Builder(this).setTitle("단어장 앱이 필요합니다").setMessage("LEXI 단어장 앱을 설치하면 선택한 단어를 바로 검색할 수 있습니다.").setPositiveButton("확인",null).show();}}
@@ -875,6 +866,18 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("이름 변경").setView(input).setPositiveButton("저장",null).setNegativeButton("취소",null).create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{String name=NotebookFiles.pdfName(input.getText().toString());dialog.getButton(-1).setEnabled(false);new Thread(()->{try{File after=library.transfer(before,before.getParentFile(),name,true);runOnUiThread(()->{dialog.dismiss();libraryChanged(before,after);});}catch(Exception error){runOnUiThread(()->{dialog.getButton(-1).setEnabled(true);input.setError(error.getMessage());});}},"rename-pdf").start();}catch(Exception error){input.setError(error.getMessage());}}));dialog.show();
     }
     private void saveToLibrary(){if(activeSession==null)return;if(library.managed(activeSession.uri)){showLibrary();return;}final DocumentSession session=activeSession;final Uri source=session.officePreview==null?session.uri:Uri.fromFile(session.officePreview);if(session.officePreview!=null)try{AnnotationStore copy=new AnnotationStore(this);copy.open(source);copy.importJson(session.store.exportJson(session.uri,session.title),session.renderer.getPageCount());}catch(JSONException error){toast("주석 저장 실패");return;}importPdfToLibrary(source,session.title.replaceFirst("(?i)\\.[^.]+$","")+".pdf",currentPage,true);}
+    /** Saves the untouched source file (no ink, notes or other annotations) wherever the user picks. */
+    private void exportOriginal(){
+        if(activeSession==null||documentUri==null){toast("문서를 먼저 여세요");return;}
+        String mime=getContentResolver().getType(documentUri);if(mime==null||mime.isEmpty())mime="application/octet-stream";
+        exportOriginalSource=documentUri;
+        try{startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_TITLE,documentTitle),EXPORT_ORIGINAL);}catch(RuntimeException error){toast("저장 위치를 열 수 없습니다");}
+    }
+    private Uri exportOriginalSource;
+    private void receiveOriginalExport(int result,Intent data){
+        final Uri source=exportOriginalSource;exportOriginalSource=null;if(result!=RESULT_OK||data==null||data.getData()==null||source==null)return;final Uri target=data.getData();
+        new Thread(()->{boolean ok=false;try(java.io.InputStream in=getContentResolver().openInputStream(source);java.io.OutputStream out=getContentResolver().openOutputStream(target,"wt")){byte[] buffer=new byte[1<<16];int n;while((n=in.read(buffer))>0)out.write(buffer,0,n);ok=true;}catch(Exception ignored){}final boolean done=ok;runOnUiThread(()->toast(done?"원본 파일을 내보냈습니다":"원본 내보내기에 실패했습니다"));},"export-original").start();
+    }
     private void exportPdf(){if(activeSession==null)return;try{exportSource=activeSession.officePreview==null?documentUri:Uri.fromFile(activeSession.officePreview);exportSnapshot=store.exportJson(documentUri,documentTitle);exportPageCount=renderer.getPageCount();startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/pdf").putExtra(Intent.EXTRA_TITLE,documentTitle.replaceAll("(?i)\\.pdf$","")+"_notes.pdf"),EXPORT_PDF);}catch(JSONException error){toast("PDF 준비 실패");}}
     private void receivePdfExport(int result,Intent data){if(result!=RESULT_OK||data==null||data.getData()==null)return;final Uri source=exportSource,target=data.getData();final String snapshot=exportSnapshot;final int count=exportPageCount;if(source==null||snapshot==null){toast("다시 내보내세요");return;}ProgressDialog progress=ProgressDialog.show(this,"PDF 내보내기","필기·타이핑·이미지를 PDF에 담는 중입니다…",true,false);new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(target,"wt")){if(out==null)throw new IOException("출력 파일을 열 수 없습니다");AnnotationStore annotations=new AnnotationStore(this);annotations.importJson(snapshot,count);DocumentExporter.export(this,source,annotations,out);runOnUiThread(()->{progress.dismiss();toast("PDF를 내보냈습니다");});}catch(Exception error){runOnUiThread(()->{progress.dismiss();toast("PDF 내보내기 실패: "+error.getMessage());});}},"pdf-export").start();}
     private String placementText="";private float placementRot;
@@ -1008,11 +1011,16 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     void showInsertMenuAt(PdfPageView view,int page,float x,float y,float viewX,float viewY){
         if(renderer==null||view==null||viewportLayer==null)return;
         dropTarget=new float[]{page,x,y};dropTime=System.currentTimeMillis();
+        showMenuAt(view,viewX,viewY,insertRows(),null);
+    }
+    /** Shows a floating menu card next to a point inside a page view (above the point when it is in the lower half). */
+    private void showMenuAt(PdfPageView view,float viewX,float viewY,List<AnchoredMenu.Row> rows,Runnable onDismiss){
+        if(view==null||viewportLayer==null)return;
         View papers=viewportLayer.getChildAt(0);
         if(tapAnchor==null){tapAnchor=new View(this);viewportLayer.addView(tapAnchor,new FrameLayout.LayoutParams(dp(2),dp(2),Gravity.TOP|Gravity.START));}
         FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)tapAnchor.getLayoutParams();lp.leftMargin=Math.round(viewX+view.getLeft()+papers.getLeft());lp.topMargin=Math.round(viewY+view.getTop()+papers.getTop());tapAnchor.setLayoutParams(lp);
         final boolean above=viewY>view.getHeight()*.5f;
-        tapAnchor.post(()->AnchoredMenu.show(this,tapAnchor,above,insertRows(),null));
+        tapAnchor.post(()->{PopupWindow w=AnchoredMenu.show(this,tapAnchor,above,rows,null);if(onDismiss!=null){selectionPopup=w;w.setOnDismissListener(()->{if(selectionPopup==w)selectionPopup=null;onDismiss.run();});}});
     }
     private LinearLayout colorRow(int[] colors,int[] chosen){
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);final View[] swatches=new View[colors.length+1];final Runnable[] refresh=new Runnable[1];
@@ -1421,7 +1429,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("노트·발췌 내보내기",R.drawable.ic_copy,this::exportStudy));
                 t.add(new Tile("주석 백업",R.drawable.ic_copy,this::exportAnnotations));
                 t.add(new Tile("주석 백업 복원",R.drawable.ic_undo,this::importSidecar));
-                t.add(new Tile("본문 미리보기 저장",R.drawable.ic_folder_open,this::saveToLibrary));
+                t.add(new Tile("원본 파일 내보내기",R.drawable.ic_folder_open,this::exportOriginal));
+                t.add(new Tile("앱 서재에 PDF로 저장",R.drawable.ic_folder_open,this::saveToLibrary));
                 break;
         }
         return t;
