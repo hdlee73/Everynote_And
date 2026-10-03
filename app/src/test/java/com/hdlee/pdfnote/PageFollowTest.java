@@ -10,10 +10,12 @@ import org.junit.*;
 import org.junit.runner.RunWith;
 import org.robolectric.*;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,qualifiers="mdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class PageFollowTest {
     private PdfPageView view;
     private final List<String> log=new ArrayList<>();
