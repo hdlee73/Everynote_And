@@ -97,6 +97,65 @@ final class PdfPageView extends View {
     /** Lets the host follow a finger while it turns the page (Kindle style). */
     interface PageDrag { boolean start(int direction); void move(float distance); void end(float velocity); }
     void setPageDrag(PageDrag drag) { pageDrag = drag; }
+    private AnnotationStore.PageElement selectedElement;
+    private int elementDrag; private boolean elementMoved; private float elementStartX, elementStartY; private final RectF elementOrigin = new RectF();
+    /** Shows move and resize handles around an attached picture, sticker, video or link box. */
+    void selectElement(AnnotationStore.PageElement element) { selectedElement = element; invalidate(); }
+    AnnotationStore.PageElement selectedElement() { return selectedElement; }
+    private static boolean resizable(AnnotationStore.PageElement e) { return e != null && !e.kind.equals("text") && !e.kind.equals("audio"); }
+    private static boolean aspectLocked(AnnotationStore.PageElement e) { return e.kind.equals("image") || e.kind.equals("sticker") || e.kind.equals("video"); }
+    private void drawElementHandles(Canvas canvas, RectF dest) {
+        if (selectedElement == null || selectedElement.page != page || annotationStore == null || !annotationStore.elements.contains(selectedElement) || dest.width() <= 0) return;
+        float density = getResources().getDisplayMetrics().density; RectF b = AnnotationPainter.box(dest, selectedElement);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2f * density); p.setColor(0xFF007AFF); canvas.drawRect(b, p);
+        float[][] corners = {{b.left, b.top}, {b.right, b.top}, {b.left, b.bottom}, {b.right, b.bottom}};
+        for (float[] c : corners) { p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawCircle(c[0], c[1], 9f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawCircle(c[0], c[1], 9f * density, p); }
+    }
+    private boolean handleElementGesture(MotionEvent e, RectF dest) {
+        if (selectedElement == null || annotationStore == null || dest.width() <= 0) return false;
+        if (selectedElement.page != page || !annotationStore.elements.contains(selectedElement)) { selectedElement = null; return false; }
+        int action = e.getActionMasked(); float density = getResources().getDisplayMetrics().density;
+        if (action == MotionEvent.ACTION_DOWN && e.getPointerCount() == 1 && !isStylus(e)) {
+            RectF b = AnnotationPainter.box(dest, selectedElement); float reach = 24f * density; int hit = 0;
+            if (Math.hypot(e.getX() - b.left, e.getY() - b.top) <= reach) hit = 2; else if (Math.hypot(e.getX() - b.right, e.getY() - b.top) <= reach) hit = 3;
+            else if (Math.hypot(e.getX() - b.left, e.getY() - b.bottom) <= reach) hit = 4; else if (Math.hypot(e.getX() - b.right, e.getY() - b.bottom) <= reach) hit = 5;
+            else if (b.contains(e.getX(), e.getY())) hit = 1;
+            if (hit == 0) { selectedElement = null; invalidate(); return false; }
+            if (hit > 1 && !resizable(selectedElement)) hit = 1;
+            listener.onSelectionAdjustStarted(); elementDrag = hit; elementMoved = false; elementStartX = e.getX(); elementStartY = e.getY();
+            elementOrigin.set(selectedElement.left, selectedElement.top, selectedElement.right, selectedElement.bottom);
+            getParent().requestDisallowInterceptTouchEvent(true); return true;
+        }
+        if (elementDrag == 0) return false;
+        if (action == MotionEvent.ACTION_MOVE) {
+            float dx = (e.getX() - elementStartX) / dest.width(), dy = (e.getY() - elementStartY) / dest.height();
+            if (!elementMoved && Math.hypot(e.getX() - elementStartX, e.getY() - elementStartY) < 8f * density) return true;
+            elementMoved = true; AnnotationStore.PageElement el = selectedElement; float w = elementOrigin.width(), h = elementOrigin.height();
+            if (elementDrag == 1) {
+                float left = Math.max(0f, Math.min(1f - w, elementOrigin.left + dx)), top = Math.max(0f, Math.min(1f - h, elementOrigin.top + dy));
+                el.left = left; el.top = top; el.right = left + w; el.bottom = top + h;
+            } else {
+                boolean leftCorner = elementDrag == 2 || elementDrag == 4, topCorner = elementDrag == 2 || elementDrag == 3;
+                float fx = leftCorner ? elementOrigin.right : elementOrigin.left, fy = topCorner ? elementOrigin.bottom : elementOrigin.top;
+                float nx = Math.max(0f, Math.min(1f, (e.getX() - dest.left) / dest.width())), ny = Math.max(0f, Math.min(1f, (e.getY() - dest.top) / dest.height()));
+                float nw = Math.max(.04f, leftCorner ? fx - nx : nx - fx), nh = Math.max(.03f, topCorner ? fy - ny : ny - fy);
+                if (aspectLocked(el)) {
+                    float ratio = (w * dest.width()) / (h * dest.height()); nh = nw * dest.width() / (ratio * dest.height());
+                    float room = topCorner ? fy : 1f - fy; if (nh > room) { nh = room; nw = nh * ratio * dest.height() / dest.width(); }
+                    float roomX = leftCorner ? fx : 1f - fx; if (nw > roomX) { nw = roomX; nh = nw * dest.width() / (ratio * dest.height()); }
+                }
+                el.left = leftCorner ? fx - nw : fx; el.right = leftCorner ? fx : fx + nw; el.top = topCorner ? fy - nh : fy; el.bottom = topCorner ? fy : fy + nh;
+            }
+            invalidate(); return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            boolean moved = elementMoved; elementDrag = 0; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(false);
+            if (action == MotionEvent.ACTION_CANCEL) { selectedElement.left = elementOrigin.left; selectedElement.top = elementOrigin.top; selectedElement.right = elementOrigin.right; selectedElement.bottom = elementOrigin.bottom; invalidate(); }
+            else if (moved) listener.onInkChanged(); else listener.onElementTapped(selectedElement);
+            return true;
+        }
+        return true;
+    }
     private final Listener listener;
     private TextRegion selectionStartRegion, selectionEndRegion;
     private boolean selectionCandidate, selectingText;
@@ -156,7 +215,7 @@ final class PdfPageView extends View {
     void showPage(Bitmap pageBitmap, int pageNumber, List<AnnotationStore.Mark> allMarks, List<AnnotationStore.InkStroke> allStrokes, List<AnnotationStore.TranslationNote> allTranslations) {
         clearLassoSelection();
         stopTextSelection();
-        noteHitBoxes.clear(); memoHitBoxes.clear();
+        noteHitBoxes.clear(); memoHitBoxes.clear(); selectedElement = null; elementDrag = 0;
         if (bitmap != null && bitmap != pageBitmap) bitmap.recycle();
         bitmap = pageBitmap;
         page = pageNumber;
@@ -345,6 +404,7 @@ final class PdfPageView extends View {
                     Math.max(startX, currentX), centerY + half, paint);
         }
         AnnotationPainter.elements(getContext(),canvas,dest,annotationStore,page);
+        if(!suppressSelection)drawElementHandles(canvas,dest);
         if(!suppressSelection&&searchPage==page)drawSearchHighlights(canvas,dest);
         if(!suppressSelection&&!lassoPoints.isEmpty()){
             Path path=lassoPath(dest);lassoPaint.setStyle(Paint.Style.FILL);lassoPaint.setColor(0x222563EB);canvas.drawPath(path,lassoPaint);
@@ -483,6 +543,7 @@ final class PdfPageView extends View {
         if (scaleDetector.isInProgress()) return true;
         RectF dest = contentRect();
         boolean stylus=isStylus(e);
+        if(handleElementGesture(e,dest))return true;
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN)scalingOccurred=false;
         if(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN){finishInkStroke();clearLassoSelection();}
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN){
@@ -632,7 +693,7 @@ final class PdfPageView extends View {
             if (Math.hypot(e.getX() - startX, e.getY() - startY) < 20 && marks != null) {
                 float nx = (e.getX() - dest.left) / dest.width();
                 float ny = (e.getY() - dest.top) / dest.height();
-                if(annotationStore!=null)for(int i=annotationStore.elements.size()-1;i>=0;i--){AnnotationStore.PageElement element=annotationStore.elements.get(i);if(element.page==page&&nx>=element.left&&nx<=element.right&&ny>=element.top&&ny<=element.bottom){listener.onElementTapped(element);return true;}}
+                if(annotationStore!=null)for(int i=annotationStore.elements.size()-1;i>=0;i--){AnnotationStore.PageElement element=annotationStore.elements.get(i);if(element.page==page&&nx>=element.left&&nx<=element.right&&ny>=element.top&&ny<=element.bottom){if(element.kind.equals("image")||element.kind.equals("sticker")||element.kind.equals("video")){if(element==selectedElement)listener.onElementTapped(element);else{selectedElement=element;invalidate();}}else listener.onElementTapped(element);return true;}}
                 for (int i = marks.size() - 1; i >= 0; i--) {
                     AnnotationStore.Mark m = marks.get(i);
                     if (m.page == page && nx >= m.left && nx <= m.right && ny >= m.top && ny <= m.bottom) {

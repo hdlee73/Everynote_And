@@ -61,6 +61,15 @@ final class AnnotationPainter {
                     RectF fitted=new RectF(b.centerX()-image.getWidth()*scale/2,b.centerY()-image.getHeight()*scale/2,b.centerX()+image.getWidth()*scale/2,b.centerY()+image.getHeight()*scale/2);
                     c.drawBitmap(image,null,fitted,new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG));
                 }
+            }else if(e.kind.equals("sticker")){
+                Paint glyph=new Paint(Paint.ANTI_ALIAS_FLAG);glyph.setTextAlign(Paint.Align.CENTER);float size=Math.min(b.width(),b.height())*.82f;glyph.setTextSize(size);Paint.FontMetrics fm=glyph.getFontMetrics();c.drawText(e.text,b.centerX(),b.centerY()-(fm.ascent+fm.descent)/2f,glyph);
+            }else if(e.kind.equals("video")){
+                File file=new File(new File(context.getFilesDir(),"images"),e.asset);Bitmap frame=image(file);Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
+                if(frame!=null){c.drawBitmap(frame,null,b,paint);}else{paint.setColor(0xFF2C2C2E);c.drawRoundRect(b,b.width()*.03f,b.width()*.03f,paint);}
+                paint.setColor(0x55000000);c.drawRect(b,paint);float r=Math.min(b.width(),b.height())*.17f;paint.setColor(0xE6FFFFFF);c.drawCircle(b.centerX(),b.centerY(),r,paint);
+                android.graphics.Path tri=new android.graphics.Path();tri.moveTo(b.centerX()-r*.32f,b.centerY()-r*.5f);tri.lineTo(b.centerX()-r*.32f,b.centerY()+r*.5f);tri.lineTo(b.centerX()+r*.55f,b.centerY());tri.close();paint.setColor(0xFF1C1C1E);c.drawPath(tri,paint);
+            }else if(e.kind.equals("hyperlink")){
+                Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(0x24007AFF);c.drawRoundRect(b,b.height()*.12f,b.height()*.12f,paint);paint.setColor(0xFF007AFF);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(Math.max(1.5f,d.width()*.0028f));c.drawLine(b.left,b.bottom-paint.getStrokeWidth(),b.right,b.bottom-paint.getStrokeWidth(),paint);
             }else if(e.kind.equals("audio")){
                 Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);float r=b.height()/2;fill.setColor(0xFFE5F0FF);c.drawRoundRect(b,r,r,fill);fill.setStyle(Paint.Style.STROKE);fill.setStrokeWidth(Math.max(1f,d.width()*.002f));fill.setColor(0xFF007AFF);c.drawRoundRect(b,r,r,fill);
                 float size=Math.max(8f,b.height()*.46f);text(c,"▶  녹음 "+e.text,new RectF(b.left+r*.9f,b.top+(b.height()-size*1.35f)/2f,b.right-r*.4f,b.bottom),size,0xFF007AFF);

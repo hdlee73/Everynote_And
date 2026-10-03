@@ -126,7 +126,7 @@ final class AlertDialog extends Dialog {
             if (message != null) { TextView m = new TextView(context); m.setText(message); m.setTextSize(13); m.setTextColor(GRAY); m.setGravity(Gravity.CENTER); m.setPadding(dp(16), 0, dp(16), dp(12)); list.addView(m, new LinearLayout.LayoutParams(-1, -2)); }
             LinearLayout rows = new LinearLayout(context); rows.setOrientation(LinearLayout.VERTICAL);
             final TextView[] cells = new TextView[items.length]; final int[] current = {checked};
-            Runnable refresh = () -> { for (int i = 0; i < cells.length; i++) { boolean on = choice && i == current[0]; cells[i].setText((on ? "✓  " : "") + items[i]); cells[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT); } };
+            Runnable refresh = () -> { for (int i = 0; i < cells.length; i++) { boolean on = choice && i == current[0]; cells[i].setText(on ? Glyph.check(cells[i].getContext(), 0xFF007AFF, items[i]) : items[i]); cells[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT); } };
             for (int i = 0; i < items.length; i++) {
                 final int index = i;
                 if (i > 0 || title != null || message != null) rows.addView(hairline(false));
