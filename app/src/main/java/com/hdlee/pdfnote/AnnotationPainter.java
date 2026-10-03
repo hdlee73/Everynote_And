@@ -67,6 +67,7 @@ final class AnnotationPainter {
         if(store==null)return;
         for(AnnotationStore.PageElement e:store.elements){
             if(e.page!=page||e==skip)continue;RectF b=box(d,e);
+            int rotSave=c.save();if(e.rot!=0f&&rotates(e))c.rotate(e.rot,b.centerX(),b.centerY());
             if(e.kind.equals("image")){
                 File file=new File(new File(context.getFilesDir(),"images"),e.asset);Bitmap image=image(file);
                 if(image!=null){
@@ -100,21 +101,40 @@ final class AnnotationPainter {
             }else{
                 text(c,e.text,b,Math.max(9,d.width()*e.textSize),adj(e.color),typeface(e.font,e.bold,e.italic));
             }
+            c.restoreToCount(rotSave);
         }
     }
+    /** Elements that can be turned around their centre. */
+    static boolean rotates(AnnotationStore.PageElement e){return e.kind.equals("image")||e.kind.equals("sticker")||e.kind.equals("shape")||e.kind.equals("table");}
 
-    /** Pressure-sensitive pen strokes of one page. Shared by the page view, export and handwriting search. */
+    /** Pen strokes of one page. Shared by the page view, export and handwriting search. */
     static void strokes(Canvas c,RectF d,AnnotationStore store,int page){
-        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
-        for(AnnotationStore.InkStroke s:store.strokes)if(s.page==page){
-            p.setColor(adj(s.color));p.setStrokeCap(Paint.Cap.ROUND);
-            for(int i=0;i<s.points.size();i++){
-                AnnotationStore.InkPoint b=s.points.get(i),a=s.points.get(Math.max(0,i-1));
-                float width=Math.max(1.5f,s.width*d.width()*(.45f+(a.pressure+b.pressure)/2*1.15f));p.setStrokeWidth(width);
-                if(i==0)c.drawCircle(d.left+b.x*d.width(),d.top+b.y*d.height(),width/2,p);
-                else c.drawLine(d.left+a.x*d.width(),d.top+a.y*d.height(),d.left+b.x*d.width(),d.top+b.y*d.height(),p);
+        for(AnnotationStore.InkStroke s:store.strokes)if(s.page==page)stroke(c,d,s);
+    }
+    static final String[] PEN_NAMES={"볼펜","연필","만년필","붓","사인펜"};
+    /** One stroke in the style of its pen: ballpoint, pencil, fountain pen (nib angle), brush (taper) or felt marker. Translucent colours do not darken where the stroke overlaps itself. */
+    static void stroke(Canvas c,RectF d,AnnotationStore.InkStroke s){
+        int n=s.points.size();if(n==0||d.width()<=0)return;
+        int argb=adj(s.color);float penAlpha=s.pen==1?.78f:s.pen==3?.92f:s.pen==4?.82f:1f;int eff=Math.round(Color.alpha(argb)*penAlpha);
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(argb|0xFF000000);p.setStrokeCap(s.pen==4?Paint.Cap.SQUARE:Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+        int save=-1;if(eff<255)save=c.saveLayerAlpha(d.left,d.top,d.right,d.bottom,Math.max(8,eff));
+        float base=s.width*d.width();
+        for(int i=0;i<n;i++){
+            AnnotationStore.InkPoint b=s.points.get(i),a=s.points.get(Math.max(0,i-1));
+            float pr=(a.pressure+b.pressure)/2f,w;
+            float ax=d.left+a.x*d.width(),ay=d.top+a.y*d.height(),bx=d.left+b.x*d.width(),by=d.top+b.y*d.height();
+            switch(s.pen){
+                case 1:w=base*.75f*(.5f+pr*.9f);break;
+                case 2:{double ang=Math.atan2(by-ay,bx-ax);double cut=Math.abs(Math.sin(ang+Math.PI/4));w=base*(float)(.32+1.05*cut)*(.65f+pr*.7f);break;}
+                case 3:{float t=n<=1?.5f:i/(float)(n-1);float taper=Math.min(1f,Math.min(t,1f-t)*7f);w=base*2.1f*(.35f+pr*.95f)*(.35f+.65f*taper);break;}
+                case 4:w=base*1.5f;break;
+                default:w=base*(.45f+pr*1.15f);
             }
+            w=Math.max(1.5f,w);p.setStrokeWidth(w);
+            if(i==0){p.setStyle(Paint.Style.FILL);c.drawCircle(bx,by,w/2,p);p.setStyle(Paint.Style.STROKE);}
+            else c.drawLine(ax,ay,bx,by,p);
         }
+        if(save>=0)c.restoreToCount(save);
     }
 
     static void all(Context context,Canvas c,RectF d,AnnotationStore store,int page){

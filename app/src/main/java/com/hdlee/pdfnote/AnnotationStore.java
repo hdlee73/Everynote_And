@@ -26,10 +26,12 @@ final class AnnotationStore {
         boolean minimized;
         /** Sticky-note look: paper color, text size in sp, and box size (0 small, 1 medium, 2 large). */
         int paper = 0xFFFFF3A6, fontSp = 13, boxSize = 1;
+        /** Own box size in dp (0 = use {@link #boxSize}); set by dragging the corner handle of a selected memo. */
+        float boxW, boxH;
 
         JSONObject toJson() throws JSONException {
             JSONObject o = new JSONObject();
-            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize);
+            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize).put("boxW", boxW).put("boxH", boxH);
             o.put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom)
                     .put("color", color).put("note", note == null ? "" : note)
@@ -53,6 +55,8 @@ final class AnnotationStore {
             m.paper = o.optInt("paper", 0xFFFFF3A6);
             m.fontSp = Math.max(9, Math.min(28, o.optInt("fontSp", 13)));
             m.boxSize = Math.max(0, Math.min(2, o.optInt("boxSize", 1)));
+            m.boxW = (float) Math.max(0, Math.min(800, o.optDouble("boxW", 0)));
+            m.boxH = (float) Math.max(0, Math.min(1200, o.optDouble("boxH", 0)));
             return m;
         }
     }
@@ -85,10 +89,12 @@ final class AnnotationStore {
 
     static final class InkStroke {
         int page, color;
+        /** 0 ballpoint, 1 pencil, 2 fountain pen, 3 brush, 4 felt marker. */
+        int pen;
         float width;
         final List<InkPoint> points=new ArrayList<>();
-        JSONObject toJson() throws JSONException { JSONObject o=new JSONObject().put("page",page).put("color",color).put("width",width);JSONArray a=new JSONArray();for(InkPoint p:points)a.put(p.toJson());return o.put("points",a); }
-        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF1C1C1E);s.width=(float)o.optDouble("width",0.004);JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
+        JSONObject toJson() throws JSONException { JSONObject o=new JSONObject().put("page",page).put("color",color).put("width",width).put("pen",pen);JSONArray a=new JSONArray();for(InkPoint p:points)a.put(p.toJson());return o.put("points",a); }
+        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF1C1C1E);s.width=(float)o.optDouble("width",0.004);s.pen=Math.max(0,Math.min(4,o.optInt("pen",0)));JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
     }
 
     static final class TranslationNote {
@@ -146,9 +152,11 @@ final class AnnotationStore {
         int color = DEFAULT_TEXT_COLOR;
         String font = "sans";
         boolean bold, italic;
+        /** Clockwise rotation in degrees around the box centre (pictures, stickers, shapes and tables). */
+        float rot;
 
         JSONObject toJson() throws JSONException {
-            return new JSONObject().put("page", page).put("kind", kind).put("text", text).put("asset", asset)
+            return new JSONObject().put("rot", rot).put("page", page).put("kind", kind).put("text", text).put("asset", asset)
                     .put("left", left).put("top", top).put("right", right).put("bottom", bottom)
                     .put("textSize", textSize).put("color", color).put("font", font)
                     .put("bold", bold).put("italic", italic);
@@ -164,6 +172,7 @@ final class AnnotationStore {
             e.top = (float) o.optDouble("top", .1);
             e.right = (float) o.optDouble("right", .8);
             e.bottom = (float) o.optDouble("bottom", .3);
+            e.rot = (float) o.optDouble("rot", 0);
             e.textSize = (float) o.optDouble("textSize", DEFAULT_TEXT_SIZE);
             e.color = o.optInt("color", DEFAULT_TEXT_COLOR);
             e.font = o.optString("font", "sans");
