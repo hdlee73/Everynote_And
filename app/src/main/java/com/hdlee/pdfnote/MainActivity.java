@@ -540,7 +540,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         @Override public boolean start(int direction){
             if(pageAnimating||renderer==null||verticalPageSwipe)return false;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0||target>=renderer.getPageCount())return false;
             pageAnimating=true;PageCurlView curl=beginCurl(direction,target);if(curl==null){pageAnimating=curlConsumed;return false;}
-            dragCurl=curl;dragSpan=Math.max(dp(120),curl.getLayoutParams().width*(twoPage?.5f:1f)*.85f);return true;
+            dragCurl=curl;dragSpan=Math.max(dp(120),curl.getLayoutParams().width*(twoPage?.5f:1f)*1.1f);return true;
         }
         @Override public void touchAt(float fraction){if(dragCurl!=null)dragCurl.setTouch(fraction);}
         @Override public void move(float distance){if(dragCurl!=null)dragCurl.setProgress(distance/dragSpan);}
