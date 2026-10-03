@@ -57,7 +57,7 @@ final class LibraryDialog extends Dialog {
                 if(e.getActionMasked()==MotionEvent.ACTION_DOWN){downX=e.getX();downY=e.getY();dragging=false;}
                 else if(e.getActionMasked()==MotionEvent.ACTION_MOVE&&!dragging&&drawer!=null){
                     float dx=e.getX()-downX,dy=e.getY()-downY;boolean open=drawer.getVisibility()==View.VISIBLE&&drawerP>.5f;int slop=ViewConfiguration.get(activity).getScaledTouchSlop();
-                    if(Math.abs(dx)>slop&&Math.abs(dx)>Math.abs(dy)*1.5f&&((!open&&dx>0&&downX<(wide?dp(68):dp(24)))||(open&&dx<0))){beginDrawerDrag();dragging=true;startX=e.getX();startP=drawerP;velocity=VelocityTracker.obtain();velocity.addMovement(e);return true;}
+                    if(Math.abs(dx)>slop&&Math.abs(dx)>Math.abs(dy)*1.5f&&((!open&&dx>0&&downX>=dp(28)&&downX<=dp(150))||(open&&dx<0))){beginDrawerDrag();dragging=true;startX=e.getX();startP=drawerP;velocity=VelocityTracker.obtain();velocity.addMovement(e);return true;}
                 }
                 return false;
             }

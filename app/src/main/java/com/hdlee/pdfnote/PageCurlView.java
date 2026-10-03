@@ -31,6 +31,7 @@ final class PageCurlView extends View {
         this.fixedHalf = fixedHalf; this.under = under; this.front = front; this.back = back; this.mirrored = mirrored; this.spine = spineFraction;
     }
     void setProgress(float value) { progress = Math.max(0f, Math.min(1f, value)); invalidate(); }
+    float progress() { return progress; }
     void release() { for (Bitmap b : new Bitmap[]{fixedHalf, under, front, back}) if (b != null && !b.isRecycled()) b.recycle(); fixedHalf = under = front = back = null; }
 
     static Bitmap mirror(Bitmap source) {

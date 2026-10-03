@@ -92,3 +92,12 @@ jobs:
           else
             gh release create "$VERSION" "PDF-Note-$VERSION.apk" --title "PDF Note $VERSION" --generate-notes --target "$GITHUB_SHA"
           fi
+      - name: Publish test APK (pre-release, signed like the release)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="v$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle)"
+          cp app/build/outputs/apk/release/app-release.apk "PDF-Note-$VERSION-test.apk"
+          gh release delete test-latest --cleanup-tag --yes >/dev/null 2>&1 || true
+          gh release create test-latest "PDF-Note-$VERSION-test.apk" --prerelease --title "테스트 빌드 $VERSION (PR #${{ github.event.pull_request.number }})" --notes "릴리스 전 확인용 APK입니다. 정식 릴리스와 같은 서명이라 정식 앱 위에 바로 설치(업데이트)됩니다." --target "${{ github.event.pull_request.head.sha }}"

@@ -26,10 +26,11 @@ final class AnchoredMenu {
     static final int INK = 0xFF1C1C1E, ACCENT = 0xFF007AFF, GRAY = 0xFF8E8E93, LINE = 0xFFE5E5EA, RED = 0xFFFF3B30;
 
     static final class Row {
-        final String label; final int icon; final Runnable action; boolean selected, danger, submenu, divider; View custom;
+        final String label; final int icon; final Runnable action; boolean selected, danger, submenu, divider; View custom; int tint;
         Row(String label, int icon, Runnable action) { this.label = label; this.icon = icon; this.action = action; }
         static Row divider() { Row r = new Row("", 0, null); r.divider = true; return r; }
         static Row custom(View view) { Row r = new Row("", 0, null); r.custom = view; return r; }
+        Row tint(int value) { tint = value; return this; }
         Row selected(boolean value) { selected = value; return this; }
         Row danger() { danger = true; return this; }
         Row submenu() { submenu = true; return this; }
@@ -55,7 +56,7 @@ final class AnchoredMenu {
             if (row.custom != null) { list.addView(row.custom, new LinearLayout.LayoutParams(-1, -2)); wide = true; continue; }
             if (row.divider) { View line = new View(context); line.setBackgroundColor(LINE); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, Math.round(density * .5f))); lp.setMargins(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(4 * density)); list.addView(line, lp); continue; }
             LinearLayout line = new LinearLayout(context); line.setGravity(Gravity.CENTER_VERTICAL); line.setPadding(Math.round(12 * density), 0, Math.round(12 * density), 0); line.setContentDescription(row.label);
-            if (row.icon != 0) { ImageView glyph = new ImageView(context); glyph.setImageResource(row.icon); glyph.setColorFilter(row.danger ? RED : row.selected ? ACCENT : INK); LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(Math.round(20 * density), Math.round(20 * density)); gp.rightMargin = Math.round(12 * density); line.addView(glyph, gp); }
+            if (row.icon != 0) { ImageView glyph = new ImageView(context); glyph.setImageResource(row.icon); glyph.setColorFilter(row.danger ? RED : row.tint != 0 ? row.tint : ACCENT); LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(Math.round(20 * density), Math.round(20 * density)); gp.rightMargin = Math.round(12 * density); line.addView(glyph, gp); }
             TextView text = new TextView(context); text.setText(row.label); text.setTextSize(15); text.setSingleLine(); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setTextColor(row.danger ? RED : row.selected ? ACCENT : INK); if (row.selected) text.setTypeface(Typeface.DEFAULT_BOLD);
             line.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
             if (row.selected || row.submenu) { TextView mark = new TextView(context); mark.setText(row.submenu ? "›" : "✓"); mark.setTextSize(row.submenu ? 18 : 14); mark.setTextColor(row.submenu ? GRAY : ACCENT); mark.setPadding(Math.round(10 * density), 0, 0, 0); line.addView(mark, new LinearLayout.LayoutParams(-2, -2)); }
@@ -68,7 +69,7 @@ final class AnchoredMenu {
             View line = new View(context); line.setBackgroundColor(LINE); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, Math.round(density * .5f))); lp.setMargins(Math.round(8 * density), Math.round(4 * density), Math.round(8 * density), Math.round(2 * density)); card.addView(line, lp);
             LinearLayout icons = new LinearLayout(context); icons.setGravity(Gravity.CENTER);
             for (final Shortcut s : shortcuts) {
-                ImageButton b = new ImageButton(context); b.setImageResource(s.icon); b.setColorFilter(s.active ? ACCENT : INK); b.setBackgroundColor(Color.TRANSPARENT); b.setContentDescription(s.description); b.setPadding(Math.round(10 * density), Math.round(10 * density), Math.round(10 * density), Math.round(10 * density)); b.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                ImageButton b = new ImageButton(context); b.setImageResource(s.icon); b.setColorFilter(s.active ? 0xFFF5A623 : 0xFF5856D6); b.setBackgroundColor(Color.TRANSPARENT); b.setContentDescription(s.description); b.setPadding(Math.round(10 * density), Math.round(10 * density), Math.round(10 * density), Math.round(10 * density)); b.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 b.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); s.action.run(); });
                 icons.addView(b, new LinearLayout.LayoutParams(0, Math.round(44 * density), 1));
             }
