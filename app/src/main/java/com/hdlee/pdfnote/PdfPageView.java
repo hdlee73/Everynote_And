@@ -101,7 +101,8 @@ final class PdfPageView extends View {
     void setPageDrag(PageDrag drag) { pageDrag = drag; }
     /** Converts a point in this view to normalized page coordinates (clamped to the page). */
     private float pageFraction(float y){RectF r=pageRect();return r.height()<=0?.5f:Math.max(0f,Math.min(1f,(y-r.top)/r.height()));}
-    private final Runnable blankPress=()->{if(scalingOccurred||dragging||selectingText)return;RectF d=contentRect();if(d.width()<=0||!d.contains(startX,startY))return;performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);bodySwipeCandidate=false;gestureMoved=true;float[] n=toPage(startX,startY);listener.onBlankLongPress(page,n[0],n[1],startX,startY);};
+    private final Runnable blankPress=this::fireBlankPress;
+    private void fireBlankPress(){if(scalingOccurred||dragging||selectingText)return;RectF d=contentRect();if(d.width()<=0||!d.contains(startX,startY))return;performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);bodySwipeCandidate=false;gestureMoved=true;float[] n=toPage(startX,startY);listener.onBlankLongPress(page,n[0],n[1],startX,startY);}
     float[] toPage(float vx,float vy){RectF d=contentRect();if(d.width()<=0||d.height()<=0)return new float[]{.5f,.5f};return new float[]{Math.max(0f,Math.min(1f,(vx-d.left)/d.width())),Math.max(0f,Math.min(1f,(vy-d.top)/d.height()))};}
     private AnnotationStore.PageElement selectedElement;
     private int elementDrag; private boolean elementMoved; private float elementStartX, elementStartY; private final RectF elementOrigin = new RectF();
