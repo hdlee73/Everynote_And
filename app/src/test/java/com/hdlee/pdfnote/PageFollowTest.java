@@ -74,7 +74,14 @@ public class PageFollowTest {
         org.robolectric.shadows.ShadowLooper shadow=org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper());
         assertNotEquals("오래 누르기 확인이 예약됩니다",java.time.Duration.ZERO,shadow.getNextScheduledTaskTime());
         shadow.idleFor(java.time.Duration.ofMillis(900));
-        assertEquals("빈 종이를 오래 누르면 삽입 메뉴 요청이 옵니다",1,presses.size());
+        String state;
+        try{
+            java.lang.reflect.Method cr=PdfPageView.class.getDeclaredMethod("contentRect");cr.setAccessible(true);
+            StringBuilder sb=new StringBuilder("rect="+cr.invoke(page));
+            for(String f:new String[]{"selectingText","scalingOccurred","dragging","selectionCandidate","directTextSelection","lassoMode","memoMode","highlightMode","outlineMode","startX","startY","scale","inkMode"}){java.lang.reflect.Field fd=PdfPageView.class.getDeclaredField(f);fd.setAccessible(true);sb.append(' ').append(f).append('=').append(fd.get(page));}
+            state=sb.toString();
+        }catch(Exception error){state=String.valueOf(error);}
+        assertEquals("빈 종이를 오래 누르면 삽입 메뉴 요청이 옵니다 "+state,1,presses.size());
         assertEquals(.5f,presses.get(0)[1],.05f);assertEquals(.5f,presses.get(0)[2],.05f);
     }
 }
