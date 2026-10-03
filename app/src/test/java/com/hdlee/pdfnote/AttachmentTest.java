@@ -59,10 +59,10 @@ public class AttachmentTest {
     }
     @Test public void newAttachmentKindsSurviveSavingAndRejectUnsafeTargets()throws Exception{
         String video=UUID.randomUUID()+".mp4",thumb=UUID.randomUUID()+".png";
-        for(String[] c:new String[][]{{"sticker","⭐",""},{"hyperlink","https://example.com/a?b=1",""},{"hyperlink","page:3",""},{"video",video,thumb}}){
+        for(String[] c:new String[][]{{"sticker","⭐",""},{"hyperlink","https://example.com/a?b=1",""},{"hyperlink","page:3",""},{"video",video,thumb},{"youtube","dQw4w9WgXcQ",""},{"hyperlink","doc:%EB%85%B8%ED%8A%B8%2Fa.pdf#4",""}}){
             AnnotationStore.PageElement e=new AnnotationStore.PageElement();e.kind=c[0];e.text=c[1];e.asset=c[2];AnnotationStore.PageElement back=AnnotationStore.PageElement.fromJson(e.toJson());assertEquals(c[0],back.kind);assertEquals(c[1],back.text);
         }
-        for(String[] bad:new String[][]{{"hyperlink","javascript:alert(1)",""},{"hyperlink","page:x",""},{"video","../x.mp4",thumb},{"sticker","",""}}){
+        for(String[] bad:new String[][]{{"hyperlink","javascript:alert(1)",""},{"hyperlink","page:x",""},{"video","../x.mp4",thumb},{"sticker","",""},{"youtube","short",""},{"youtube","../../../etc",""}}){
             AnnotationStore.PageElement e=new AnnotationStore.PageElement();e.kind=bad[0];e.text=bad[1];e.asset=bad[2];try{AnnotationStore.PageElement.fromJson(e.toJson());fail(bad[0]+" "+bad[1]);}catch(org.json.JSONException expected){}
         }
     }

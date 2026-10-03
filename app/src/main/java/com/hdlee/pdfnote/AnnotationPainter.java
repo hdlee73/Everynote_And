@@ -50,6 +50,11 @@ final class AnnotationPainter {
     static RectF box(RectF dest,AnnotationStore.PageElement e){return new RectF(dest.left+e.left*dest.width(),dest.top+e.top*dest.height(),dest.left+e.right*dest.width(),dest.top+e.bottom*dest.height());}
     /** The text box being edited in place; it is drawn by the editor instead of the page. */
     static volatile AnnotationStore.PageElement skip;
+    private static boolean lastOfGroup(AnnotationStore store,AnnotationStore.PageElement e){
+        boolean after=false;
+        for(AnnotationStore.PageElement o:store.elements){if(o==e){after=true;continue;}if(after&&o.kind.equals("hyperlink")&&o.page==e.page&&o.color==e.color&&o.text.equals(e.text))return false;}
+        return true;
+    }
     static void elements(Context context,Canvas c,RectF d,AnnotationStore store,int page){
         if(store==null)return;
         for(AnnotationStore.PageElement e:store.elements){
@@ -63,15 +68,22 @@ final class AnnotationPainter {
                 }
             }else if(e.kind.equals("sticker")){
                 Paint glyph=new Paint(Paint.ANTI_ALIAS_FLAG);glyph.setTextAlign(Paint.Align.CENTER);float size=Math.min(b.width(),b.height())*.82f;glyph.setTextSize(size);Paint.FontMetrics fm=glyph.getFontMetrics();c.drawText(e.text,b.centerX(),b.centerY()-(fm.ascent+fm.descent)/2f,glyph);
-            }else if(e.kind.equals("video")){
+            }else if(e.kind.equals("video")||e.kind.equals("youtube")){
                 File file=new File(new File(context.getFilesDir(),"images"),e.asset);Bitmap frame=image(file);Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
                 if(frame!=null){c.drawBitmap(frame,null,b,paint);}else{paint.setColor(0xFF2C2C2E);c.drawRoundRect(b,b.width()*.03f,b.width()*.03f,paint);}
-                paint.setColor(0x55000000);c.drawRect(b,paint);float r=Math.min(b.width(),b.height())*.17f;paint.setColor(0xE6FFFFFF);c.drawCircle(b.centerX(),b.centerY(),r,paint);
-                android.graphics.Path tri=new android.graphics.Path();tri.moveTo(b.centerX()-r*.32f,b.centerY()-r*.5f);tri.lineTo(b.centerX()-r*.32f,b.centerY()+r*.5f);tri.lineTo(b.centerX()+r*.55f,b.centerY());tri.close();paint.setColor(0xFF1C1C1E);c.drawPath(tri,paint);
+                paint.setColor(0x55000000);c.drawRect(b,paint);float r=Math.min(b.width(),b.height())*.17f;boolean yt=e.kind.equals("youtube");if(yt){r*=1.15f;paint.setColor(0xFFFF0000);c.drawRoundRect(new RectF(b.centerX()-r*1.25f,b.centerY()-r*.88f,b.centerX()+r*1.25f,b.centerY()+r*.88f),r*.5f,r*.5f,paint);}else{paint.setColor(0xE6FFFFFF);c.drawCircle(b.centerX(),b.centerY(),r,paint);}
+                android.graphics.Path tri=new android.graphics.Path();tri.moveTo(b.centerX()-r*.32f,b.centerY()-r*.5f);tri.lineTo(b.centerX()-r*.32f,b.centerY()+r*.5f);tri.lineTo(b.centerX()+r*.55f,b.centerY());tri.close();paint.setColor(yt?0xFFFFFFFF:0xFF1C1C1E);c.drawPath(tri,paint);
             }else if(e.kind.equals("shape")){Shapes.drawShape(c,b,e.text,d.width());
             }else if(e.kind.equals("table")){Shapes.drawTable(c,b,e.text,d.width());
             }else if(e.kind.equals("hyperlink")){
                 Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(0x24007AFF);c.drawRoundRect(b,b.height()*.12f,b.height()*.12f,paint);paint.setColor(0xFF007AFF);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(Math.max(1.5f,d.width()*.0028f));c.drawLine(b.left,b.bottom-paint.getStrokeWidth(),b.right,b.bottom-paint.getStrokeWidth(),paint);
+                if(lastOfGroup(store,e)){
+                    // a small blue badge with an arrow marks the end of every link
+                    float rad=Math.max(d.width()*.011f,Math.min(b.height()*.42f,d.width()*.02f));float cx=Math.min(d.right-rad,b.right+rad*.3f),cy=Math.max(d.top+rad,b.top-rad*.1f);
+                    Paint bp=new Paint(Paint.ANTI_ALIAS_FLAG);bp.setColor(0xFF007AFF);c.drawCircle(cx,cy,rad,bp);
+                    bp.setColor(0xFFFFFFFF);bp.setStyle(Paint.Style.STROKE);bp.setStrokeWidth(Math.max(1f,rad*.26f));bp.setStrokeCap(Paint.Cap.ROUND);bp.setStrokeJoin(Paint.Join.ROUND);float k=rad*.38f;
+                    c.drawLine(cx-k,cy+k,cx+k,cy-k,bp);android.graphics.Path head=new android.graphics.Path();head.moveTo(cx-k*.1f,cy-k);head.lineTo(cx+k,cy-k);head.lineTo(cx+k,cy+k*.1f);c.drawPath(head,bp);
+                }
             }else if(e.kind.equals("audio")){
                 Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);float r=b.height()/2;fill.setColor(0xFFE5F0FF);c.drawRoundRect(b,r,r,fill);fill.setStyle(Paint.Style.STROKE);fill.setStrokeWidth(Math.max(1f,d.width()*.002f));fill.setColor(0xFF007AFF);c.drawRoundRect(b,r,r,fill);
                 float size=Math.max(8f,b.height()*.46f);text(c,"▶  녹음 "+e.text,new RectF(b.left+r*.9f,b.top+(b.height()-size*1.35f)/2f,b.right-r*.4f,b.bottom),size,0xFF007AFF);

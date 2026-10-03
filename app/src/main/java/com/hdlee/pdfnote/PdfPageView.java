@@ -105,8 +105,8 @@ final class PdfPageView extends View {
     void selectElement(AnnotationStore.PageElement element) { selectedElement = element; invalidate(); }
     AnnotationStore.PageElement selectedElement() { return selectedElement; }
     private static boolean resizable(AnnotationStore.PageElement e) { return e != null && !e.kind.equals("text") && !e.kind.equals("audio"); }
-    static boolean selectable(AnnotationStore.PageElement e){return e.kind.equals("image")||e.kind.equals("sticker")||e.kind.equals("video")||e.kind.equals("shape")||e.kind.equals("table");}
-    private static boolean aspectLocked(AnnotationStore.PageElement e) { return e.kind.equals("image") || e.kind.equals("sticker") || e.kind.equals("video"); }
+    static boolean selectable(AnnotationStore.PageElement e){return e.kind.equals("image")||e.kind.equals("sticker")||e.kind.equals("video")||e.kind.equals("shape")||e.kind.equals("table")||e.kind.equals("youtube");}
+    private static boolean aspectLocked(AnnotationStore.PageElement e) { return e.kind.equals("image") || e.kind.equals("sticker") || e.kind.equals("video") || e.kind.equals("youtube"); }
     private void drawElementHandles(Canvas canvas, RectF dest) {
         if (selectedElement == null || selectedElement.page != page || annotationStore == null || !annotationStore.elements.contains(selectedElement) || dest.width() <= 0) return;
         float density = getResources().getDisplayMetrics().density; RectF b = AnnotationPainter.box(dest, selectedElement);

@@ -172,13 +172,14 @@ final class AnnotationStore {
             e.italic = o.optBoolean("italic", false);
             if (e.page < 0 || !Float.isFinite(e.left) || !Float.isFinite(e.top) || !Float.isFinite(e.right) || !Float.isFinite(e.bottom)
                     || e.left < 0 || e.top < 0 || e.right > 1 || e.bottom > 1 || e.left >= e.right || e.top >= e.bottom
-                    || !java.util.Arrays.asList("text", "image", "link", "audio", "sticker", "video", "hyperlink", "shape", "table").contains(e.kind)
+                    || !java.util.Arrays.asList("text", "image", "link", "audio", "sticker", "video", "hyperlink", "shape", "table", "youtube").contains(e.kind)
                     || (!e.asset.isEmpty() && !e.asset.matches("[a-f0-9-]{36}\\.(png|m4a)"))
                     || (e.kind.equals("video") && !e.text.matches("[a-f0-9-]{36}\\.mp4"))
                     || (e.kind.equals("sticker") && (e.text.isEmpty() || e.text.length() > 16))
+                    || (e.kind.equals("youtube") && !e.text.matches("[A-Za-z0-9_-]{11}"))
                     || (e.kind.equals("shape") && !Shapes.validShape(e.text))
                     || (e.kind.equals("table") && !Shapes.validTable(e.text))
-                    || (e.kind.equals("hyperlink") && !e.text.matches("(https?://\\S+|page:\\d{1,6})")))
+                    || (e.kind.equals("hyperlink") && !e.text.matches("(https?://\\S+|page:\\d{1,6}|doc:\\S{1,600})")))
                 throw new JSONException("잘못된 노트 요소");
             if (!Float.isFinite(e.textSize) || e.textSize < .004f || e.textSize > .3f) e.textSize = DEFAULT_TEXT_SIZE;
             return e;

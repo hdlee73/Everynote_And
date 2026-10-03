@@ -49,24 +49,24 @@ final class PageCurlView extends View {
         if (mirrored) canvas.scale(-1f, 1f, w / 2f, 0f);
         if (fixedHalf != null) canvas.drawBitmap(fixedHalf, 0, 0, null);
         canvas.drawBitmap(under, s, 0, null);
-        final float t = progress, fold = w - t * lw, r = lw * 0.11f * (float) Math.sin(Math.PI * t), flat = (float) Math.PI * r;
-        // the fold leans like a hand lifting the page corner; zero at both ends so the first and last frames are exact
-        final float sl = lw * 0.2f * (float) Math.sin(Math.PI * t), angle = (float) Math.toDegrees(Math.atan2(sl, h));
+        final float t = progress, fold = w - t * lw, r = lw * 0.06f * (float) Math.sqrt(Math.sin(Math.PI * t)), flat = (float) Math.PI * r;
+        // Kindle style: a narrow curl sweeps diagonally, the top edge leading at first and the bottom edge leading at the end; flat at both ends so the first and last frames are exact
+        final float sl = -lw * 0.38f * (float) Math.sin(2 * Math.PI * t), angle = (float) Math.toDegrees(Math.atan2(sl, h));
         // shadow of the lifting leaf on the page below
         if (t > 0.01f && t < 0.995f) {
-            band(canvas, s, w, h, fold, angle, fold, fold + lw * 0.2f, 0x55000000, 0x00000000, null);
+            band(canvas, s, w, h, fold, angle, fold, fold + lw * 0.1f, 0x2A000000, 0x00000000, null);
         }
         // front side: flat part plus the half cylinder around the fold
         fill(false, s, lw, fold, r, flat, h, sl);
         canvas.drawBitmapMesh(front, COLUMNS, ROWS, verts, 0, null, 0, paint);
-        if (r > 1f) band(canvas, 0, w, h, fold, angle, fold, fold + 2 * r, 0x00000000, 0x00000000, new int[]{0x00000000, 0x40000000, 0x00000000});
+        if (r > 1f) band(canvas, 0, w, h, fold, angle, fold, fold + 2 * r, 0x00000000, 0x00000000, new int[]{0x00000000, 0x26000000, 0x00000000});
         // back side lying on the far side of the fold
         if (t > 0.01f) {
             fill(true, s, lw, fold, r, flat, h, sl);
             canvas.drawBitmapMesh(back, COLUMNS, ROWS, verts, 0, null, 0, paint);
             float tip = fold - Math.max(0f, lw - flat);
-            band(canvas, 0, w, h, fold, angle, fold, fold - lw * 0.16f, 0x26000000, 0x00000000, null);
-            band(canvas, 0, w, h, fold, angle, tip, tip - lw * 0.1f, 0x40000000, 0x00000000, null);
+            band(canvas, 0, w, h, fold, angle, fold, fold - lw * 0.05f, 0x18000000, 0x00000000, null);
+            band(canvas, 0, w, h, fold, angle, tip, tip - lw * 0.04f, 0x20000000, 0x00000000, null);
         }
         shade.setShader(null);
         canvas.restore();
