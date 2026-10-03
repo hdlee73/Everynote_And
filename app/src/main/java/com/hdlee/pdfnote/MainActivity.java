@@ -588,7 +588,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private int pageAnimStyle(){return recentPrefs.getInt("page_anim_style",0);}
     private void choosePageAnimation(){String[] choices={"책장 넘김 (종이처럼 접히며 넘어감)","슬라이드 (밀리며 나타남)","효과 없음 (바로 전환)"};new AlertDialog.Builder(this).setTitle("넘김 효과").setSingleChoiceItems(choices,pageAnimStyle(),(dialog,which)->{recentPrefs.edit().putInt("page_anim_style",which).apply();dialog.dismiss();toast("넘김 효과: "+choices[which].split(" \\(")[0]);}).setNegativeButton("취소",null).show();}
     private boolean darkPage(){return recentPrefs.getBoolean("dark_page",false);}
-    private void applyDarkPage(){boolean on=darkPage();PageCurlView.backTint=on?0x8C000000:0x8CFFFFFF;if(firstPageView!=null)firstPageView.setDarkPage(on);if(secondPageView!=null)secondPageView.setDarkPage(on);}
+    private void applyDarkPage(){boolean on=darkPage();PageCurlView.backTint=0x00FFFFFF;if(firstPageView!=null)firstPageView.setDarkPage(on);if(secondPageView!=null)secondPageView.setDarkPage(on);}
     private void toggleDarkPage(){recentPrefs.edit().putBoolean("dark_page",!darkPage()).apply();applyDarkPage();toast(darkPage()?"문서 배경을 검게 표시합니다. 어두운 글씨 필기는 밝게 보입니다":"문서를 원래 색으로 표시합니다");}
     private boolean cropMargins(){return recentPrefs.getBoolean("crop_margins",true);}
     /** Trims blank page margins so the printed area fills the screen (not for notebooks, where the margins are writing space). */
