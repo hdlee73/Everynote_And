@@ -1353,51 +1353,35 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         @Override protected void onMeasure(int widthSpec,int heightSpec){super.onMeasure(widthSpec,View.MeasureSpec.makeMeasureSpec(maxHeight,View.MeasureSpec.AT_MOST));}
     }
 
-    /** Bottom sheet in the One UI style: flat white surface, small gray section captions, round icon tiles. */
+    /** Menu card in the same look as the anchored menus: grouped rows (small icon, label, check), gray section captions, hairline between groups. */
     private Dialog showSheet(String title,List<Section> sections){
         final Dialog dialog=new Dialog(this,R.style.SheetDialog);
-        LinearLayout sheet=new LinearLayout(this);sheet.setOrientation(LinearLayout.VERTICAL);sheet.setTag("menu_sheet");
-        GradientDrawable surface=new GradientDrawable();surface.setColor(Color.WHITE);float corner=dp(24);surface.setCornerRadii(new float[]{corner,corner,corner,corner,0,0,0,0});sheet.setBackground(surface);
-        sheet.setPadding(0,dp(8),0,dp(10));
-        View grabber=new View(this);grabber.setBackground(round(0xFFC7C7CC,2));
-        LinearLayout.LayoutParams grabberParams=new LinearLayout.LayoutParams(dp(36),dp(4));grabberParams.gravity=Gravity.CENTER_HORIZONTAL;grabberParams.bottomMargin=dp(2);sheet.addView(grabber,grabberParams);
-        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(20),0,dp(8),0);
-        TextView heading=new TextView(this);heading.setText(title);heading.setTextSize(17);heading.setTextColor(NAVY);heading.setTypeface(Typeface.DEFAULT_BOLD);heading.setGravity(Gravity.CENTER_VERTICAL);header.addView(heading,new LinearLayout.LayoutParams(0,dp(42),1));
-        ImageButton closeButton=icon(R.drawable.ic_close,"닫기",NAVY,v->dialog.dismiss());closeButton.setPadding(dp(10),dp(10),dp(10),dp(10));header.addView(closeButton,new LinearLayout.LayoutParams(dp(40),dp(40)));sheet.addView(header,new LinearLayout.LayoutParams(-1,-2));
+        FrameLayout root=new FrameLayout(this);root.setTag("menu_sheet");
+        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setTag("anchored_menu");
+        GradientDrawable bg=round(Color.WHITE,18);bg.setStroke(Math.max(1,dp(1)/2),0x14000000);card.setBackground(bg);card.setPadding(dp(6),dp(6),dp(6),dp(6));card.setElevation(dp(12));
+        TextView heading=new TextView(this);heading.setText(title);heading.setTextSize(13);heading.setTextColor(0xFF8E8E93);heading.setGravity(Gravity.CENTER_VERTICAL);heading.setPadding(dp(12),dp(8),dp(12),dp(4));card.addView(heading,new LinearLayout.LayoutParams(-1,-2));
         MaxHeightScroll scroll=new MaxHeightScroll(this,Math.round(getResources().getDisplayMetrics().heightPixels*.72f));scroll.setVerticalScrollBarEnabled(false);
-        LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(12),0,dp(12),dp(4));scroll.addView(body,new ScrollView.LayoutParams(-1,-2));
-        int widthDp=getResources().getConfiguration().screenWidthDp;int columns=widthDp>=840?7:widthDp>=520?6:5;
+        LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);scroll.addView(body,new ScrollView.LayoutParams(-1,-2));
         for(int s=0;s<sections.size();s++){
             Section section=sections.get(s);
-            LinearLayout group=new LinearLayout(this);group.setOrientation(LinearLayout.VERTICAL);group.setPadding(0,dp(4),0,dp(2));
-            if(s>0){View line=new View(this);line.setBackgroundColor(0xFFE5E5EA);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(1));lp.setMargins(dp(8),dp(4),dp(8),dp(6));group.addView(line,lp);}
-            if(section.title!=null){TextView label=new TextView(this);label.setText(section.title);label.setTextSize(12);label.setTextColor(0xFF8E8E93);label.setPadding(dp(8),dp(4),0,dp(2));group.addView(label);}
-            if(section.custom!=null)group.addView(section.custom,new LinearLayout.LayoutParams(-1,-2));
-            for(int start=0;start<section.tiles.size();start+=columns){
-                LinearLayout row=new LinearLayout(this);group.addView(row,new LinearLayout.LayoutParams(-1,-2));
-                for(int i=0;i<columns;i++){
-                    if(start+i<section.tiles.size())row.addView(sheetTile(dialog,section.tiles.get(start+i)),new LinearLayout.LayoutParams(0,-2,1));
-                    else row.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
-                }
-            }
-            body.addView(group,new LinearLayout.LayoutParams(-1,-2));
+            if(s>0){View line=new View(this);line.setBackgroundColor(0xFFE5E5EA);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,Math.max(1,dp(1)/2));lp.setMargins(dp(12),dp(4),dp(12),dp(4));body.addView(line,lp);}
+            if(section.title!=null){TextView label=new TextView(this);label.setText(section.title);label.setTextSize(12);label.setTextColor(0xFF8E8E93);label.setPadding(dp(12),dp(6),dp(12),dp(2));body.addView(label);}
+            if(section.custom!=null)body.addView(section.custom,new LinearLayout.LayoutParams(-1,-2));
+            for(Tile tile:section.tiles)body.addView(menuRow(dialog,tile),new LinearLayout.LayoutParams(-1,dp(44)));
         }
-        sheet.addView(scroll,new LinearLayout.LayoutParams(-1,-2));
-        dialog.setContentView(sheet);dialog.setCanceledOnTouchOutside(true);dialog.show();
+        card.addView(scroll,new LinearLayout.LayoutParams(-1,-2));root.addView(card,new FrameLayout.LayoutParams(-1,-2));
+        dialog.setContentView(root);dialog.setCanceledOnTouchOutside(true);dialog.show();
         Window window=dialog.getWindow();
-        if(window!=null){window.setGravity(Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels,dp(600)),ViewGroup.LayoutParams.WRAP_CONTENT);}
+        if(window!=null){window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));window.setGravity(Gravity.CENTER);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(40),dp(340)),ViewGroup.LayoutParams.WRAP_CONTENT);}
         return dialog;
     }
-    private View sheetTile(Dialog dialog,Tile tile){
-        int glyphColor=tile.tint!=0?tile.tint:NAVY;
-        LinearLayout cell=new LinearLayout(this);cell.setOrientation(LinearLayout.VERTICAL);cell.setGravity(Gravity.CENTER_HORIZONTAL);cell.setPadding(dp(1),dp(6),dp(1),dp(4));cell.setContentDescription(tile.label);
-        FrameLayout chip=new FrameLayout(this);GradientDrawable disc=new GradientDrawable();disc.setShape(GradientDrawable.OVAL);disc.setColor(tile.selected?ACTIVE_BG:0xFFF2F2F7);if(tile.selected)disc.setStroke(dp(2),ACCENT);chip.setBackground(disc);
-        ImageView glyph=new ImageView(this);glyph.setImageResource(tile.icon);glyph.setColorFilter(tile.selected?ACTIVE_FG:glyphColor);
-        chip.addView(glyph,new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER));cell.addView(chip,new LinearLayout.LayoutParams(dp(48),dp(48)));
-        TextView name=new TextView(this);name.setText(tile.label);name.setTextSize(11);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setTextColor(tile.selected?ACTIVE_FG:NAVY);
-        LinearLayout.LayoutParams nameParams=new LinearLayout.LayoutParams(-1,-2);nameParams.topMargin=dp(4);cell.addView(name,nameParams);
-        cell.setOnClickListener(v->{if(!tile.keepOpen)dialog.dismiss();tile.action.run();});
-        return cell;
+    private View menuRow(Dialog dialog,Tile tile){
+        LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(12),0,dp(12),0);line.setContentDescription(tile.label);
+        if(tile.icon!=0){ImageView glyph=new ImageView(this);glyph.setImageResource(tile.icon);glyph.setColorFilter(tile.tint!=0?tile.tint:ACCENT);LinearLayout.LayoutParams gp=new LinearLayout.LayoutParams(dp(20),dp(20));gp.rightMargin=dp(12);line.addView(glyph,gp);}
+        TextView name=new TextView(this);name.setText(tile.label);name.setTextSize(15);name.setSingleLine();name.setEllipsize(android.text.TextUtils.TruncateAt.END);name.setTextColor(tile.selected?ACCENT:0xFF1C1C1E);if(tile.selected)name.setTypeface(Typeface.DEFAULT_BOLD);line.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        if(tile.selected){ImageView mark=new ImageView(this);mark.setImageResource(R.drawable.ic_check_bold);mark.setColorFilter(ACCENT);line.addView(mark,new LinearLayout.LayoutParams(dp(18),dp(18)));}
+        line.setOnClickListener(v->{if(!tile.keepOpen)dialog.dismiss();tile.action.run();});
+        return line;
     }
     private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose){return swatches(colors,current,choose,32);}
     /** A "투명도 NN%" slider (10-100%) for colours that carry their own alpha. */
