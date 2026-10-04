@@ -13,6 +13,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -41,7 +42,7 @@ final class AlertDialog extends Dialog {
         float density = getContext().getResources().getDisplayMetrics().density;
         int screen = getContext().getResources().getDisplayMetrics().widthPixels;
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        if (sheet) { window.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL); window.setLayout(Math.min(screen, Math.round(480 * density)), ViewGroup.LayoutParams.WRAP_CONTENT); }
+        if (sheet) { window.setGravity(Gravity.CENTER); window.setWindowAnimations(android.R.style.Animation_Dialog); window.setLayout(Math.min(screen - Math.round(40 * density), Math.round(320 * density)), ViewGroup.LayoutParams.WRAP_CONTENT); }
         else { window.setGravity(Gravity.CENTER); window.setWindowAnimations(android.R.style.Animation_Dialog); window.setLayout(Math.min(screen - Math.round(48 * density), Math.round(330 * density)), ViewGroup.LayoutParams.WRAP_CONTENT); }
     }
 
@@ -119,29 +120,36 @@ final class AlertDialog extends Dialog {
             return card;
         }
 
+        /** List dialog in the same look as the anchored menu card: left-aligned 44dp rows, accent check on the chosen row, red danger rows, hairline dividers. */
         private View sheet(AlertDialog dialog) {
-            LinearLayout root = new LinearLayout(context); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(10), 0, dp(10), dp(12)); root.setTag("action_sheet");
-            LinearLayout list = new LinearLayout(context); list.setOrientation(LinearLayout.VERTICAL); list.setBackground(round(Color.WHITE, 14));
-            if (title != null) { TextView t = new TextView(context); t.setText(title); t.setTextSize(13); t.setTextColor(GRAY); t.setGravity(Gravity.CENTER); t.setPadding(dp(16), dp(14), dp(16), dp(12)); t.setTag("dialog_title"); list.addView(t, new LinearLayout.LayoutParams(-1, -2)); dialog.titleView = t; }
-            if (message != null) { TextView m = new TextView(context); m.setText(message); m.setTextSize(13); m.setTextColor(GRAY); m.setGravity(Gravity.CENTER); m.setPadding(dp(16), 0, dp(16), dp(12)); list.addView(m, new LinearLayout.LayoutParams(-1, -2)); }
+            FrameLayout root = new FrameLayout(context); root.setTag("action_sheet");
+            LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL); card.setTag("anchored_menu");
+            GradientDrawable bg = round(Color.WHITE, 18); bg.setStroke(Math.max(1, dp(.5f)), 0x14000000); card.setBackground(bg); card.setPadding(dp(6), dp(6), dp(6), dp(6)); card.setElevation(dp(12));
+            if (title != null) { TextView t = new TextView(context); t.setText(title); t.setTextSize(13); t.setTextColor(GRAY); t.setGravity(Gravity.CENTER_VERTICAL); t.setPadding(dp(12), dp(8), dp(12), dp(6)); t.setTag("dialog_title"); card.addView(t, new LinearLayout.LayoutParams(-1, -2)); }
+            if (message != null) { TextView m = new TextView(context); m.setText(message); m.setTextSize(13); m.setTextColor(GRAY); m.setPadding(dp(12), 0, dp(12), dp(8)); card.addView(m, new LinearLayout.LayoutParams(-1, -2)); }
             LinearLayout rows = new LinearLayout(context); rows.setOrientation(LinearLayout.VERTICAL);
-            final TextView[] cells = new TextView[items.length]; final int[] current = {checked};
-            Runnable refresh = () -> { for (int i = 0; i < cells.length; i++) { boolean on = choice && i == current[0]; cells[i].setText(on ? Glyph.check(cells[i].getContext(), 0xFF007AFF, items[i]) : items[i]); cells[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT); } };
+            final View[] cells = new View[items.length]; final TextView[] texts = new TextView[items.length]; final ImageView[] marks = new ImageView[items.length]; final int[] current = {checked};
+            Runnable refresh = () -> { for (int i = 0; i < cells.length; i++) { boolean on = choice && i == current[0]; texts[i].setTextColor(on ? ACCENT : INK); texts[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT); marks[i].setVisibility(on ? View.VISIBLE : View.GONE); } };
             for (int i = 0; i < items.length; i++) {
                 final int index = i;
-                if (i > 0 || title != null || message != null) rows.addView(hairline(false));
-                TextView cell = new TextView(context); cell.setTextSize(18); cell.setTextColor(ACCENT); cell.setGravity(Gravity.CENTER); cell.setContentDescription(items[i]); cell.setSingleLine(); cell.setEllipsize(android.text.TextUtils.TruncateAt.END); cell.setPadding(dp(16), 0, dp(16), 0);
-                cell.setOnClickListener(v -> { if (choice) { current[0] = index; refresh.run(); } if (itemListener != null) itemListener.onClick(dialog, index); if (!choice) dialog.dismiss(); });
-                cells[i] = cell; rows.addView(cell, new LinearLayout.LayoutParams(-1, dp(54)));
+                LinearLayout line = new LinearLayout(context); line.setGravity(Gravity.CENTER_VERTICAL); line.setPadding(dp(12), 0, dp(12), 0); line.setContentDescription(items[i]);
+                TextView text = new TextView(context); text.setText(items[i]); text.setTextSize(15); text.setSingleLine(); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setTextColor(INK); line.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
+                ImageView mark = new ImageView(context); mark.setImageResource(R.drawable.ic_check_bold); mark.setColorFilter(ACCENT); mark.setVisibility(View.GONE); line.addView(mark, new LinearLayout.LayoutParams(dp(18), dp(18)));
+                line.setOnClickListener(v -> { if (choice) { current[0] = index; refresh.run(); } if (itemListener != null) itemListener.onClick(dialog, index); if (!choice) dialog.dismiss(); });
+                cells[i] = line; texts[i] = text; marks[i] = mark; rows.addView(line, new LinearLayout.LayoutParams(-1, dp(44)));
             }
             refresh.run();
-            LimitedScroll scroll = new LimitedScroll(context, Math.round(context.getResources().getDisplayMetrics().heightPixels * .55f)); scroll.addView(rows); list.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
-            for (int slot : new int[]{0, 2}) if (labels[slot] != null) { list.addView(hairline(false)); list.addView(dialog.buttons[slot], new LinearLayout.LayoutParams(-1, dp(54))); }
-            if (view != null) { if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view); list.addView(view, new LinearLayout.LayoutParams(-1, -2)); }
-            root.addView(list, new LinearLayout.LayoutParams(-1, -2));
-            TextView cancelButton = dialog.buttons[1]; if (labels[1] == null) { cancelButton.setText("취소"); cancelButton.setContentDescription("취소"); cancelButton.setOnClickListener(v -> dialog.dismiss()); }
-            cancelButton.setTextSize(18); cancelButton.setTypeface(Typeface.DEFAULT_BOLD); cancelButton.setBackground(round(Color.WHITE, 14));
-            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, dp(54)); cp.topMargin = dp(8); root.addView(cancelButton, cp);
+            LimitedScroll scroll = new LimitedScroll(context, Math.round(context.getResources().getDisplayMetrics().heightPixels * .55f)); scroll.addView(rows); card.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+            if (view != null) { if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view); card.addView(view, new LinearLayout.LayoutParams(-1, -2)); }
+            boolean any = false; for (int slot : new int[]{0, 2, 1}) if (labels[slot] != null) any = true;
+            if (any) { View line = hairline(false); LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) line.getLayoutParams(); lp.setMargins(dp(12), dp(4), dp(12), dp(4)); card.addView(line); }
+            for (int slot : new int[]{0, 2, 1}) if (labels[slot] != null) {
+                TextView b = dialog.buttons[slot]; b.setGravity(Gravity.CENTER_VERTICAL); b.setTextSize(15); b.setPadding(dp(12), 0, dp(12), 0);
+                String label = labels[slot].toString(); boolean danger = label.contains("삭제") || label.contains("비우기");
+                b.setTextColor(danger ? 0xFFFF3B30 : slot == 1 ? GRAY : ACCENT); b.setTypeface(Typeface.DEFAULT);
+                card.addView(b, new LinearLayout.LayoutParams(-1, dp(44)));
+            }
+            root.addView(card, new FrameLayout.LayoutParams(-1, -2));
             return root;
         }
     }
