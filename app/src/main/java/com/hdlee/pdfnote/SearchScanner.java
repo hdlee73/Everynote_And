@@ -105,8 +105,11 @@ final class SearchScanner {
             for (int i = 0; i < wordStart.length; i++) {
                 int wordEnd = i + 1 < wordStart.length ? wordStart[i + 1] - 1 : text.length();
                 if (wordEnd > start && wordStart[i] < end) {
-                    l = Math.min(l, wordLeft[i]);
-                    r = Math.max(r, wordRight[i]);
+                    // a "word" from the PDF may be a whole text run: narrow the box to the matched characters
+                    float len = Math.max(1, wordEnd - wordStart[i]), span = wordRight[i] - wordLeft[i];
+                    int from = Math.max(start, wordStart[i]), to = Math.min(end, wordEnd);
+                    l = Math.min(l, wordLeft[i] + span * (from - wordStart[i]) / len);
+                    r = Math.max(r, wordLeft[i] + span * (to - wordStart[i]) / len);
                 }
             }
             if (r < 0f) {

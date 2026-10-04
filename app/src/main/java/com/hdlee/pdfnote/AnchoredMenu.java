@@ -106,7 +106,7 @@ final class AnchoredMenu {
         x = Math.max(margin, Math.min(screenW - w - margin, x));
         int y = above ? at[1] - h - gap : at[1] + anchor.getHeight() + gap;
         y = Math.max(margin, Math.min(screenH - h - margin, y));
-        if (avoid != null) {
+        if (avoid != null && mode != 3) {
             int topLimit = Math.round(24 * density);
             int[][] tries = beside ? new int[][]{
                 {avoid.left - w - gap, avoid.top}, {avoid.right + gap, avoid.top},
@@ -127,9 +127,15 @@ final class AnchoredMenu {
                 y = coverTop <= coverBottom ? topY : bottomY; x = Math.max(margin, Math.min(screenW - w - margin, avoid.centerX() - w / 2));
             }
         }
+        if (mode == 3 && avoid != null) { x = Math.min(screenW - w - margin, avoid.right + gap); y = Math.max(margin, Math.min(screenH - h - margin, at[1] + anchor.getHeight() / 2 - h / 2)); }
         if (mode == 2) { x = (screenW - w) / 2; y = Math.max(margin, (screenH - h) / 3); }
         window.showAtLocation(anchor.getRootView(), Gravity.TOP | Gravity.START, x, y);
         return window;
+    }
+    /** A menu card that opens to the right of {@code panel} (e.g. the side panel), level with the tapped ⋮ button. */
+    static PopupWindow showRightOf(Context context, View anchor, View panel, List<Row> rows) {
+        int[] loc = new int[2]; panel.getLocationOnScreen(loc);
+        return build(context, anchor, false, rows, null, new android.graphics.Rect(loc[0], loc[1], loc[0] + panel.getWidth(), loc[1] + panel.getHeight()), 3, true);
     }
     /** A titled menu card in the middle of the screen (no dimming), for lists that are not opened from one particular button. */
     static PopupWindow showCentered(Context context, View anyView, String title, List<Row> rows) {

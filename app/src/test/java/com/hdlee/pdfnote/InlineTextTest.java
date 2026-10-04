@@ -88,7 +88,7 @@ public class InlineTextTest {
         AnnotationStore.PageElement clip=new AnnotationStore.PageElement();clip.page=0;clip.kind="audio";clip.asset=UUID.randomUUID()+".m4a";clip.text="0:12";clip.left=.04f;clip.top=.03f;clip.right=.42f;clip.bottom=.075f;store.elements.add(clip);
         activity.onElementTapped(clip);AlertDialog player=(AlertDialog)org.robolectric.shadows.ShadowDialog.getLatestDialog();assertNotNull(player);assertEquals("녹음 파일이 없으면 안내 대화상자가 열립니다","녹음",player.getTitleText().toString());player.dismiss();
         byDescription(root,"페이지 목록").performClick();byTag("side_tab:3").performClick();assertNotNull("첨부한 녹음이 목록에 보입니다",byTag("recording_item"));
-        byDescription(root,"녹음 삭제").performClick();assertTrue(store.elements.isEmpty());assertNull(byTag("recording_item"));
+        byDescription(root,"녹음 관리").performClick();java.lang.reflect.Method del=activity.getClass().getDeclaredMethod("deleteRecording",AnnotationStore.PageElement.class);del.setAccessible(true);del.invoke(activity,clip);assertTrue(store.elements.isEmpty());assertNull(byTag("recording_item"));
     }
     @Test public void headerTitleRenamesAndLassoIsOnTheMainToolbar()throws Exception{
         View title=byTag("document_title");assertNotNull(title);assertTrue(title.hasOnClickListeners());

@@ -471,7 +471,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             TextView close=new TextView(this);close.setText("×");close.setGravity(Gravity.CENTER);close.setTextSize(19);close.setTextColor(0xFFAEAEB2);close.setContentDescription(session.title+" 닫기");close.setOnClickListener(v->closeDocument(session));chip.addView(close,new LinearLayout.LayoutParams(dp(26),dp(30)));
             LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-2,dp(30));cp.setMargins(dp(3),0,dp(3),0);tabRow.addView(chip,cp);if(active)activeTab=chip;
         }
-        TextView add=new TextView(this);add.setText("＋");add.setGravity(Gravity.CENTER);add.setTextSize(22);add.setTextColor(ACCENT);add.setContentDescription("문서 추가");add.setBackground(round(0xFFE5E5EA,14));add.setOnClickListener(v->showAddDocumentMenu());LinearLayout.LayoutParams plus=new LinearLayout.LayoutParams(dp(30),dp(30));plus.setMargins(dp(4),0,dp(8),0);tabRow.addView(add,plus);
+        ImageView add=new ImageView(this);add.setImageResource(R.drawable.ic_plus);add.setColorFilter(ACCENT);add.setScaleType(ImageView.ScaleType.FIT_CENTER);add.setPadding(dp(7),dp(7),dp(7),dp(7));add.setContentDescription("문서 추가");add.setBackground(round(0xFFE5E5EA,15));add.setOnClickListener(v->showAddDocumentMenu());LinearLayout.LayoutParams plus=new LinearLayout.LayoutParams(dp(30),dp(30));plus.setMargins(dp(4),0,dp(8),0);tabRow.addView(add,plus);
         final View selected=activeTab;if(selected!=null)tabStrip.post(()->tabStrip.smoothScrollTo(Math.max(0,selected.getLeft()-dp(8)),0));
     }
     private String queryName(Uri u){try(android.database.Cursor c=getContentResolver().query(u,null,null,null,null)){if(c!=null&&c.moveToFirst()){int i=c.getColumnIndex(OpenableColumns.DISPLAY_NAME);if(i>=0)return c.getString(i);}}catch(Exception ignored){}return u.getLastPathSegment()==null?"PDF":u.getLastPathSegment();}
@@ -722,7 +722,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(sidebarVisible&&panelTab==2){closeSidePanel();return;}
         selectPanelTab(2);
     }
-    private void showOutlineItem(AnnotationStore.OutlineItem item){new AlertDialog.Builder(this).setTitle(item.title).setMessage("페이지 "+(item.page+1)).setPositiveButton("이동",(d,w)->{showPage(item.page);pageView.post(()->pageView.focusOnPoint(item.x,item.y));}).setNegativeButton("삭제",(d,w)->{store.outlines.remove(item);store.save();toast("개요 항목을 삭제했습니다");if(sidebarVisible&&panelTab==2)rebuildOutlinePanel();}).setNeutralButton("취소",null).show();}
+    private void showOutlineItem(AnnotationStore.OutlineItem item,View anchor){AnchoredMenu.showRightOf(this,anchor,sidePanel,AnchoredMenu.rows(
+        new AnchoredMenu.Row("이동",R.drawable.ic_page,()->{showPage(item.page);pageView.post(()->pageView.focusOnPoint(item.x,item.y));}).tint(0xFF30B0C7),
+        new AnchoredMenu.Row("삭제",R.drawable.ic_delete,()->{store.outlines.remove(item);store.save();toast("개요 항목을 삭제했습니다");if(sidebarVisible&&panelTab==2)rebuildOutlinePanel();}).danger()));}
     private void choosePageSwipeDirection(){showActionSheet("페이지 넘김",SWIPE_CHOICES,swipeMode(),this::setSwipeMode);}
     private void showMarkList(){List<AnnotationStore.Mark> items=new ArrayList<>(store.marks);if(items.isEmpty()){toast("저장된 하이라이트나 메모가 없습니다");return;}String[] labels=new String[items.size()];for(int i=0;i<items.size();i++){AnnotationStore.Mark mark=items.get(i);String note=mark.note;String state=note==null||note.isEmpty()?"":(!mark.visible?"[숨김] ":(mark.minimized?"[최소화] ":"[펼침] "));labels[i]="p."+(mark.page+1)+"  "+state+(note==null||note.isEmpty()?"(메모 없음)":note);}new AlertDialog.Builder(this).setTitle("메모·하이라이트").setItems(labels,(d,i)->{showPage(items.get(i).page);editMark(items.get(i));}).show();}
     private void showBookmarks(){if(store.bookmarks.isEmpty()){toast("즐겨찾기한 페이지가 없습니다");return;}List<Integer> pages=new ArrayList<>(store.bookmarks);Collections.sort(pages);String[] labels=new String[pages.size()];for(int i=0;i<pages.size();i++)labels[i]="페이지 "+(pages.get(i)+1);new AlertDialog.Builder(this).setTitle("즐겨찾기").setItems(labels,(d,i)->showPage(pages.get(i))).show();}
@@ -900,10 +902,10 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Page menu of the preview sidebar: add after / delete. */
     private void showPageMenu(int page,View anchor){
         if(renderer==null)return;
-        AnchoredMenu.show(this,anchor,false,AnchoredMenu.rows(
+        AnchoredMenu.showRightOf(this,anchor,sidePanel,AnchoredMenu.rows(
             new AnchoredMenu.Row("이 페이지로 이동",R.drawable.ic_page,()->showPage(page)).tint(0xFF30B0C7),
             new AnchoredMenu.Row("뒤에 페이지 추가",R.drawable.ic_page_add,()->choosePageToInsert(page)).tint(0xFF34C759),
-            new AnchoredMenu.Row("이 페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(page)).danger()),null);
+            new AnchoredMenu.Row("이 페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(page)).danger()));
     }
     /** Runs a file-level page edit off the UI thread, then re-opens the renderer and shifts the annotations to match. */
     private void modifyPages(final DocumentSession session,String message,java.util.concurrent.Callable<Integer> operation,Runnable annotations,int target,String failure){
@@ -1697,7 +1699,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(Math.min(dp(330),getResources().getDisplayMetrics().widthPixels-dp(16)),-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);lp.setMargins(dp(8),0,dp(8),0);viewportLayer.addView(inlineBar,lp);
     }
     private LinearLayout zoomPanel;private TextView zoomLabel;
-    private void stepZoom(float factor){if(pageView==null||renderer==null)return;float next=Math.round(pageView.zoom()*factor*20f)/20f;pageView.setZoom(next);}
+    private void stepZoom(float factor){if(pageView==null||renderer==null)return;float next=Math.round((pageView.zoom()+(factor>1f?.05f:-.05f))*20f)/20f;pageView.setZoom(next);}
     private void updateZoomLabel(float scale){if(zoomLabel!=null)zoomLabel.setText(Math.round(scale*100f)+"%");}
 
     // ---- list markers (bullets, numbers, checklist) typed as plain text so they survive export and the Windows app
@@ -1897,7 +1899,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             LinearLayout row=new LinearLayout(this);row.setTag("outline_item");row.setPadding(dp(14),dp(10),dp(2),dp(10));row.setGravity(Gravity.CENTER_VERTICAL);row.setBackground(round(Color.WHITE,16));
             TextView title=new TextView(this);android.text.SpannableStringBuilder label=new android.text.SpannableStringBuilder(item.title);int from=label.length();label.append("  (p").append(String.valueOf(item.page+1)).append(")");label.setSpan(new android.text.style.RelativeSizeSpan(.78f),from,label.length(),0);label.setSpan(new android.text.style.ForegroundColorSpan(0xFF8E8E93),from,label.length(),0);title.setText(label);title.setTextSize(12.5f);title.setTextColor(NAVY);
             row.addView(title,new LinearLayout.LayoutParams(0,-2,1));row.setOnClickListener(v->{showPage(item.page);pageView.post(()->pageView.focusOnPoint(item.x,item.y));});swipeToDelete(row,()->{store.outlines.remove(item);store.save();rebuildOutlinePanel();toast("개요를 삭제했습니다");});
-            row.addView(icon(R.drawable.ic_more_vert,"개요 관리",NAVY,v->showOutlineItem(item)),new LinearLayout.LayoutParams(dp(44),dp(44)));
+            row.addView(icon(R.drawable.ic_more_vert,"개요 관리",NAVY,v->showOutlineItem(item,v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
             LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.bottomMargin=dp(6);outlineList.addView(row,params);
         }
     }
@@ -1910,7 +1912,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             LinearLayout row=new LinearLayout(this);row.setTag("recording_item");row.setPadding(dp(14),dp(10),dp(4),dp(10));row.setGravity(Gravity.CENTER_VERTICAL);row.setBackground(round(Color.WHITE,16));
             TextView title=new TextView(this);title.setText("▶  "+clip.text+"\n페이지 "+(clip.page+1));title.setTextSize(14);title.setTextColor(NAVY);row.addView(title,new LinearLayout.LayoutParams(0,-2,1));
             row.setOnClickListener(v->{showPage(clip.page);showAudioPlayer(clip);});swipeToDelete(row,()->deleteRecording(clip));
-            row.addView(icon(R.drawable.ic_delete,"녹음 삭제",0xFFFF3B30,v->deleteRecording(clip)),new LinearLayout.LayoutParams(dp(44),dp(44)));
+            row.addView(icon(R.drawable.ic_more_vert,"녹음 관리",NAVY,v->showRecordingMenu(clip,v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
             LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.bottomMargin=dp(6);recordingList.addView(row,params);
         }
     }
@@ -1948,6 +1950,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         AnnotationStore.PageElement clip=new AnnotationStore.PageElement();clip.page=recordingPage;clip.kind="audio";clip.asset=file.getName();clip.text=clock(seconds);clip.left=.04f;clip.top=Math.min(.9f,.03f+.055f*(count%16));clip.right=.42f;clip.bottom=clip.top+.045f;
         target.elements.add(clip);target.save();redrawPages();if(sidebarVisible&&panelTab==3)rebuildRecordings();toast("녹음을 p."+(recordingPage+1)+"에 첨부했습니다");
     }
+    private void showRecordingMenu(AnnotationStore.PageElement clip,View anchor){AnchoredMenu.showRightOf(this,anchor,sidePanel,AnchoredMenu.rows(
+        new AnchoredMenu.Row("재생",R.drawable.ic_speaker,()->{showPage(clip.page);showAudioPlayer(clip);}).tint(0xFF30B0C7),
+        new AnchoredMenu.Row("삭제",R.drawable.ic_delete,()->deleteRecording(clip)).danger()));}
     private void deleteRecording(AnnotationStore.PageElement clip){if(store==null)return;store.elements.remove(clip);store.save();new File(recordingsDir(),clip.asset).delete();redrawPages();if(sidebarVisible&&panelTab==3)rebuildRecordings();}
     private void showAudioPlayer(AnnotationStore.PageElement clip){
         File file=new File(recordingsDir(),clip.asset);
