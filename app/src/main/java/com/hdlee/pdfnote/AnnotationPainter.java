@@ -19,12 +19,14 @@ final class AnnotationPainter {
     }
 
     static void text(Canvas canvas,String text,RectF box,float size,int color){text(canvas,text,box,size,color,Typeface.DEFAULT);}
-    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face){
-        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setTextSize(size);p.setTypeface(face);
+    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face){text(canvas,text,box,size,color,face,0,false,false);}
+    /** align: 0 left, 1 centre, 2 right. */
+    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face,int align,boolean underline,boolean strike){
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setTextSize(size);p.setTypeface(face);p.setUnderlineText(underline);p.setStrikeThruText(strike);
         int save=canvas.save();canvas.clipRect(box);float y=box.top+size;
         for(String paragraph:text.split("\n",-1)){
             String remaining=paragraph;
-            while(!remaining.isEmpty()){int n=Math.max(1,p.breakText(remaining,true,box.width(),null));canvas.drawText(remaining.substring(0,n),box.left,y,p);y+=size*1.35f;remaining=remaining.substring(n);}
+            while(!remaining.isEmpty()){int n=Math.max(1,p.breakText(remaining,true,box.width(),null));String line=remaining.substring(0,n);float x=box.left;if(align!=0){String shown=line.replaceAll("\\s+$","");float room=box.width()-p.measureText(shown);x=box.left+(align==1?room/2f:room);}canvas.drawText(line,x,y,p);y+=size*1.35f;remaining=remaining.substring(n);}
             if(paragraph.isEmpty())y+=size*1.35f;
         }
         canvas.restoreToCount(save);
@@ -99,7 +101,7 @@ final class AnnotationPainter {
             }else if(e.kind.equals("link")){
                 text(c,"↗ "+e.text,b,Math.max(9,d.width()*.027f),0xFF007AFF);
             }else{
-                text(c,e.text,b,Math.max(9,d.width()*e.textSize),adj(e.color),typeface(e.font,e.bold,e.italic));
+                text(c,e.text,b,Math.max(9,d.width()*e.textSize),adj(e.color),typeface(e.font,e.bold,e.italic),e.align,e.underline,e.strike);
             }
             c.restoreToCount(rotSave);
         }

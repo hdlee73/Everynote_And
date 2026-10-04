@@ -152,6 +152,9 @@ final class AnnotationStore {
         int color = DEFAULT_TEXT_COLOR;
         String font = "sans";
         boolean bold, italic;
+        /** Typing boxes: paragraph alignment (0 left, 1 centre, 2 right), underline and strike-through. */
+        int align;
+        boolean underline, strike;
         /** Clockwise rotation in degrees around the box centre (pictures, stickers, shapes and tables). */
         float rot;
 
@@ -159,7 +162,7 @@ final class AnnotationStore {
             return new JSONObject().put("rot", rot).put("page", page).put("kind", kind).put("text", text).put("asset", asset)
                     .put("left", left).put("top", top).put("right", right).put("bottom", bottom)
                     .put("textSize", textSize).put("color", color).put("font", font)
-                    .put("bold", bold).put("italic", italic);
+                    .put("bold", bold).put("italic", italic).put("align", align).put("underline", underline).put("strike", strike);
         }
 
         static PageElement fromJson(JSONObject o) throws JSONException {
@@ -179,6 +182,9 @@ final class AnnotationStore {
             if (!FONTS.contains(e.font)) e.font = "sans";
             e.bold = o.optBoolean("bold", false);
             e.italic = o.optBoolean("italic", false);
+            e.align = Math.max(0, Math.min(2, o.optInt("align", 0)));
+            e.underline = o.optBoolean("underline", false);
+            e.strike = o.optBoolean("strike", false);
             if (e.page < 0 || !Float.isFinite(e.left) || !Float.isFinite(e.top) || !Float.isFinite(e.right) || !Float.isFinite(e.bottom)
                     || e.left < 0 || e.top < 0 || e.right > 1 || e.bottom > 1 || e.left >= e.right || e.top >= e.bottom
                     || !java.util.Arrays.asList("text", "image", "link", "audio", "sticker", "video", "hyperlink", "shape", "table", "youtube").contains(e.kind)

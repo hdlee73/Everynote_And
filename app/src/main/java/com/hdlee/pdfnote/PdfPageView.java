@@ -34,6 +34,8 @@ final class PdfPageView extends View {
         void onSelectionAdjustStarted();
         void onLassoSelectionFinished();
         void onElementTapped(AnnotationStore.PageElement element);
+        default void onZoomChanged(float scale) {}
+        default void onElementDeleteRequested(AnnotationStore.PageElement element) {}
         /** Long press on empty paper: offers to insert something there (page, normalized point, view point). */
         default void onBlankLongPress(int page, float x, float y, float viewX, float viewY) {}
     }
@@ -119,6 +121,7 @@ final class PdfPageView extends View {
         int rotSave = canvas.save(); boolean turns = AnnotationPainter.rotates(selectedElement); if (turns && selectedElement.rot != 0f) canvas.rotate(selectedElement.rot, b.centerX(), b.centerY());
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2f * density); p.setColor(0xFF007AFF); canvas.drawRect(b, p);
         if (turns) { canvas.drawLine(b.centerX(), b.top, b.centerX(), b.top - 24f * density, p); p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawCircle(b.centerX(), b.top - 28f * density, 10f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawCircle(b.centerX(), b.top - 28f * density, 10f * density, p); p.setStyle(Paint.Style.FILL); p.setTextSize(13f * density); p.setTextAlign(Paint.Align.CENTER); canvas.drawText("↻", b.centerX(), b.top - 23.5f * density, p); p.setStyle(Paint.Style.STROKE); }
+        { float dcx = b.right + 14f * density, dcy = b.top - 28f * density; p.setStyle(Paint.Style.FILL); p.setColor(0xFFFF3B30); canvas.drawCircle(dcx, dcy, 11f * density, p); p.setColor(Color.WHITE); p.setStrokeWidth(2f * density); p.setStrokeCap(Paint.Cap.ROUND); float k = 4f * density; canvas.drawLine(dcx - k, dcy - k, dcx + k, dcy + k, p); canvas.drawLine(dcx - k, dcy + k, dcx + k, dcy - k, p); p.setStrokeCap(Paint.Cap.BUTT); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); }
         float[][] corners = {{b.left, b.top}, {b.right, b.top}, {b.left, b.bottom}, {b.right, b.bottom}};
         for (float[] c : corners) { p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawCircle(c[0], c[1], 9f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawCircle(c[0], c[1], 9f * density, p); }
         canvas.restoreToCount(rotSave);
@@ -131,18 +134,21 @@ final class PdfPageView extends View {
             RectF b = AnnotationPainter.box(dest, selectedElement); float reach = 24f * density; int hit = 0;
             float tx = e.getX(), ty = e.getY(); boolean turns = AnnotationPainter.rotates(selectedElement);
             if (turns && selectedElement.rot != 0f) { double a = Math.toRadians(-selectedElement.rot); float dx0 = tx - b.centerX(), dy0 = ty - b.centerY(); tx = b.centerX() + (float) (dx0 * Math.cos(a) - dy0 * Math.sin(a)); ty = b.centerY() + (float) (dx0 * Math.sin(a) + dy0 * Math.cos(a)); }
-            if (turns && Math.hypot(tx - b.centerX(), ty - (b.top - 28f * density)) <= reach) hit = 6;
+            if (Math.hypot(tx - (b.right + 14f * density), ty - (b.top - 28f * density)) <= 16f * density) hit = 7;
+            else if (turns && Math.hypot(tx - b.centerX(), ty - (b.top - 28f * density)) <= reach) hit = 6;
             else if (Math.hypot(tx - b.left, ty - b.top) <= reach) hit = 2; else if (Math.hypot(tx - b.right, ty - b.top) <= reach) hit = 3;
             else if (Math.hypot(tx - b.left, ty - b.bottom) <= reach) hit = 4; else if (Math.hypot(tx - b.right, ty - b.bottom) <= reach) hit = 5;
             else if (b.contains(tx, ty)) hit = 1;
             if (hit == 0) { selectedElement = null; invalidate(); return false; }
             if (hit > 1 && hit < 6 && !resizable(selectedElement)) hit = 1;
+            if (hit == 7) { elementDrag = 7; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(true); return true; }
             listener.onSelectionAdjustStarted(); elementDrag = hit; elementMoved = false; elementStartX = e.getX(); elementStartY = e.getY();
             elementOrigin.set(selectedElement.left, selectedElement.top, selectedElement.right, selectedElement.bottom); elementRot0 = selectedElement.rot;
             getParent().requestDisallowInterceptTouchEvent(true); return true;
         }
         if (elementDrag == 0) return false;
         if (action == MotionEvent.ACTION_MOVE) {
+            if (elementDrag == 7) return true;
             float dx = (e.getX() - elementStartX) / dest.width(), dy = (e.getY() - elementStartY) / dest.height();
             if (!elementMoved && Math.hypot(e.getX() - elementStartX, e.getY() - elementStartY) < 8f * density) return true;
             elementMoved = true; AnnotationStore.PageElement el = selectedElement; float w = elementOrigin.width(), h = elementOrigin.height();
@@ -172,7 +178,8 @@ final class PdfPageView extends View {
             invalidate(); return true;
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            boolean moved = elementMoved; elementDrag = 0; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(false);
+            boolean moved = elementMoved; boolean deleting = elementDrag == 7; elementDrag = 0; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(false);
+            if (deleting) { if (action == MotionEvent.ACTION_UP) { AnnotationStore.PageElement gone = selectedElement; selectedElement = null; listener.onElementDeleteRequested(gone); } invalidate(); return true; }
             if (action == MotionEvent.ACTION_CANCEL) { selectedElement.rot = elementRot0; selectedElement.left = elementOrigin.left; selectedElement.top = elementOrigin.top; selectedElement.right = elementOrigin.right; selectedElement.bottom = elementOrigin.bottom; invalidate(); }
             else if (moved) listener.onInkChanged(); else listener.onElementTapped(selectedElement);
             return true;
@@ -226,6 +233,7 @@ final class PdfPageView extends View {
                 panY = focusY - ny * size[1] - baseTop(size);
                 clampPan();
                 invalidate();
+                listener.onZoomChanged(scale);
                 return true;
             }
 
@@ -247,6 +255,7 @@ final class PdfPageView extends View {
         translations=allTranslations; textRegions.clear(); selectedTextRegions.clear(); textSelectMode=false;
         scale = 1f;
         panX = panY = 0f;
+        listener.onZoomChanged(1f);
         analyze();
         invalidate();
     }
@@ -263,6 +272,7 @@ final class PdfPageView extends View {
         translations=null; textRegions.clear(); selectedTextRegions.clear(); textSelectMode=false;
         scale = 1f;
         panX = panY = 0f;
+        listener.onZoomChanged(1f);
         invalidate();
     }
 
@@ -292,6 +302,29 @@ final class PdfPageView extends View {
         invalidate();
     }
 
+    private long lastWheelTurn;
+    /** Mouse wheel: scrolls inside a zoomed page, otherwise turns the page (up = previous, down = next). Ctrl + wheel zooms. */
+    @Override public boolean onGenericMotionEvent(MotionEvent e) {
+        if (e.getActionMasked() == MotionEvent.ACTION_SCROLL && (e.getSource() & android.view.InputDevice.SOURCE_CLASS_POINTER) != 0 && bitmap != null) {
+            float v = e.getAxisValue(MotionEvent.AXIS_VSCROLL), h = e.getAxisValue(MotionEvent.AXIS_HSCROLL);
+            if (e.isCtrlPressed() && v != 0f) { setZoom(scale * (v > 0 ? 1.15f : 1f / 1.15f)); return true; }
+            if (scale > 1f) { panY += v * 56f * getResources().getDisplayMetrics().density; panX += h * 56f * getResources().getDisplayMetrics().density; clampPan(); invalidate(); return true; }
+            float d = Math.abs(v) >= Math.abs(h) ? v : h; long now = e.getEventTime();
+            if (d != 0f && now - lastWheelTurn > 380) { lastWheelTurn = now; listener.onPageSwipe(d < 0 ? 1 : -1); }
+            return true;
+        }
+        return super.onGenericMotionEvent(e);
+    }
+    float zoom() { return scale; }
+    /** Sets the zoom (1 = whole page, up to 4) around the centre of the view; the pan is kept inside the page. */
+    void setZoom(float value) {
+        if (bitmap == null || getWidth() == 0) return;
+        RectF before = contentRect(); float fx = getWidth() / 2f, fy = getHeight() / 2f;
+        float nx = before.width() == 0 ? 0.5f : (fx - before.left) / before.width(), ny = before.height() == 0 ? 0.5f : (fy - before.top) / before.height();
+        scale = Math.max(1f, Math.min(4f, value));
+        float[] size = contentSize(); panX = fx - nx * size[0] - baseLeft(size); panY = fy - ny * size[1] - baseTop(size);
+        clampPan(); invalidate(); listener.onZoomChanged(scale);
+    }
     void focusOnPoint(float x, float y) {
         if (bitmap == null) return;
         scale = Math.max(scale, 1.7f);
@@ -371,7 +404,8 @@ final class PdfPageView extends View {
     /** Black paper with light text: the page picture is inverted (keeping hues) and dark ink is lightened. */
     void setDarkPage(boolean enabled) { darkPage = enabled; applyBackground(); invalidate(); }
     boolean isDarkPage() { return darkPage; }
-    private void applyBackground() { setBackgroundColor(darkPage ? 0xFF000000 : paperColor); }
+    /** The area around the page is a neutral grey so the sheet itself stands out from the background. */
+    private void applyBackground() { setBackgroundColor(darkPage ? 0xFF121214 : 0xFFD9DADF); }
     /** Zooms the base view onto this normalised box so margins disappear; null shows the whole page. */
     void setCrop(RectF box) {
         if (box == null || box.width() < 0.2f || box.height() < 0.2f) crop.set(0, 0, 1, 1); else crop.set(box);
@@ -413,6 +447,7 @@ final class PdfPageView extends View {
         super.onDraw(canvas);
         if (bitmap == null) return;
         RectF dest = contentRect();
+        { float d = getResources().getDisplayMetrics().density; paint.setStyle(Paint.Style.FILL); for (int i = 3; i >= 1; i--) { paint.setColor((darkPage ? 0x22000000 : 0x14000000) | 0); canvas.drawRect(dest.left - i * d, dest.top - i * d * .6f, dest.right + i * d, dest.bottom + i * d * 1.4f, paint); } }
         paint.setColor(Color.WHITE);
         if (darkPage) paint.setColor(Color.BLACK);
         canvas.drawRect(dest, paint);
