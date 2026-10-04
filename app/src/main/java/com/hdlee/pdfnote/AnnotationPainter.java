@@ -8,6 +8,12 @@ final class AnnotationPainter {
     private static Bitmap image(File file){Bitmap b=images.get(file.getPath());if(b==null){b=BitmapFactory.decodeFile(file.getPath());if(b!=null)images.put(file.getPath(),b);}return b;}
 
     /** Maps a stored font id (sans, serif, mono, hand) plus style flags to a platform typeface. */
+    /** The picture file of an attached element; the bundled masking tapes are copied out of the assets on first use. */
+    static File builtinAsset(Context context,String asset){
+        File file=new File(new File(context.getFilesDir(),"images"),asset);
+        if(!file.isFile()&&asset.matches("tape-\\d{2}\\.png")){file.getParentFile().mkdirs();try(java.io.InputStream in=context.getAssets().open("stickers/"+asset);java.io.OutputStream out=new java.io.FileOutputStream(file)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}catch(java.io.IOException ignored){file.delete();}}
+        return file;
+    }
     static Typeface typeface(String font,boolean bold,boolean italic){
         int style=(bold?Typeface.BOLD:0)|(italic?Typeface.ITALIC:0);
         Typeface base;
@@ -77,7 +83,7 @@ final class AnnotationPainter {
             if(e.page!=page||e==skip)continue;RectF b=box(d,e);
             int rotSave=c.save();if(e.rot!=0f&&rotates(e))c.rotate(e.rot,b.centerX(),b.centerY());
             if(e.kind.equals("image")){
-                File file=new File(new File(context.getFilesDir(),"images"),e.asset);Bitmap image=image(file);
+                File file=builtinAsset(context,e.asset);Bitmap image=image(file);
                 if(image!=null){
                     float scale=Math.min(b.width()/image.getWidth(),b.height()/image.getHeight());
                     RectF fitted=e.stretch?b:new RectF(b.centerX()-image.getWidth()*scale/2,b.centerY()-image.getHeight()*scale/2,b.centerX()+image.getWidth()*scale/2,b.centerY()+image.getHeight()*scale/2);

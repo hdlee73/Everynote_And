@@ -975,8 +975,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         AnnotationStore.PageElement element=new AnnotationStore.PageElement();element.page=page;element.kind=placementKind;element.asset=placementAsset;element.text=placementText;placementText="";element.rot=placementRot;placementRot=0f;
         RectF pr=pageView.pageRect();float pageRatio=pr.height()>0?pr.width()/pr.height():.707f;String kind=element.kind;
         if(kind.equals("image")||kind.equals("video")||kind.equals("sticker")||kind.equals("youtube")){
-            float ratio=kind.equals("youtube")?16f/9f:1f;if(!kind.equals("sticker")&&!kind.equals("youtube")){File file=new File(new File(getFilesDir(),"images"),element.asset);BitmapFactory.Options o=new BitmapFactory.Options();o.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.getPath(),o);if(o.outWidth>0&&o.outHeight>0)ratio=o.outWidth/(float)o.outHeight;}
-            float w=kind.equals("sticker")?.16f:.5f,h=w*pageRatio/ratio;if(h>.6f){h=.6f;w=h*ratio/pageRatio;}
+            float ratio=kind.equals("youtube")?16f/9f:1f;if(!kind.equals("sticker")&&!kind.equals("youtube")){File file=AnnotationPainter.builtinAsset(this,element.asset);BitmapFactory.Options o=new BitmapFactory.Options();o.inJustDecodeBounds=true;BitmapFactory.decodeFile(file.getPath(),o);if(o.outWidth>0&&o.outHeight>0)ratio=o.outWidth/(float)o.outHeight;}
+            float w=kind.equals("sticker")?.16f:element.asset.startsWith("tape-")?.32f:.5f,h=w*pageRatio/ratio;if(h>.6f){h=.6f;w=h*ratio/pageRatio;}
             element.left=Math.max(0f,Math.min(1f-w,x-w/2));element.top=Math.max(0f,Math.min(1f-h,y-h/2));element.right=element.left+w;element.bottom=element.top+h;
             placementKind="";memoMode=false;pageView.setMemoMode(false);updateToolStates();store.elements.add(element);store.save();pageView.selectElement(element);toast("모서리를 끌어 크기를, 본문을 끌어 위치를 바꿉니다");return;
         }
@@ -1039,6 +1039,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 cell.setOnClickListener(v->{if(holder[0]!=null)holder[0].dismiss();placementText=sticker;placeElement("sticker","");});
                 rowView.addView(cell,new LinearLayout.LayoutParams(0,-1,1));
             }
+        }
+        TextView tapeTitle=new TextView(this);tapeTitle.setText("마스킹 테이프");tapeTitle.setTextSize(12);tapeTitle.setTextColor(0xFF8E8E93);tapeTitle.setPadding(dp(6),dp(12),0,dp(4));box.addView(tapeTitle);
+        LinearLayout tapeRow=null;for(int i=1;i<=16;i++){
+            if((i-1)%4==0){tapeRow=new LinearLayout(this);box.addView(tapeRow,new LinearLayout.LayoutParams(-1,dp(44)));}
+            final String name="tape-"+(i<10?"0":"")+i+".png";ImageView tape=new ImageView(this);tape.setScaleType(ImageView.ScaleType.FIT_CENTER);tape.setPadding(dp(4),dp(6),dp(4),dp(6));tape.setContentDescription("마스킹 테이프 "+i);
+            try(InputStream in=getAssets().open("stickers/"+name)){tape.setImageBitmap(BitmapFactory.decodeStream(in));}catch(IOException ignored){}
+            tape.setOnClickListener(v->{if(holder[0]!=null)holder[0].dismiss();placementText="";placementRot=-4f;placeElement("image",name);});
+            tapeRow.addView(tape,new LinearLayout.LayoutParams(0,-1,1));
         }
         TextView mine=pill("내 이미지로 스티커 만들기","이미지 선택",ACTIVE_BG,ACTIVE_FG,v->{if(holder[0]!=null)holder[0].dismiss();pickImage();});LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(-1,dp(44));mp.topMargin=dp(10);box.addView(mine,mp);
         android.widget.ScrollView scroll=new android.widget.ScrollView(this);scroll.addView(box);
@@ -1443,8 +1451,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         refresh.run();return row;
     }
     private TextView toggleChip(String label,int typefaceStyle,boolean[] flag,Runnable changed){
-        TextView chip=new TextView(this);chip.setText(label);chip.setTextSize(15);chip.setGravity(Gravity.CENTER);chip.setTypeface(Typeface.defaultFromStyle(typefaceStyle));
-        chip.setTextSize(12);Runnable paint=()->{chip.setBackground(round(flag[0]?ACCENT:0xFFF2F2F7,18));chip.setTextColor(flag[0]?Color.WHITE:NAVY);};
+        TextView chip=new TextView(this);chip.setText(label);chip.setTextSize(15);chip.setGravity(Gravity.CENTER);chip.setTypeface(typefaceStyle==Typeface.ITALIC?Typeface.create(Typeface.SERIF,Typeface.ITALIC):Typeface.defaultFromStyle(typefaceStyle));
+        chip.setTextSize(17);Runnable paint=()->{chip.setBackground(round(flag[0]?ACCENT:0xFFF2F2F7,18));chip.setTextColor(flag[0]?Color.WHITE:NAVY);};
         chip.setOnClickListener(v->{flag[0]=!flag[0];paint.run();changed.run();});paint.run();return chip;
     }
     private Section sectionOf(int category,boolean titled){
@@ -1686,8 +1694,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         TextView style=stepButton("Aa","글꼴·색 펼치기");style.setTextSize(14);style.setTypeface(Typeface.DEFAULT_BOLD);style.setTag("text_style_toggle");
         style.setOnClickListener(v->{boolean open=panel.getVisibility()!=View.VISIBLE;panel.setVisibility(open?View.VISIBLE:View.GONE);style.setBackground(round(open?0xFFD6E6FF:0xFFF2F2F7,18));});
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(38),dp(32));sp.setMargins(dp(2),0,dp(6),0);row.addView(style,sp);
-        TextView boldChip=toggleChip("굵게",Typeface.BOLD,bold,()->{e.bold=bold[0];applyInlineStyle();});boldChip.setTag("text_bold");TextView italicChip=toggleChip("기울임",Typeface.ITALIC,italic,()->{e.italic=italic[0];applyInlineStyle();});italicChip.setTag("text_italic");
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(38),dp(32));cp.setMargins(dp(2),0,dp(2),0);row.addView(boldChip,cp);LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(dp(48),dp(32));ip.setMargins(dp(2),0,dp(6),0);row.addView(italicChip,ip);
+        TextView boldChip=toggleChip("B",Typeface.BOLD,bold,()->{e.bold=bold[0];applyInlineStyle();});boldChip.setTag("text_bold");TextView italicChip=toggleChip("I",Typeface.ITALIC,italic,()->{e.italic=italic[0];applyInlineStyle();});italicChip.setTag("text_italic");
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(34),dp(32));cp.setMargins(dp(2),0,dp(2),0);row.addView(boldChip,cp);LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(dp(34),dp(32));ip.setMargins(dp(2),0,dp(6),0);row.addView(italicChip,ip);
         TextView minus=stepButton("−","글자 작게");minus.setOnClickListener(v->changeInlineSize(-1));row.addView(minus,new LinearLayout.LayoutParams(dp(30),dp(32)));
         inlineSize=new TextView(this);inlineSize.setTag("text_size");inlineSize.setTextSize(12);inlineSize.setTextColor(NAVY);inlineSize.setGravity(Gravity.CENTER);inlineSize.setTypeface(Typeface.DEFAULT_BOLD);row.addView(inlineSize,new LinearLayout.LayoutParams(dp(40),dp(32)));
         TextView plus=stepButton("＋","글자 크게");plus.setOnClickListener(v->changeInlineSize(1));row.addView(plus,new LinearLayout.LayoutParams(dp(30),dp(32)));
@@ -1817,7 +1825,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     // ================================================================== side panel: search / page previews / outline / recordings
     private LinearLayout sidePanel,outlineList,recordingList;private FrameLayout sideContent;private TextView sideTitle;private ImageButton sideMore;private ScrollView outlineScroll,recordingScroll;
     private final ImageButton[] sideTabs=new ImageButton[4];private int panelTab=1;
-    private static final String[] SIDE_TITLES={"검색","페이지 미리보기","개요","음성 녹음"};
+    private static final String[] SIDE_TITLES={"검색","미리보기","개요","음성 녹음"};
     private static final int[] SIDE_ICONS={R.drawable.ic_search,R.drawable.ic_thumbnails,R.drawable.ic_outline,R.drawable.ic_mic};
     private void buildSidePanel(){
         sidePanel=new LinearLayout(this);sidePanel.setTag("side_panel");sidePanel.setOrientation(LinearLayout.VERTICAL);sidePanel.setBackgroundColor(0xFFF8F8F8);sidePanel.setVisibility(View.GONE);
@@ -1837,7 +1845,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void selectPanelTab(int tab){
         panelTab=tab;sidebarVisible=true;sidePanel.setVisibility(View.VISIBLE);if(sideResizer!=null)sideResizer.setVisibility(View.VISIBLE);
         searchPanel.setVisibility(tab==0?View.VISIBLE:View.GONE);thumbnailPanel.setVisibility(tab==1?View.VISIBLE:View.GONE);outlineScroll.setVisibility(tab==2?View.VISIBLE:View.GONE);recordingScroll.setVisibility(tab==3?View.VISIBLE:View.GONE);
-        sideTitle.setText(tab==1&&!showAllThumbnails?"즐겨찾기 페이지":SIDE_TITLES[tab]);sideMore.setVisibility(tab==1?View.VISIBLE:View.GONE);
+        sideTitle.setText(SIDE_TITLES[tab]);sideMore.setVisibility(tab==1?View.VISIBLE:View.GONE);
         for(int i=0;i<4;i++){boolean on=i==tab;sideTabs[i].setColorFilter(on?ACTIVE_FG:NAVY);sideTabs[i].setBackground(on?round(ACTIVE_BG,14):null);}
         LinearLayout.LayoutParams lp=(LinearLayout.LayoutParams)sidePanel.getLayoutParams();int width=sidePanelWidth();if(lp.width!=width){lp.width=width;sidePanel.setLayoutParams(lp);}
         if(tab==0){searchInput.requestFocus();InputMethodManager keyboard=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.showSoftInput(searchInput,InputMethodManager.SHOW_IMPLICIT);}else hideKeyboard();
@@ -1847,7 +1855,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private int sidePanelWidth(){int saved=recentPrefs==null?0:recentPrefs.getInt("side_width_dp",0);if(saved>0)return clampSideWidth(dp(saved));return Math.min(dp(190),Math.round(getResources().getDisplayMetrics().widthPixels*.42f));}
     private int clampSideWidth(int width){return Math.max(dp(130),Math.min(width,Math.round(getResources().getDisplayMetrics().widthPixels*.7f)));}
     private View sideResizer;
-    private void closeSidePanel(){sidebarVisible=false;sidePanel.setVisibility(View.GONE);if(sideResizer!=null)sideResizer.setVisibility(View.GONE);closeSearch();hideKeyboard();applySearchHighlights();}
+    private void closeSidePanel(){boolean searched=panelTab==0&&!searchHits.isEmpty();sidebarVisible=false;sidePanel.setVisibility(View.GONE);if(sideResizer!=null)sideResizer.setVisibility(View.GONE);closeSearch();hideKeyboard();applySearchHighlights();if(searched)for(PdfPageView v:new PdfPageView[]{pageView,firstPageView,secondPageView})if(v!=null&&v.zoom()!=1f)v.setZoom(1f);}
     /** Icon-only floating menu for the preview panel: favorites only, all pages, add page, delete page. */
     private void showThumbnailMenu(View anchor){
         AnchoredMenu.show(this,anchor,false,AnchoredMenu.rows(
@@ -1859,18 +1867,37 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private TextView pill(String text,String description,int background,int foreground,View.OnClickListener action){TextView b=new TextView(this);b.setText(text);b.setTextSize(14);b.setTextColor(foreground);b.setTypeface(Typeface.DEFAULT_BOLD);b.setGravity(Gravity.CENTER);b.setContentDescription(description);b.setBackground(round(background,18));b.setOnClickListener(action);return b;}
     /** Lets a list row be swiped away (either direction) to delete it; taps and vertical scrolling keep working. */
+    /** Red "delete" strip revealed behind a row while it is swiped (like the iOS Mail list); it turns darker and the trash icon follows the finger once the swipe is far enough to delete. */
+    private final class SwipeBackground extends android.graphics.drawable.Drawable{
+        private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final android.graphics.drawable.Drawable icon;float dx;boolean armed;
+        SwipeBackground(){android.graphics.drawable.Drawable d=getResources().getDrawable(R.drawable.ic_delete,getTheme()).mutate();d.setTint(Color.WHITE);icon=d;}
+        @Override public void draw(Canvas canvas){
+            android.graphics.Rect b=getBounds();if(b.width()<=0)return;paint.setColor(armed?0xFFD92D20:0xFFFF3B30);float r=dp(16);canvas.drawRoundRect(new RectF(b),r,r,paint);
+            int size=dp(22),pad=dp(18);if(b.width()<size+pad)return;
+            boolean left=dx<0;int ix=left?(armed?b.left+pad:b.right-pad-size):(armed?b.right-pad-size:b.left+pad);int cy=b.centerY(),s=armed?size+dp(3):size;
+            canvas.save();canvas.clipRect(b);icon.setBounds(ix-(s-size)/2,cy-s/2,ix-(s-size)/2+s,cy+s/2);icon.draw(canvas);canvas.restore();
+        }
+        @Override public void setAlpha(int alpha){}
+        @Override public void setColorFilter(android.graphics.ColorFilter colorFilter){}
+        @Override public int getOpacity(){return android.graphics.PixelFormat.TRANSLUCENT;}
+    }
     private void swipeToDelete(View row,Runnable delete){
-        final float[] start=new float[2];final boolean[] dragging={false};final int slop=android.view.ViewConfiguration.get(this).getScaledTouchSlop();
+        final float[] start=new float[2];final boolean[] dragging={false};final int slop=android.view.ViewConfiguration.get(this).getScaledTouchSlop();final SwipeBackground[] bg={null};
+        final Runnable[] sync={null};
         row.setOnTouchListener((v,e)->{
             switch(e.getActionMasked()){
                 case MotionEvent.ACTION_DOWN:start[0]=e.getRawX();start[1]=e.getRawY();dragging[0]=false;return false;
                 case MotionEvent.ACTION_MOVE:{float dx=e.getRawX()-start[0],dy=e.getRawY()-start[1];
-                    if(!dragging[0]&&Math.abs(dx)>slop*1.5f&&Math.abs(dx)>Math.abs(dy)*1.4f){dragging[0]=true;v.setPressed(false);if(v.getParent()!=null)v.getParent().requestDisallowInterceptTouchEvent(true);}
-                    if(dragging[0]){v.setTranslationX(dx);v.setAlpha(Math.max(.25f,1f-Math.abs(dx)/Math.max(1,v.getWidth())));return true;}return false;}
+                    if(!dragging[0]&&Math.abs(dx)>slop*1.5f&&Math.abs(dx)>Math.abs(dy)*1.4f){dragging[0]=true;v.setPressed(false);if(v.getParent()!=null)v.getParent().requestDisallowInterceptTouchEvent(true);
+                        if(v.getParent() instanceof ViewGroup){bg[0]=new SwipeBackground();((ViewGroup)v.getParent()).getOverlay().add(bg[0]);
+                            sync[0]=()->{SwipeBackground g=bg[0];if(g==null)return;float t=v.getTranslationX();g.dx=t;boolean was=g.armed;g.armed=Math.abs(t)>v.getWidth()*.4f;if(g.armed&&!was)v.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+                                int l=v.getLeft(),r=v.getRight();g.setBounds(t>0?l:r+Math.round(t),v.getTop(),t>0?l+Math.round(t):r,v.getBottom());g.invalidateSelf();};}}
+                    if(dragging[0]){v.setTranslationX(dx);if(sync[0]!=null)sync[0].run();return true;}return false;}
                 case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:
                     if(dragging[0]){dragging[0]=false;float dx=v.getTranslationX();boolean gone=e.getActionMasked()==MotionEvent.ACTION_UP&&Math.abs(dx)>v.getWidth()*.4f;
-                        if(gone)v.animate().translationX(Math.signum(dx)*v.getWidth()).alpha(0f).setDuration(140).withEndAction(delete).start();
-                        else v.animate().translationX(0).alpha(1f).setDuration(160).start();return true;}
+                        final Runnable finish=()->{if(bg[0]!=null&&v.getParent() instanceof ViewGroup)((ViewGroup)v.getParent()).getOverlay().remove(bg[0]);bg[0]=null;};
+                        if(gone)v.animate().translationX(Math.signum(dx)*v.getWidth()).setDuration(160).setUpdateListener(a->{if(sync[0]!=null)sync[0].run();}).withEndAction(()->{finish.run();delete.run();}).start();
+                        else v.animate().translationX(0).setDuration(180).setUpdateListener(a->{if(sync[0]!=null)sync[0].run();}).withEndAction(finish).start();return true;}
                     return false;
             }
             return false;
