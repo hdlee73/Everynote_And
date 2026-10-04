@@ -243,7 +243,7 @@ final class PdfPageView extends View {
                 float focusY = detector.getFocusY();
                 float nx = before.width() == 0 ? 0.5f : (focusX - before.left) / before.width();
                 float ny = before.height() == 0 ? 0.5f : (focusY - before.top) / before.height();
-                scale = Math.max(1f, Math.min(4f, scale * detector.getScaleFactor()));
+                scale = Math.max(MIN_ZOOM, Math.min(4f, scale * detector.getScaleFactor()));
                 float[] size = contentSize();
                 panX = focusX - nx * size[0] - baseLeft(size);
                 panY = focusY - ny * size[1] - baseTop(size);
@@ -333,13 +333,15 @@ final class PdfPageView extends View {
         }
         return super.onGenericMotionEvent(e);
     }
+    /** Smallest zoom: the page may be shrunk to 40% and is then centred on the grey background. */
+    static final float MIN_ZOOM = 0.4f;
     float zoom() { return scale; }
     /** Sets the zoom (1 = whole page, up to 4) around the centre of the view; the pan is kept inside the page. */
     void setZoom(float value) {
         if (bitmap == null || getWidth() == 0) return;
         RectF before = contentRect(); float fx = getWidth() / 2f, fy = getHeight() / 2f;
         float nx = before.width() == 0 ? 0.5f : (fx - before.left) / before.width(), ny = before.height() == 0 ? 0.5f : (fy - before.top) / before.height();
-        scale = Math.max(1f, Math.min(4f, value));
+        scale = Math.max(MIN_ZOOM, Math.min(4f, value));
         float[] size = contentSize(); panX = fx - nx * size[0] - baseLeft(size); panY = fy - ny * size[1] - baseTop(size);
         clampPan(); invalidate(); listener.onZoomChanged(scale);
     }
