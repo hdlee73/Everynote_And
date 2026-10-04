@@ -643,8 +643,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         for(int i=0;i<labels.length;i++){final int index=i;rows.add(new AnchoredMenu.Row(labels[i],icons[i],()->{actions[index].run();after[0].run();}).tint(tints[i]));}
         rows.add(AnchoredMenu.Row.divider());
         dropTarget=new float[]{page,selection.unionBounds.left,selection.unionBounds.bottom};dropTime=System.currentTimeMillis();
-        RectF page=view.pageRect();int[] where=new int[2];view.getLocationOnScreen(where);RectF u=selection.unionBounds;
-        android.graphics.Rect avoid=new android.graphics.Rect(Math.round(where[0]+page.left+u.left*page.width()),Math.round(where[1]+page.top+u.top*page.height()),Math.round(where[0]+page.left+u.right*page.width()),Math.round(where[1]+page.top+u.bottom*page.height()));
+        RectF pageBox=view.pageRect();int[] where=new int[2];view.getLocationOnScreen(where);RectF u=selection.unionBounds;
+        android.graphics.Rect avoid=new android.graphics.Rect(Math.round(where[0]+pageBox.left+u.left*pageBox.width()),Math.round(where[1]+pageBox.top+u.top*pageBox.height()),Math.round(where[0]+pageBox.left+u.right*pageBox.width()),Math.round(where[1]+pageBox.top+u.bottom*pageBox.height()));
         rows.add(new AnchoredMenu.Row("삽입",R.drawable.ic_insert,()->{dropTarget=new float[]{page,selection.unionBounds.left,selection.unionBounds.bottom};dropTime=System.currentTimeMillis();showMenuAt(view,anchorX,anchorY,insertRows(),view::clearTextSelectionOverlay,avoid);}).submenu().tint(0xFFFF2D55));
         showMenuAt(view,anchorX,anchorY,rows,view::clearTextSelectionOverlay,avoid);
     }
