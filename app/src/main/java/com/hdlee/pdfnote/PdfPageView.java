@@ -81,6 +81,7 @@ final class PdfPageView extends View {
     private boolean showTextBounds;
     private int page;
     private boolean highlightMode;
+    private boolean highlightFree;private float highlightThick=0.022f;private final ArrayList<float[]> freePts=new ArrayList<>();
     private boolean memoMode;
     private int highlightColor = 0x66FFEB3B;
     private float startX, startY, currentX, currentY, lastX, lastY;
@@ -291,6 +292,8 @@ final class PdfPageView extends View {
         invalidate();
     }
 
+    /** Highlighter style: straight band or freehand stroke, and its thickness as a fraction of the page height. */
+    void setHighlightStyle(boolean free, float thickFraction) { highlightFree = free; highlightThick = Math.max(.006f, Math.min(.08f, thickFraction)); invalidate(); }
     void setHighlightMode(boolean enabled, int color) {
         highlightMode = enabled;
         if (enabled) { setLassoMode(false);memoMode = false; outlineMode = false; }
@@ -351,7 +354,7 @@ final class PdfPageView extends View {
     }
 
     void setDirectTextSelection(boolean enabled){directTextSelection=enabled;clearTextSelectionOverlay();}
-    void copyToolsFrom(PdfPageView other){darkPage=other.darkPage;applyBackground();directTextSelection=other.directTextSelection;highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;inkPen=other.inkPen;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;lassoShape=other.lassoShape;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
+    void copyToolsFrom(PdfPageView other){darkPage=other.darkPage;applyBackground();directTextSelection=other.directTextSelection;highlightMode=other.highlightMode;memoMode=other.memoMode;outlineMode=other.outlineMode;highlightColor=other.highlightColor;highlightFree=other.highlightFree;highlightThick=other.highlightThick;inkMode=other.inkMode;inkColor=other.inkColor;inkWidth=other.inkWidth;inkPen=other.inkPen;fingerInk=other.fingerInk;pageSwipeEnabled=other.pageSwipeEnabled;verticalPageSwipe=other.verticalPageSwipe;lassoShape=other.lassoShape;if(lassoMode!=other.lassoMode){lassoMode=other.lassoMode;clearLassoSelection();}invalidate();}
     void setAnnotationStore(AnnotationStore store){annotationStore=store;invalidate();}
     void setFingerInk(boolean enabled){fingerInk=enabled;}
     void setPageSwipeEnabled(boolean enabled){pageSwipeEnabled=enabled;}
@@ -385,7 +388,7 @@ final class PdfPageView extends View {
     }
 
     private float highlightHeight(RectF dest) {
-        return Math.max(12f, dest.height() * 0.022f);
+        return Math.max(6f, dest.height() * highlightThick);
     }
 
     /** Finds the paper colour and the box that holds the printed content, so margins can be trimmed. */
@@ -487,7 +490,12 @@ final class PdfPageView extends View {
         memoHitBoxes.clear();if(marks!=null)for(AnnotationStore.Mark m:marks)if(m.page==page&&m.visible&&(m.noteOnly||(m.note!=null&&!m.note.isEmpty())))drawMemo(canvas,dest,m);
         noteHitBoxes.clear();if(translations!=null)for(AnnotationStore.TranslationNote n:translations)if(n.page==page&&n.visible)drawTranslation(canvas,dest,n);
         drawMemoSelection(canvas);
-        if (!suppressSelection && drawing) {
+        if (!suppressSelection && drawing && highlightFree && freePts.size() > 1) {
+            android.graphics.Path line = new android.graphics.Path(); boolean firstPt = true;
+            for (float[] q : freePts) { if (firstPt) { line.moveTo(q[0], q[1]); firstPt = false; } else line.lineTo(q[0], q[1]); }
+            Paint hp = new Paint(Paint.ANTI_ALIAS_FLAG); hp.setColor(highlightColor | 0xFF000000); hp.setStyle(Paint.Style.STROKE); hp.setStrokeCap(Paint.Cap.ROUND); hp.setStrokeJoin(Paint.Join.ROUND); hp.setStrokeWidth(highlightHeight(dest));
+            int saved = canvas.saveLayerAlpha(dest.left, dest.top, dest.right, dest.bottom, Math.max(8, Color.alpha(highlightColor))); canvas.drawPath(line, hp); canvas.restoreToCount(saved);
+        } else if (!suppressSelection && drawing && !highlightFree) {
             paint.setColor(highlightColor);
             float centerY = (startY + currentY) / 2f;
             float half = highlightHeight(dest) / 2f;
@@ -762,7 +770,7 @@ final class PdfPageView extends View {
             startX = currentX = e.getX(); startY = currentY = e.getY();
             lastX = startX; lastY = startY;
             gestureMoved = false; scalingOccurred = false;bodySwipeCandidate=pageSwipeEnabled&&!stylus&&!directTextSelection&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk)&&scale<=1f;
-            drawing = highlightMode && dest.contains(startX, startY);
+            drawing = highlightMode && dest.contains(startX, startY);if(drawing&&highlightFree){freePts.clear();freePts.add(new float[]{startX,startY});}
             selectionStartRegion=(!drawing&&!memoMode&&!outlineMode&&inkMode==0)?textRegionAt(startX,startY,dest):null;selectionEndRegion=selectionStartRegion;selectionCandidate=selectionStartRegion!=null;selectingText=false;if(selectionCandidate)selectionHandler.postDelayed(beginTextSelection,420);
             selectionHandler.removeCallbacks(blankPress);if(!selectionCandidate&&!drawing&&!memoMode&&!outlineMode&&inkMode==0&&!lassoMode&&!directTextSelection&&!stylus&&scale<=1.05f&&dest.contains(startX,startY))selectionHandler.postDelayed(blankPress,650);
             panning = scale > 1f && !outlineMode && !selectionCandidate;
@@ -801,7 +809,9 @@ final class PdfPageView extends View {
             return true;
         }
         if (e.getAction() == MotionEvent.ACTION_MOVE && drawing) {
-            currentX = e.getX(); currentY = e.getY(); invalidate(); return true;
+            currentX = e.getX(); currentY = e.getY();
+            if(highlightFree){float fx=Math.max(dest.left,Math.min(dest.right,currentX)),fy=Math.max(dest.top,Math.min(dest.bottom,currentY));float[] last=freePts.get(freePts.size()-1);if(Math.hypot(fx-last[0],fy-last[1])>=3)freePts.add(new float[]{fx,fy});}
+            invalidate(); return true;
         }
         if (e.getAction() == MotionEvent.ACTION_MOVE && panning && e.getPointerCount() == 1) {
             if(!gestureMoved&&Math.hypot(e.getX()-startX,e.getY()-startY)<=touchSlop())return true;
@@ -832,7 +842,17 @@ final class PdfPageView extends View {
             if (drawing) {
                 currentX = Math.max(dest.left, Math.min(dest.right, e.getX()));
                 currentY = Math.max(dest.top, Math.min(dest.bottom, e.getY()));
-                if (Math.abs(currentX - startX) > 12) {
+                if (highlightFree) {
+                    if (freePts.size() >= 2) {
+                        AnnotationStore.Mark m = new AnnotationStore.Mark(); m.page = page; m.color = highlightColor; m.thick = highlightThick;
+                        java.util.List<float[]> pts = new ArrayList<>(freePts); int cap = 600; if (pts.size() > cap) { java.util.List<float[]> thin = new ArrayList<>(); for (int i = 0; i < cap; i++) thin.add(pts.get(Math.round(i * (pts.size() - 1f) / (cap - 1)))); pts = thin; }
+                        m.path = new float[pts.size() * 2]; float minX = 1, minY = 1, maxX = 0, maxY = 0;
+                        for (int i = 0; i < pts.size(); i++) { float nx = (pts.get(i)[0] - dest.left) / dest.width(), ny = (pts.get(i)[1] - dest.top) / dest.height(); m.path[2 * i] = nx; m.path[2 * i + 1] = ny; minX = Math.min(minX, nx); maxX = Math.max(maxX, nx); minY = Math.min(minY, ny); maxY = Math.max(maxY, ny); }
+                        float hx = highlightThick * dest.height() / 2f / dest.width(), hy = highlightThick / 2f;
+                        m.left = Math.max(0, minX - hx); m.right = Math.min(1, maxX + hx); m.top = Math.max(0, minY - hy); m.bottom = Math.min(1, maxY + hy);
+                        listener.onHighlightCreated(m);
+                    }
+                } else if (Math.abs(currentX - startX) > 12) {
                     AnnotationStore.Mark m = new AnnotationStore.Mark();
                     m.page = page;
                     m.left = (Math.min(startX, currentX) - dest.left) / dest.width();
@@ -844,7 +864,7 @@ final class PdfPageView extends View {
                     m.color = highlightColor;
                     listener.onHighlightCreated(m);
                 }
-                drawing = false; invalidate(); return true;
+                freePts.clear(); drawing = false; invalidate(); return true;
             }
             if (Math.hypot(e.getX() - startX, e.getY() - startY) < 20 && memoMode && dest.contains(e.getX(), e.getY())) {
                 listener.onMemoPointRequested(page, (e.getX() - dest.left) / dest.width(),

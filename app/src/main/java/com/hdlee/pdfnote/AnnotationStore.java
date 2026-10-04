@@ -29,10 +29,14 @@ final class AnnotationStore {
         /** Own box size in dp (0 = use {@link #boxSize}); set by dragging the corner handle of a selected memo. */
         float boxW, boxH;
         float rot;
+        /** Freehand highlight: thickness as a fraction of the page height and the stroke path (x0,y0,x1,y1,… normalized); path == null is the straight band. */
+        float thick;
+        float[] path;
 
         JSONObject toJson() throws JSONException {
             JSONObject o = new JSONObject();
-            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize).put("boxW", boxW).put("boxH", boxH).put("rot", rot);
+            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize).put("boxW", boxW).put("boxH", boxH).put("rot", rot).put("thick", thick);
+            if (path != null) { JSONArray pa = new JSONArray(); for (float v : path) pa.put(Math.round(v * 10000) / 10000.0); o.put("path", pa); }
             o.put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom)
                     .put("color", color).put("note", note == null ? "" : note)
@@ -59,6 +63,9 @@ final class AnnotationStore {
             m.boxW = (float) Math.max(0, Math.min(800, o.optDouble("boxW", 0)));
             m.boxH = (float) Math.max(0, Math.min(1200, o.optDouble("boxH", 0)));
             m.rot = (float) o.optDouble("rot", 0);
+            m.thick = (float) Math.max(0, Math.min(0.3, o.optDouble("thick", 0)));
+            JSONArray pa = o.optJSONArray("path");
+            if (pa != null && pa.length() >= 4) { m.path = new float[pa.length() - pa.length() % 2]; for (int i = 0; i < m.path.length; i++) m.path[i] = (float) pa.optDouble(i, 0); }
             return m;
         }
     }
