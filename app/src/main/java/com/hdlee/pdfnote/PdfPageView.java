@@ -124,6 +124,7 @@ final class PdfPageView extends View {
         { float dcx = b.right + 14f * density, dcy = b.top - 28f * density; p.setStyle(Paint.Style.FILL); p.setColor(0xFFFF3B30); canvas.drawCircle(dcx, dcy, 11f * density, p); p.setColor(Color.WHITE); p.setStrokeWidth(2f * density); p.setStrokeCap(Paint.Cap.ROUND); float k = 4f * density; canvas.drawLine(dcx - k, dcy - k, dcx + k, dcy + k, p); canvas.drawLine(dcx - k, dcy + k, dcx + k, dcy - k, p); p.setStrokeCap(Paint.Cap.BUTT); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); }
         float[][] corners = {{b.left, b.top}, {b.right, b.top}, {b.left, b.bottom}, {b.right, b.bottom}};
         for (float[] c : corners) { p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawCircle(c[0], c[1], 9f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawCircle(c[0], c[1], 9f * density, p); }
+        if (aspectLocked(selectedElement)) { float[][] mids = {{b.left, b.centerY()}, {b.right, b.centerY()}, {b.centerX(), b.top}, {b.centerX(), b.bottom}}; for (int i = 0; i < 4; i++) { float hw = (i < 2 ? 4f : 9f) * density, hh = (i < 2 ? 9f : 4f) * density; RectF r = new RectF(mids[i][0] - hw, mids[i][1] - hh, mids[i][0] + hw, mids[i][1] + hh); p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawRoundRect(r, 4f * density, 4f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawRoundRect(r, 4f * density, 4f * density, p); } }
         canvas.restoreToCount(rotSave);
     }
     private boolean handleElementGesture(MotionEvent e, RectF dest) {
@@ -138,9 +139,14 @@ final class PdfPageView extends View {
             else if (turns && Math.hypot(tx - b.centerX(), ty - (b.top - 28f * density)) <= reach) hit = 6;
             else if (Math.hypot(tx - b.left, ty - b.top) <= reach) hit = 2; else if (Math.hypot(tx - b.right, ty - b.top) <= reach) hit = 3;
             else if (Math.hypot(tx - b.left, ty - b.bottom) <= reach) hit = 4; else if (Math.hypot(tx - b.right, ty - b.bottom) <= reach) hit = 5;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.left, ty - b.centerY()) <= 18f * density) hit = 8;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.right, ty - b.centerY()) <= 18f * density) hit = 9;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.centerX(), ty - b.top) <= 18f * density) hit = 10;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.centerX(), ty - b.bottom) <= 18f * density) hit = 11;
             else if (b.contains(tx, ty)) hit = 1;
             if (hit == 0) { selectedElement = null; invalidate(); return false; }
             if (hit > 1 && hit < 6 && !resizable(selectedElement)) hit = 1;
+            if (hit >= 8 && hit <= 11 && !resizable(selectedElement)) hit = 1;
             if (hit == 7) { elementDrag = 7; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(true); return true; }
             listener.onSelectionAdjustStarted(); elementDrag = hit; elementMoved = false; elementStartX = e.getX(); elementStartY = e.getY();
             elementOrigin.set(selectedElement.left, selectedElement.top, selectedElement.right, selectedElement.bottom); elementRot0 = selectedElement.rot;
@@ -157,6 +163,15 @@ final class PdfPageView extends View {
                 float deg = (float) Math.toDegrees(Math.atan2(e.getX() - cx, -(e.getY() - cy))); if (deg < 0f) deg += 360f;
                 float snap = Math.round(deg / 15f) * 15f; if (Math.abs(snap - deg) < 4f) deg = snap % 360f;
                 el.rot = deg; invalidate(); return true;
+            }
+            if (elementDrag >= 8 && elementDrag <= 11) {
+                float px = e.getX(), py = e.getY();
+                if (el.rot != 0f && AnnotationPainter.rotates(el)) { float ocx = dest.left + (elementOrigin.left + elementOrigin.right) / 2f * dest.width(), ocy = dest.top + (elementOrigin.top + elementOrigin.bottom) / 2f * dest.height(); double a = Math.toRadians(-el.rot); float ddx = px - ocx, ddy = py - ocy; px = ocx + (float) (ddx * Math.cos(a) - ddy * Math.sin(a)); py = ocy + (float) (ddx * Math.sin(a) + ddy * Math.cos(a)); }
+                float nx = Math.max(0f, Math.min(1f, (px - dest.left) / dest.width())), ny = Math.max(0f, Math.min(1f, (py - dest.top) / dest.height()));
+                el.left = elementOrigin.left; el.right = elementOrigin.right; el.top = elementOrigin.top; el.bottom = elementOrigin.bottom; el.stretch = true;
+                if (elementDrag == 8) el.left = Math.min(nx, elementOrigin.right - .04f); else if (elementDrag == 9) el.right = Math.max(nx, elementOrigin.left + .04f);
+                else if (elementDrag == 10) el.top = Math.min(ny, elementOrigin.bottom - .03f); else el.bottom = Math.max(ny, elementOrigin.top + .03f);
+                invalidate(); return true;
             }
             if (elementDrag == 1) {
                 float left = Math.max(0f, Math.min(1f - w, elementOrigin.left + dx)), top = Math.max(0f, Math.min(1f - h, elementOrigin.top + dy));

@@ -43,7 +43,10 @@ final class AnchoredMenu {
     private AnchoredMenu() {}
 
     /** @param above true to place the card right above the anchor (toolbar menus), false to drop it below the anchor. */
-    static PopupWindow show(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts) {
+    static PopupWindow show(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts) { return show(context, anchor, above, rows, shortcuts, null); }
+
+    /** @param avoid screen rectangle the card must not cover (e.g. the selected text); the card goes below, above, beside it, whichever fits. */
+    static PopupWindow show(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid) {
         final float density = context.getResources().getDisplayMetrics().density;
         final int screenW = context.getResources().getDisplayMetrics().widthPixels, screenH = context.getResources().getDisplayMetrics().heightPixels;
         final PopupWindow[] holder = new PopupWindow[1];
@@ -85,6 +88,24 @@ final class AnchoredMenu {
         x = Math.max(margin, Math.min(screenW - w - margin, x));
         int y = above ? at[1] - h - gap : at[1] + anchor.getHeight() + gap;
         y = Math.max(margin, Math.min(screenH - h - margin, y));
+        if (avoid != null) {
+            int topLimit = Math.round(24 * density);
+            int[][] tries = {
+                {avoid.centerX() - w / 2, avoid.bottom + gap}, {avoid.centerX() - w / 2, avoid.top - h - gap},
+                {avoid.right + gap, avoid.centerY() - h / 2}, {avoid.left - w - gap, avoid.centerY() - h / 2}};
+            boolean placed = false;
+            for (int[] t : tries) {
+                int tx = Math.max(margin, Math.min(screenW - w - margin, t[0])), ty = t[1];
+                if (ty < topLimit || ty + h > screenH - margin) { if (t == tries[2] || t == tries[3]) ty = Math.max(topLimit, Math.min(screenH - h - margin, ty)); else continue; }
+                if (tx + w + gap / 2 <= avoid.left || tx >= avoid.right + gap / 2 || ty + h + gap / 2 <= avoid.top || ty >= avoid.bottom + gap / 2) { x = tx; y = ty; placed = true; break; }
+            }
+            if (!placed) {
+                // nothing fits without a cover: dock at the screen edge that hides the least of the selection
+                int topY = topLimit, bottomY = screenH - h - margin;
+                int coverTop = Math.max(0, Math.min(topY + h, avoid.bottom) - Math.max(topY, avoid.top)), coverBottom = Math.max(0, Math.min(bottomY + h, avoid.bottom) - Math.max(bottomY, avoid.top));
+                y = coverTop <= coverBottom ? topY : bottomY; x = Math.max(margin, Math.min(screenW - w - margin, avoid.centerX() - w / 2));
+            }
+        }
         window.showAtLocation(anchor.getRootView(), Gravity.TOP | Gravity.START, x, y);
         return window;
     }

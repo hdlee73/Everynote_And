@@ -74,7 +74,7 @@ final class AnnotationPainter {
                 File file=new File(new File(context.getFilesDir(),"images"),e.asset);Bitmap image=image(file);
                 if(image!=null){
                     float scale=Math.min(b.width()/image.getWidth(),b.height()/image.getHeight());
-                    RectF fitted=new RectF(b.centerX()-image.getWidth()*scale/2,b.centerY()-image.getHeight()*scale/2,b.centerX()+image.getWidth()*scale/2,b.centerY()+image.getHeight()*scale/2);
+                    RectF fitted=e.stretch?b:new RectF(b.centerX()-image.getWidth()*scale/2,b.centerY()-image.getHeight()*scale/2,b.centerX()+image.getWidth()*scale/2,b.centerY()+image.getHeight()*scale/2);
                     c.drawBitmap(image,null,fitted,new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG));
                 }
             }else if(e.kind.equals("sticker")){
