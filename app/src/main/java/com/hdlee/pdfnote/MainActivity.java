@@ -1791,22 +1791,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private static final int[] PAPER_COLORS={0xFFFFF3A6,0xFFFFD6E0,0xFFCFE8FF,0xFFD5F5D0,0xFFFFE0B8,0xFFE6D9FF,0xFFFFFFFF};
     /** Action sheet: rounded white list of centered blue rows plus a separate Cancel card (checked row is bold with a check). */
     private Dialog showActionSheet(String title,String[] labels,int checked,java.util.function.IntConsumer pick){
-        final Dialog dialog=new Dialog(this,R.style.SheetDialog);
-        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setTag("action_sheet");root.setPadding(dp(10),0,dp(10),dp(12));
-        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);list.setBackground(round(Color.WHITE,14));
-        if(title!=null){TextView t=new TextView(this);t.setText(title);t.setTextSize(13);t.setTextColor(0xFF8E8E93);t.setGravity(Gravity.CENTER);t.setPadding(dp(16),dp(14),dp(16),dp(12));list.addView(t,new LinearLayout.LayoutParams(-1,-2));}
-        for(int i=0;i<labels.length;i++){
-            final int index=i;
-            if(i>0||title!=null){View line=new View(this);line.setBackgroundColor(0xFFE5E5EA);list.addView(line,new LinearLayout.LayoutParams(-1,Math.max(1,dp(1)/2)));}
-            TextView row=new TextView(this);row.setText(i==checked?Glyph.check(this,ACCENT,labels[i]):labels[i]);row.setTextSize(18);row.setTextColor(ACCENT);row.setGravity(Gravity.CENTER);if(i==checked)row.setTypeface(Typeface.DEFAULT_BOLD);row.setContentDescription(labels[i]);
-            row.setOnClickListener(v->{dialog.dismiss();pick.accept(index);});list.addView(row,new LinearLayout.LayoutParams(-1,dp(54)));
-        }
-        root.addView(list,new LinearLayout.LayoutParams(-1,-2));
-        TextView cancel=new TextView(this);cancel.setText("취소");cancel.setTextSize(18);cancel.setTextColor(ACCENT);cancel.setTypeface(Typeface.DEFAULT_BOLD);cancel.setGravity(Gravity.CENTER);cancel.setBackground(round(Color.WHITE,14));cancel.setOnClickListener(v->dialog.dismiss());
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,dp(54));cp.topMargin=dp(8);root.addView(cancel,cp);
-        dialog.setContentView(root);dialog.setCanceledOnTouchOutside(true);dialog.show();
-        Window window=dialog.getWindow();if(window!=null){window.setGravity(Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels,dp(480)),ViewGroup.LayoutParams.WRAP_CONTENT);}
-        return dialog;
+        AlertDialog.Builder builder=new AlertDialog.Builder(this).setTitle(title);
+        if(checked>=0)builder.setSingleChoiceItems(labels,checked,(d,index)->{d.dismiss();pick.accept(index);});else builder.setItems(labels,(d,index)->pick.accept(index));
+        return builder.show();
     }
     /** Centered editor card: title, rounded field, optional sticky-note style controls, and an inline button row. */
     private Dialog showMemoEditor(String title,AnnotationStore.Mark mark,String saveLabel,java.util.function.Consumer<String> onSave,String dangerLabel,Runnable onDanger,String extraLabel,Runnable onExtra){
