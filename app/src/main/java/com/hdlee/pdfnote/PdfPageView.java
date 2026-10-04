@@ -307,7 +307,7 @@ final class PdfPageView extends View {
     @Override public boolean onGenericMotionEvent(MotionEvent e) {
         if (e.getActionMasked() == MotionEvent.ACTION_SCROLL && (e.getSource() & android.view.InputDevice.SOURCE_CLASS_POINTER) != 0 && bitmap != null) {
             float v = e.getAxisValue(MotionEvent.AXIS_VSCROLL), h = e.getAxisValue(MotionEvent.AXIS_HSCROLL);
-            if (e.isCtrlPressed() && v != 0f) { setZoom(scale * (v > 0 ? 1.15f : 1f / 1.15f)); return true; }
+            if (((e.getMetaState() & android.view.KeyEvent.META_CTRL_ON) != 0) && v != 0f) { setZoom(scale * (v > 0 ? 1.15f : 1f / 1.15f)); return true; }
             if (scale > 1f) { panY += v * 56f * getResources().getDisplayMetrics().density; panX += h * 56f * getResources().getDisplayMetrics().density; clampPan(); invalidate(); return true; }
             float d = Math.abs(v) >= Math.abs(h) ? v : h; long now = e.getEventTime();
             if (d != 0f && now - lastWheelTurn > 380) { lastWheelTurn = now; listener.onPageSwipe(d < 0 ? 1 : -1); }
