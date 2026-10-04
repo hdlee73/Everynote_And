@@ -143,7 +143,11 @@ final class AnnotationPainter {
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
         for(AnnotationStore.Mark m:store.marks)if(m.page==page){
             RectF b=new RectF(d.left+m.left*d.width(),d.top+m.top*d.height(),d.left+m.right*d.width(),d.top+m.bottom*d.height());
-            if(!m.noteOnly){p.setColor(m.color);c.drawRect(b,p);}
+            if(!m.noteOnly&&m.path!=null&&m.thick>0){
+                Paint hp=new Paint(Paint.ANTI_ALIAS_FLAG);hp.setColor(m.color|0xFF000000);hp.setStyle(Paint.Style.STROKE);hp.setStrokeCap(Paint.Cap.ROUND);hp.setStrokeJoin(Paint.Join.ROUND);hp.setStrokeWidth(Math.max(2f,m.thick*d.height()));
+                android.graphics.Path line=new android.graphics.Path();for(int i=0;i+1<m.path.length;i+=2){float x=d.left+m.path[i]*d.width(),y=d.top+m.path[i+1]*d.height();if(i==0)line.moveTo(x,y);else line.lineTo(x,y);}
+                int save=c.saveLayerAlpha(d.left,d.top,d.right,d.bottom,Math.max(8,Color.alpha(m.color)));c.drawPath(line,hp);c.restoreToCount(save);
+            }else if(!m.noteOnly){p.setColor(m.color);c.drawRect(b,p);}
             if(m.visible&&m.note!=null&&!m.note.isEmpty()){
                 RectF note=new RectF(b.right,b.top,Math.min(d.right,b.right+d.width()*.35f),Math.min(d.bottom,b.top+d.height()*.12f));
                 p.setColor(0xFFFFF7D6);c.drawRect(note,p);text(c,m.minimized?"메모":m.note,note,d.width()*.023f,0xFF1C1C1E);

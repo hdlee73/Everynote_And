@@ -270,10 +270,22 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         box.addView(opacityBar(()->Color.alpha(inkColor),a->{inkColor=(a<<24)|(inkColor&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();}));
         AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box),AnchoredMenu.Row.divider(),new AnchoredMenu.Row("직선",R.drawable.ic_line,()->setInkMode(3)).selected(inkMode==3).tint(inkColor|0xFF000000),new AnchoredMenu.Row("손가락 필기",R.drawable.ic_ink,this::toggleFingerInk).tint(0xFF007AFF).selected(fingerInk)),null);
     }
+    private boolean highlightFree;private float highlightThick=0.022f;
+    private void applyHighlightStyle(){pageView.setHighlightStyle(highlightFree,highlightThick);syncOtherTools();}
     private void showHighlightMenu(View anchor){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(6),dp(2),0);
         box.addView(swatches(HIGHLIGHT_COLORS,()->selectedColor,c->{selectedColor=c;pageView.setHighlightMode(highlightMode,selectedColor);syncOtherTools();updateInkButton();},30,2));
-        AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box)),null);
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(8),dp(8),dp(4));
+        TextView label=new TextView(this);label.setTextSize(12);label.setTextColor(0xFF8E8E93);label.setText("굵기 "+Math.round(highlightThick*1000f));row.addView(label,new LinearLayout.LayoutParams(dp(72),-2));
+        android.widget.SeekBar bar=new android.widget.SeekBar(this);bar.setMax(30);bar.setProgress(Math.round((highlightThick-.008f)/.0024f));
+        bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            @Override public void onProgressChanged(android.widget.SeekBar b,int value,boolean user){float t=.008f+value*.0024f;label.setText("굵기 "+Math.round(t*1000f));if(user){highlightThick=t;applyHighlightStyle();}}
+            @Override public void onStartTrackingTouch(android.widget.SeekBar b){}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar b){}});
+        row.addView(bar,new LinearLayout.LayoutParams(0,dp(32),1));box.addView(row);
+        AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box),AnchoredMenu.Row.divider(),
+            new AnchoredMenu.Row("직선",R.drawable.ic_line,()->{highlightFree=false;applyHighlightStyle();}).selected(!highlightFree).tint(selectedColor|0xFF000000),
+            new AnchoredMenu.Row("자유형",R.drawable.ic_ink,()->{highlightFree=true;applyHighlightStyle();}).selected(highlightFree).tint(selectedColor|0xFF000000)),null);
     }
     private void showViewMenu(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
@@ -337,9 +349,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             public void status(String text){status.setText(text);}
             public void failure(String reason){hwpConversion=null;officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){new AlertDialog.Builder(MainActivity.this).setTitle("한글 문서 변환 실패").setMessage("PDF 변환을 완료하지 못했습니다.\n\n"+reason).setPositiveButton("다른 방법으로 열기",(d,w)->offerOfficeImport(source,name)).setNegativeButton("닫기",null).show();}}
             public void success(File pdf){
-                hwpConversion=null;status.setText("문서함에 저장하는 중");dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
-                new Thread(()->{try{Uri saved=Uri.fromFile(importConverted(pdf,name));runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast("문서함에 PDF로 변환해 저장했습니다");}});}
-                    catch(Exception e){runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed())toast("PDF 저장 실패: "+e.getMessage());});}finally{pdf.delete();}},"hwp-save").start();
+                hwpConversion=null;dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
+                java.util.function.Consumer<Boolean> save=split->{status.setText("문서함에 저장하는 중");
+                    new Thread(()->{File use=pdf;try{if(split){File cut=File.createTempFile("hwp-split-",".pdf",getCacheDir());try{HwpConversion.splitSpreads(MainActivity.this,pdf,cut);use=cut;}catch(Exception e){cut.delete();}}
+                        Uri saved=Uri.fromFile(importConverted(use,name));runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast(split?"두 쪽을 한 쪽씩 나누어 저장했습니다":"문서함에 PDF로 변환해 저장했습니다");}});}
+                    catch(Exception e){runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed())toast("PDF 저장 실패: "+e.getMessage());});}finally{pdf.delete();if(use!=pdf)use.delete();}},"hwp-save").start();};
+                new Thread(()->{boolean spread=HwpConversion.looksLikeSpread(MainActivity.this,pdf);runOnUiThread(()->{
+                    if(!spread||isFinishing()||isDestroyed()){save.accept(false);return;}
+                    new AlertDialog.Builder(MainActivity.this).setTitle("두 쪽 보기 문서").setMessage("가로로 넓은 면에 두 쪽이 나란히 들어 있는 문서로 보입니다. 한 쪽씩 나누어 열까요?").setCancelable(false).setPositiveButton("한 쪽씩 나누기",(d,w)->save.accept(true)).setNegativeButton("그대로 열기",(d,w)->save.accept(false)).show();});},"hwp-check").start();
             }
         });
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{if(hwpConversion!=null)hwpConversion.cancel();hwpConversion=null;officeConverting=false;dialog.dismiss();});
@@ -479,7 +496,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void loadViewText(PdfPageView view){List<PdfPageView.TextRegion> cached=activeSession.textRegions.get(view.getPageNumber());if(cached!=null)view.setTextRegions(cached,false);else view.post(()->recognizeViewText(view,false));}
     private void syncOtherTools(){if(firstPageView!=null&&secondPageView!=null){PdfPageView other=pageView==firstPageView?secondPageView:firstPageView;other.copyToolsFrom(pageView);}}
     private void toggleTwoPage(){twoPage=!twoPage;recentPrefs.edit().putBoolean("two_page",twoPage).apply();if(renderer!=null)showPage(currentPage);else secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);toast(twoPage?"두 쪽 보기 · 각 페이지를 터치해 필기하세요":"한 쪽 보기");}
-    private void toggleHighlight(){if(renderer==null)return;highlightMode=!highlightMode;memoMode=outlineMode=false;stopInk();updateToolStates();pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setHighlightMode(highlightMode,selectedColor);toast(highlightMode?"문장을 따라 좌우로 드래그하세요":"하이라이트를 종료했습니다");}
+    private void toggleHighlight(){if(renderer==null)return;highlightMode=!highlightMode;memoMode=outlineMode=false;stopInk();updateToolStates();pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setHighlightMode(highlightMode,selectedColor);toast(highlightMode?(highlightFree?"원하는 모양대로 그리세요":"문장을 따라 좌우로 드래그하세요"):"하이라이트를 종료했습니다");}
     private void toggleMemoMode(){placementKind="";if(renderer==null)return;memoMode=!memoMode;highlightMode=outlineMode=false;stopInk();updateToolStates();pageView.setHighlightMode(false,selectedColor);pageView.setOutlineMode(false);pageView.setMemoMode(memoMode);toast(memoMode?"메모를 놓을 위치를 탭하세요":"메모 추가를 종료했습니다");}
     private void toggleOutlineMode(){if(renderer==null)return;outlineMode=!outlineMode;highlightMode=memoMode=false;stopInk();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(outlineMode);updateToolStates();toast(outlineMode?"개요로 저장할 정확한 위치를 탭하세요":"개요 지점 선택을 종료했습니다");}
     private void paintTool(ImageButton button,boolean on,int background,int foreground){if(button==null)return;button.setColorFilter(on?foreground:baseTint.containsKey(button)?baseTint.get(button):NAVY);button.setBackground(on?round(background,22):round(Color.TRANSPARENT,22));}
@@ -2160,7 +2177,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
          "올가미|영역을 그려 필기를 선택하고 옮기거나 지웁니다. 올가미 모양은 도구에서 바꿀 수 있습니다."},
         {"6. 하이라이트",
          "만드는 법|하이라이트 아이콘을 켜고 글자를 드래그하거나, 글자를 선택한 뒤 팝업의 ‘하이라이트’를 누릅니다.",
-         "색·투명도|하이라이트 아이콘을 한 번 더 누르면 색을 고를 수 있고, 무지개 칩에서 투명도까지 조절합니다.",
+         "색·모양·굵기|하이라이트 아이콘을 한 번 더 누르면 색, 굵기 막대, 모양(직선 / 자유형)을 고를 수 있습니다. 직선은 좌우로 끌어 한 줄을 칠하고, 자유형은 손가락이나 펜으로 원하는 모양대로 그립니다.",
          "삭제|지우개로 문지르면 지워집니다. 하이라이트는 개요 목록에 나타나지 않습니다(메모가 붙은 것만 ‘메모’ 목록에 표시됩니다)."},
         {"7. 텍스트 상자",
          "넣기|읽기 모드 하단의 필기 아이콘 옆 T 아이콘을 누르고 문서를 탭하면 입력할 수 있습니다. 입력 중에는 한 줄짜리 서식 막대가 글상자 위에 붙고, ‘Aa’를 누르면 정렬(왼쪽·가운데·오른쪽) · 밑줄 · 취소선 · 글머리 기호 · 번호 매기기 · 체크리스트와 글꼴 · 색이 펼쳐집니다. 목록 줄에서 Enter를 누르면 다음 항목이 이어지고, 빈 항목에서 Enter를 누르면 목록이 끝납니다. 체크리스트 버튼을 한 번 더 누르면 ☑ 로 바뀌고, 또 누르면 해제됩니다. 키보드가 올라와도 페이지 크기는 줄지 않습니다.",
