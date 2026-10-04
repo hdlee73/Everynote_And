@@ -28,10 +28,11 @@ final class AnnotationStore {
         int paper = 0xFFFFF3A6, fontSp = 13, boxSize = 1;
         /** Own box size in dp (0 = use {@link #boxSize}); set by dragging the corner handle of a selected memo. */
         float boxW, boxH;
+        float rot;
 
         JSONObject toJson() throws JSONException {
             JSONObject o = new JSONObject();
-            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize).put("boxW", boxW).put("boxH", boxH);
+            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize).put("boxW", boxW).put("boxH", boxH).put("rot", rot);
             o.put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom)
                     .put("color", color).put("note", note == null ? "" : note)
@@ -57,6 +58,7 @@ final class AnnotationStore {
             m.boxSize = Math.max(0, Math.min(2, o.optInt("boxSize", 1)));
             m.boxW = (float) Math.max(0, Math.min(800, o.optDouble("boxW", 0)));
             m.boxH = (float) Math.max(0, Math.min(1200, o.optDouble("boxH", 0)));
+            m.rot = (float) o.optDouble("rot", 0);
             return m;
         }
     }
@@ -103,9 +105,10 @@ final class AnnotationStore {
         String source, translated;
         boolean visible = true;
         boolean minimized;
+        float boxW, boxH, rot;
 
         JSONObject toJson() throws JSONException {
-            return new JSONObject().put("page", page).put("left", left).put("top", top)
+            return new JSONObject().put("boxW", boxW).put("boxH", boxH).put("rot", rot).put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom).put("source", source)
                     .put("translated", translated).put("visible", visible)
                     .put("minimized", minimized);
@@ -116,7 +119,7 @@ final class AnnotationStore {
             n.page=o.optInt("page"); n.left=(float)o.optDouble("left"); n.top=(float)o.optDouble("top");
             n.right=(float)o.optDouble("right"); n.bottom=(float)o.optDouble("bottom");
             n.source=o.optString("source",""); n.translated=o.optString("translated","");
-            n.visible=o.optBoolean("visible",true); n.minimized=o.optBoolean("minimized",false); return n;
+            n.visible=o.optBoolean("visible",true); n.minimized=o.optBoolean("minimized",false); n.boxW=(float)o.optDouble("boxW",0); n.boxH=(float)o.optDouble("boxH",0); n.rot=(float)o.optDouble("rot",0); return n;
         }
     }
 
@@ -152,6 +155,11 @@ final class AnnotationStore {
         int color = DEFAULT_TEXT_COLOR;
         String font = "sans";
         boolean bold, italic;
+        /** Typing boxes: paragraph alignment (0 left, 1 centre, 2 right), underline and strike-through. */
+        int align;
+        boolean underline, strike;
+        /** Pictures: stretched to fill the box (width and height changed independently) instead of keeping the original ratio. */
+        boolean stretch;
         /** Clockwise rotation in degrees around the box centre (pictures, stickers, shapes and tables). */
         float rot;
 
@@ -159,7 +167,7 @@ final class AnnotationStore {
             return new JSONObject().put("rot", rot).put("page", page).put("kind", kind).put("text", text).put("asset", asset)
                     .put("left", left).put("top", top).put("right", right).put("bottom", bottom)
                     .put("textSize", textSize).put("color", color).put("font", font)
-                    .put("bold", bold).put("italic", italic);
+                    .put("bold", bold).put("italic", italic).put("align", align).put("underline", underline).put("strike", strike).put("stretch", stretch);
         }
 
         static PageElement fromJson(JSONObject o) throws JSONException {
@@ -179,6 +187,10 @@ final class AnnotationStore {
             if (!FONTS.contains(e.font)) e.font = "sans";
             e.bold = o.optBoolean("bold", false);
             e.italic = o.optBoolean("italic", false);
+            e.align = Math.max(0, Math.min(2, o.optInt("align", 0)));
+            e.underline = o.optBoolean("underline", false);
+            e.strike = o.optBoolean("strike", false);
+            e.stretch = o.optBoolean("stretch", false);
             if (e.page < 0 || !Float.isFinite(e.left) || !Float.isFinite(e.top) || !Float.isFinite(e.right) || !Float.isFinite(e.bottom)
                     || e.left < 0 || e.top < 0 || e.right > 1 || e.bottom > 1 || e.left >= e.right || e.top >= e.bottom
                     || !java.util.Arrays.asList("text", "image", "link", "audio", "sticker", "video", "hyperlink", "shape", "table", "youtube").contains(e.kind)

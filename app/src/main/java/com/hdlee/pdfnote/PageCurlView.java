@@ -31,7 +31,7 @@ final class PageCurlView extends View {
 
     /** @param fixedHalf page left of the spine that stays put (null for single-page turns); the other bitmaps cover the leaf area. */
     void setup(Bitmap fixedHalf, Bitmap under, Bitmap front, Bitmap back, boolean mirrored, float spineFraction) {
-        this.fixedHalf = fixedHalf; this.under = under; this.front = front; this.back = back; this.mirrored = mirrored; this.spine = spineFraction;
+        this.fixedHalf = fixedHalf; this.under = under; this.front = front; this.back = back; this.mirrored = mirrored; this.spine = spineFraction; touched = false; touch = .88f;
     }
     void setProgress(float value) { progress = Math.max(0f, Math.min(1f, value)); invalidate(); }
     float progress() { return progress; }
@@ -47,7 +47,9 @@ final class PageCurlView extends View {
 
     private float touch = .88f;
     /** Finger height as a fraction of the page: the curl starts at the nearer corner and peels diagonally from there. */
-    void setTouch(float fraction) { float v = Math.max(0f, Math.min(1f, fraction)); if (v != touch) { touch = v; invalidate(); } }
+    void setTouch(float fraction) { float v = Math.max(0f, Math.min(1f, fraction)); if (!touched) { touched = true; grabBottom = v > .5f; } if (v != touch) { touch = v; invalidate(); } }
+    /** The corner is latched when the finger first lands; afterwards only the finger height changes the fold angle. */
+    private boolean touched, grabBottom = true;
 
     private final Path clip = new Path(), flap = new Path();
     private final Matrix reflect = new Matrix();
@@ -67,9 +69,15 @@ final class PageCurlView extends View {
 
     /** The turning leaf: the grabbed corner C goes to the finger point G, the fold is their perpendicular bisector. */
     private void drawFold(Canvas canvas, float s, float w, float h, float lw, float t) {
-        final float cy = touch > .5f ? h : 0f, dir = cy > 0f ? -1f : 1f;
+        final float cy = (touched ? grabBottom : touch > .5f) ? h : 0f, dir = cy > 0f ? -1f : 1f;
         // the lifted corner starts small and grows with the drag; the fold starts steeply diagonal and straightens as the page goes over
-        final float dx = 2.04f * lw * (float) Math.pow(t, 1.2), dy = dx * .38f * (float) Math.pow(1f - t, 1.2f) * (h / Math.max(1f, lw));
+        final float dx = 2.04f * lw * (float) Math.pow(t, 1.2);
+        float dy = dx * .38f * (float) Math.pow(1f - t, 1.2f) * (h / Math.max(1f, lw));
+        if (touched) {   // follow the finger: the higher it is lifted from the grabbed corner, the steeper the fold tilts
+            float rise = Math.max(0f, cy > 0f ? cy - touch * h : touch * h);
+            rise = Math.min(rise, Math.max(dx, .1f * w) * 2.6f);
+            dy = Math.max(dy * .3f, rise * (1f - .45f * t));
+        }
         float gx = w - dx, gy = cy + dir * dy;
         float nx = gx - w, ny = gy - cy, len = (float) Math.hypot(nx, ny);
         nx /= len; ny /= len;                                  // normal pointing from the corner toward the finger

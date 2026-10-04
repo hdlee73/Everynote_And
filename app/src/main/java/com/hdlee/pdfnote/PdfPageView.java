@@ -34,6 +34,8 @@ final class PdfPageView extends View {
         void onSelectionAdjustStarted();
         void onLassoSelectionFinished();
         void onElementTapped(AnnotationStore.PageElement element);
+        default void onZoomChanged(float scale) {}
+        default void onElementDeleteRequested(AnnotationStore.PageElement element) {}
         /** Long press on empty paper: offers to insert something there (page, normalized point, view point). */
         default void onBlankLongPress(int page, float x, float y, float viewX, float viewY) {}
     }
@@ -119,8 +121,10 @@ final class PdfPageView extends View {
         int rotSave = canvas.save(); boolean turns = AnnotationPainter.rotates(selectedElement); if (turns && selectedElement.rot != 0f) canvas.rotate(selectedElement.rot, b.centerX(), b.centerY());
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG); p.setStyle(Paint.Style.STROKE); p.setStrokeWidth(2f * density); p.setColor(0xFF007AFF); canvas.drawRect(b, p);
         if (turns) { canvas.drawLine(b.centerX(), b.top, b.centerX(), b.top - 24f * density, p); p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawCircle(b.centerX(), b.top - 28f * density, 10f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawCircle(b.centerX(), b.top - 28f * density, 10f * density, p); p.setStyle(Paint.Style.FILL); p.setTextSize(13f * density); p.setTextAlign(Paint.Align.CENTER); canvas.drawText("↻", b.centerX(), b.top - 23.5f * density, p); p.setStyle(Paint.Style.STROKE); }
+        { float dcx = b.right + 14f * density, dcy = b.top - 28f * density; p.setStyle(Paint.Style.FILL); p.setColor(0xFFFF3B30); canvas.drawCircle(dcx, dcy, 11f * density, p); p.setColor(Color.WHITE); p.setStrokeWidth(2f * density); p.setStrokeCap(Paint.Cap.ROUND); float k = 4f * density; canvas.drawLine(dcx - k, dcy - k, dcx + k, dcy + k, p); canvas.drawLine(dcx - k, dcy + k, dcx + k, dcy - k, p); p.setStrokeCap(Paint.Cap.BUTT); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); }
         float[][] corners = {{b.left, b.top}, {b.right, b.top}, {b.left, b.bottom}, {b.right, b.bottom}};
         for (float[] c : corners) { p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawCircle(c[0], c[1], 9f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawCircle(c[0], c[1], 9f * density, p); }
+        if (aspectLocked(selectedElement)) { float[][] mids = {{b.left, b.centerY()}, {b.right, b.centerY()}, {b.centerX(), b.top}, {b.centerX(), b.bottom}}; for (int i = 0; i < 4; i++) { float hw = (i < 2 ? 4f : 9f) * density, hh = (i < 2 ? 9f : 4f) * density; RectF r = new RectF(mids[i][0] - hw, mids[i][1] - hh, mids[i][0] + hw, mids[i][1] + hh); p.setStyle(Paint.Style.FILL); p.setColor(Color.WHITE); canvas.drawRoundRect(r, 4f * density, 4f * density, p); p.setStyle(Paint.Style.STROKE); p.setColor(0xFF007AFF); canvas.drawRoundRect(r, 4f * density, 4f * density, p); } }
         canvas.restoreToCount(rotSave);
     }
     private boolean handleElementGesture(MotionEvent e, RectF dest) {
@@ -131,18 +135,26 @@ final class PdfPageView extends View {
             RectF b = AnnotationPainter.box(dest, selectedElement); float reach = 24f * density; int hit = 0;
             float tx = e.getX(), ty = e.getY(); boolean turns = AnnotationPainter.rotates(selectedElement);
             if (turns && selectedElement.rot != 0f) { double a = Math.toRadians(-selectedElement.rot); float dx0 = tx - b.centerX(), dy0 = ty - b.centerY(); tx = b.centerX() + (float) (dx0 * Math.cos(a) - dy0 * Math.sin(a)); ty = b.centerY() + (float) (dx0 * Math.sin(a) + dy0 * Math.cos(a)); }
-            if (turns && Math.hypot(tx - b.centerX(), ty - (b.top - 28f * density)) <= reach) hit = 6;
+            if (Math.hypot(tx - (b.right + 14f * density), ty - (b.top - 28f * density)) <= 16f * density) hit = 7;
+            else if (turns && Math.hypot(tx - b.centerX(), ty - (b.top - 28f * density)) <= reach) hit = 6;
             else if (Math.hypot(tx - b.left, ty - b.top) <= reach) hit = 2; else if (Math.hypot(tx - b.right, ty - b.top) <= reach) hit = 3;
             else if (Math.hypot(tx - b.left, ty - b.bottom) <= reach) hit = 4; else if (Math.hypot(tx - b.right, ty - b.bottom) <= reach) hit = 5;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.left, ty - b.centerY()) <= 18f * density) hit = 8;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.right, ty - b.centerY()) <= 18f * density) hit = 9;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.centerX(), ty - b.top) <= 18f * density) hit = 10;
+            else if (aspectLocked(selectedElement) && Math.hypot(tx - b.centerX(), ty - b.bottom) <= 18f * density) hit = 11;
             else if (b.contains(tx, ty)) hit = 1;
             if (hit == 0) { selectedElement = null; invalidate(); return false; }
             if (hit > 1 && hit < 6 && !resizable(selectedElement)) hit = 1;
+            if (hit >= 8 && hit <= 11 && !resizable(selectedElement)) hit = 1;
+            if (hit == 7) { elementDrag = 7; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(true); return true; }
             listener.onSelectionAdjustStarted(); elementDrag = hit; elementMoved = false; elementStartX = e.getX(); elementStartY = e.getY();
             elementOrigin.set(selectedElement.left, selectedElement.top, selectedElement.right, selectedElement.bottom); elementRot0 = selectedElement.rot;
             getParent().requestDisallowInterceptTouchEvent(true); return true;
         }
         if (elementDrag == 0) return false;
         if (action == MotionEvent.ACTION_MOVE) {
+            if (elementDrag == 7) return true;
             float dx = (e.getX() - elementStartX) / dest.width(), dy = (e.getY() - elementStartY) / dest.height();
             if (!elementMoved && Math.hypot(e.getX() - elementStartX, e.getY() - elementStartY) < 8f * density) return true;
             elementMoved = true; AnnotationStore.PageElement el = selectedElement; float w = elementOrigin.width(), h = elementOrigin.height();
@@ -151,6 +163,15 @@ final class PdfPageView extends View {
                 float deg = (float) Math.toDegrees(Math.atan2(e.getX() - cx, -(e.getY() - cy))); if (deg < 0f) deg += 360f;
                 float snap = Math.round(deg / 15f) * 15f; if (Math.abs(snap - deg) < 4f) deg = snap % 360f;
                 el.rot = deg; invalidate(); return true;
+            }
+            if (elementDrag >= 8 && elementDrag <= 11) {
+                float px = e.getX(), py = e.getY();
+                if (el.rot != 0f && AnnotationPainter.rotates(el)) { float ocx = dest.left + (elementOrigin.left + elementOrigin.right) / 2f * dest.width(), ocy = dest.top + (elementOrigin.top + elementOrigin.bottom) / 2f * dest.height(); double a = Math.toRadians(-el.rot); float ddx = px - ocx, ddy = py - ocy; px = ocx + (float) (ddx * Math.cos(a) - ddy * Math.sin(a)); py = ocy + (float) (ddx * Math.sin(a) + ddy * Math.cos(a)); }
+                float nx = Math.max(0f, Math.min(1f, (px - dest.left) / dest.width())), ny = Math.max(0f, Math.min(1f, (py - dest.top) / dest.height()));
+                el.left = elementOrigin.left; el.right = elementOrigin.right; el.top = elementOrigin.top; el.bottom = elementOrigin.bottom; el.stretch = true;
+                if (elementDrag == 8) el.left = Math.min(nx, elementOrigin.right - .04f); else if (elementDrag == 9) el.right = Math.max(nx, elementOrigin.left + .04f);
+                else if (elementDrag == 10) el.top = Math.min(ny, elementOrigin.bottom - .03f); else el.bottom = Math.max(ny, elementOrigin.top + .03f);
+                invalidate(); return true;
             }
             if (elementDrag == 1) {
                 float left = Math.max(0f, Math.min(1f - w, elementOrigin.left + dx)), top = Math.max(0f, Math.min(1f - h, elementOrigin.top + dy));
@@ -172,7 +193,8 @@ final class PdfPageView extends View {
             invalidate(); return true;
         }
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            boolean moved = elementMoved; elementDrag = 0; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(false);
+            boolean moved = elementMoved; boolean deleting = elementDrag == 7; elementDrag = 0; elementMoved = false; getParent().requestDisallowInterceptTouchEvent(false);
+            if (deleting) { if (action == MotionEvent.ACTION_UP) { AnnotationStore.PageElement gone = selectedElement; selectedElement = null; listener.onElementDeleteRequested(gone); } invalidate(); return true; }
             if (action == MotionEvent.ACTION_CANCEL) { selectedElement.rot = elementRot0; selectedElement.left = elementOrigin.left; selectedElement.top = elementOrigin.top; selectedElement.right = elementOrigin.right; selectedElement.bottom = elementOrigin.bottom; invalidate(); }
             else if (moved) listener.onInkChanged(); else listener.onElementTapped(selectedElement);
             return true;
@@ -226,6 +248,7 @@ final class PdfPageView extends View {
                 panY = focusY - ny * size[1] - baseTop(size);
                 clampPan();
                 invalidate();
+                listener.onZoomChanged(scale);
                 return true;
             }
 
@@ -238,7 +261,7 @@ final class PdfPageView extends View {
     void showPage(Bitmap pageBitmap, int pageNumber, List<AnnotationStore.Mark> allMarks, List<AnnotationStore.InkStroke> allStrokes, List<AnnotationStore.TranslationNote> allTranslations) {
         clearLassoSelection();
         stopTextSelection();
-        noteHitBoxes.clear(); memoHitBoxes.clear(); selectedElement = null; elementDrag = 0;
+        noteHitBoxes.clear(); memoHitBoxes.clear(); selectedElement = null; selSticky = null; stDrag = 0; elementDrag = 0;
         if (bitmap != null && bitmap != pageBitmap) bitmap.recycle();
         bitmap = pageBitmap;
         page = pageNumber;
@@ -247,6 +270,7 @@ final class PdfPageView extends View {
         translations=allTranslations; textRegions.clear(); selectedTextRegions.clear(); textSelectMode=false;
         scale = 1f;
         panX = panY = 0f;
+        listener.onZoomChanged(1f);
         analyze();
         invalidate();
     }
@@ -263,6 +287,7 @@ final class PdfPageView extends View {
         translations=null; textRegions.clear(); selectedTextRegions.clear(); textSelectMode=false;
         scale = 1f;
         panX = panY = 0f;
+        listener.onZoomChanged(1f);
         invalidate();
     }
 
@@ -292,6 +317,29 @@ final class PdfPageView extends View {
         invalidate();
     }
 
+    private long lastWheelTurn;
+    /** Mouse wheel: scrolls inside a zoomed page, otherwise turns the page (up = previous, down = next). Ctrl + wheel zooms. */
+    @Override public boolean onGenericMotionEvent(MotionEvent e) {
+        if (e.getActionMasked() == MotionEvent.ACTION_SCROLL && (e.getSource() & android.view.InputDevice.SOURCE_CLASS_POINTER) != 0 && bitmap != null) {
+            float v = e.getAxisValue(MotionEvent.AXIS_VSCROLL), h = e.getAxisValue(MotionEvent.AXIS_HSCROLL);
+            if (((e.getMetaState() & android.view.KeyEvent.META_CTRL_ON) != 0) && v != 0f) { setZoom(scale * (v > 0 ? 1.15f : 1f / 1.15f)); return true; }
+            if (scale > 1f) { panY += v * 56f * getResources().getDisplayMetrics().density; panX += h * 56f * getResources().getDisplayMetrics().density; clampPan(); invalidate(); return true; }
+            float d = Math.abs(v) >= Math.abs(h) ? v : h; long now = e.getEventTime();
+            if (d != 0f && now - lastWheelTurn > 380) { lastWheelTurn = now; listener.onPageSwipe(d < 0 ? 1 : -1); }
+            return true;
+        }
+        return super.onGenericMotionEvent(e);
+    }
+    float zoom() { return scale; }
+    /** Sets the zoom (1 = whole page, up to 4) around the centre of the view; the pan is kept inside the page. */
+    void setZoom(float value) {
+        if (bitmap == null || getWidth() == 0) return;
+        RectF before = contentRect(); float fx = getWidth() / 2f, fy = getHeight() / 2f;
+        float nx = before.width() == 0 ? 0.5f : (fx - before.left) / before.width(), ny = before.height() == 0 ? 0.5f : (fy - before.top) / before.height();
+        scale = Math.max(1f, Math.min(4f, value));
+        float[] size = contentSize(); panX = fx - nx * size[0] - baseLeft(size); panY = fy - ny * size[1] - baseTop(size);
+        clampPan(); invalidate(); listener.onZoomChanged(scale);
+    }
     void focusOnPoint(float x, float y) {
         if (bitmap == null) return;
         scale = Math.max(scale, 1.7f);
@@ -371,7 +419,8 @@ final class PdfPageView extends View {
     /** Black paper with light text: the page picture is inverted (keeping hues) and dark ink is lightened. */
     void setDarkPage(boolean enabled) { darkPage = enabled; applyBackground(); invalidate(); }
     boolean isDarkPage() { return darkPage; }
-    private void applyBackground() { setBackgroundColor(darkPage ? 0xFF000000 : paperColor); }
+    /** The area around the page is a neutral grey so the sheet itself stands out from the background. */
+    private void applyBackground() { setBackgroundColor(darkPage ? 0xFF121214 : 0xFFD9DADF); }
     /** Zooms the base view onto this normalised box so margins disappear; null shows the whole page. */
     void setCrop(RectF box) {
         if (box == null || box.width() < 0.2f || box.height() < 0.2f) crop.set(0, 0, 1, 1); else crop.set(box);
@@ -413,6 +462,7 @@ final class PdfPageView extends View {
         super.onDraw(canvas);
         if (bitmap == null) return;
         RectF dest = contentRect();
+        { float d = getResources().getDisplayMetrics().density; paint.setStyle(Paint.Style.FILL); for (int i = 3; i >= 1; i--) { paint.setColor((darkPage ? 0x22000000 : 0x14000000) | 0); canvas.drawRect(dest.left - i * d, dest.top - i * d * .6f, dest.right + i * d, dest.bottom + i * d * 1.4f, paint); } }
         paint.setColor(Color.WHITE);
         if (darkPage) paint.setColor(Color.BLACK);
         canvas.drawRect(dest, paint);
@@ -435,8 +485,8 @@ final class PdfPageView extends View {
         }
         if(strokes!=null){for(AnnotationStore.InkStroke s:strokes)if(s.page==page)AnnotationPainter.stroke(canvas,dest,s);paint.setStyle(Paint.Style.FILL);}
         memoHitBoxes.clear();if(marks!=null)for(AnnotationStore.Mark m:marks)if(m.page==page&&m.visible&&(m.noteOnly||(m.note!=null&&!m.note.isEmpty())))drawMemo(canvas,dest,m);
-        drawMemoSelection(canvas);
         noteHitBoxes.clear();if(translations!=null)for(AnnotationStore.TranslationNote n:translations)if(n.page==page&&n.visible)drawTranslation(canvas,dest,n);
+        drawMemoSelection(canvas);
         if (!suppressSelection && drawing) {
             paint.setColor(highlightColor);
             float centerY = (startY + currentY) / 2f;
@@ -527,41 +577,90 @@ final class PdfPageView extends View {
         return text.toString();
     }
 
-    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){return drawSticky(canvas,dest,nx,ny,text,minimized,accent,0xFFFFF3A6,13,1,0,0);}
-    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent,int paper,int fontSp,int boxSize,float customW,float customH){
+    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){return drawSticky(canvas,dest,nx,ny,text,minimized,accent,0xFFFFF3A6,13,1,0,0,0);}
+    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent,int paper,int fontSp,int boxSize,float customW,float customH,float rot){
         float density=getResources().getDisplayMetrics().density;
         float anchorX=dest.left+nx*dest.width(),anchorY=dest.top+ny*dest.height();
         if(minimized){float r=14*density;RectF box=new RectF(anchorX-r,anchorY-r,anchorX+r,anchorY+r);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,r,paint);paint.setColor(Color.WHITE);paint.setTextSize(17*density);paint.setTextAlign(Paint.Align.CENTER);canvas.drawText("▣",anchorX,anchorY+6*density,paint);paint.setTextAlign(Paint.Align.LEFT);return box;}
         float[] boxW={150,220,300},boxH={64,96,170};float w=Math.min(boxW[boxSize]*density,dest.width()*(boxSize==2?0.7f:0.46f)),h=boxH[boxSize]*density;if(customW>0&&customH>0){w=Math.min(customW*density,dest.width()*.92f);h=customH*density;}
         float left=Math.min(dest.right-w-6*density,anchorX+8*density);if(left<dest.left)left=dest.left+6*density;
         float top=Math.max(dest.top+6*density,Math.min(dest.bottom-h-6*density,anchorY));RectF box=new RectF(left,top,left+w,top+h);
+        canvas.save();if(rot!=0)canvas.rotate(rot,box.centerX(),box.centerY());try{drawStickyBody(canvas,box,anchorX,anchorY,text,accent,paper,fontSp,density);}finally{canvas.restore();}return box;
+    }
+    private void drawStickyBody(Canvas canvas,RectF box,float anchorX,float anchorY,String text,int accent,int paper,int fontSp,float density){
         paint.setColor(paper);canvas.drawRoundRect(box,10*density,10*density,paint);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,6*density,paint);
         paint.setColor(0xFF3F3A2D);paint.setTextSize(fontSp*density);float lineHeight=fontSp*1.4f*density;float x=box.left+10*density,y=box.top+(fontSp+9)*density,max=box.width()-20*density;
-        for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=lineHeight;line=word;if(y>box.bottom-12*density)return box;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return box;}}
-        return box;
+        for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=lineHeight;line=word;if(y>box.bottom-12*density)return;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return;}}
+        return;
     }
-    private AnnotationStore.Mark selectedMemo;private int memoDrag;private float memoStartX,memoStartY,memoW0,memoH0;
-    /** A tapped memo shows a dashed frame with a round handle at its lower-right corner; dragging the handle resizes the memo. */
+    /** Selected post-it (a memo Mark or a TranslationNote): shape-like frame with 4 corner handles, rotate knob, delete badge; body drag moves it. */
+    private Object selSticky;private int stDrag;private boolean stMoved;private float stStartX,stStartY,stW0,stH0,stAx0,stAy0;
+    private RectF stBox(Object o){return o instanceof AnnotationStore.Mark?memoHitBoxes.get(o):noteHitBoxes.get(o);}
+    private float stRot(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).rot:((AnnotationStore.TranslationNote)o).rot;}
+    private boolean stMin(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).minimized:((AnnotationStore.TranslationNote)o).minimized;}
+    private int stPage(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).page:((AnnotationStore.TranslationNote)o).page;}
+    private float stAx(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).right:((AnnotationStore.TranslationNote)o).right;}
+    private float stAy(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).top:((AnnotationStore.TranslationNote)o).top;}
+    private void stSetAnchor(Object o,float x,float y){x=Math.max(0f,Math.min(1f,x));y=Math.max(0f,Math.min(1f,y));if(o instanceof AnnotationStore.Mark){((AnnotationStore.Mark)o).right=x;((AnnotationStore.Mark)o).top=y;}else{((AnnotationStore.TranslationNote)o).right=x;((AnnotationStore.TranslationNote)o).top=y;}}
+    private void stSetSize(Object o,float w,float h){if(o instanceof AnnotationStore.Mark){((AnnotationStore.Mark)o).boxW=w;((AnnotationStore.Mark)o).boxH=h;}else{((AnnotationStore.TranslationNote)o).boxW=w;((AnnotationStore.TranslationNote)o).boxH=h;}}
+    private void stSetRot(Object o,float r){if(o instanceof AnnotationStore.Mark)((AnnotationStore.Mark)o).rot=r;else((AnnotationStore.TranslationNote)o).rot=r;}
+    private float[] unrotate(RectF b,float rot,float x,float y){double r=Math.toRadians(-rot);float dx=x-b.centerX(),dy=y-b.centerY();return new float[]{(float)(b.centerX()+dx*Math.cos(r)-dy*Math.sin(r)),(float)(b.centerY()+dx*Math.sin(r)+dy*Math.cos(r))};}
+    private Object stickyAt(float x,float y){
+        for(AnnotationStore.TranslationNote n:noteHitBoxes.keySet()){RectF b=noteHitBoxes.get(n);if(b!=null){float[] q=n.minimized?new float[]{x,y}:unrotate(b,n.rot,x,y);if(b.contains(q[0],q[1]))return n;}}
+        for(AnnotationStore.Mark m:memoHitBoxes.keySet()){RectF b=memoHitBoxes.get(m);if(b!=null){float[] q=m.minimized?new float[]{x,y}:unrotate(b,m.rot,x,y);if(b.contains(q[0],q[1]))return m;}}
+        return null;
+    }
     private void drawMemoSelection(Canvas canvas){
-        if(selectedMemo==null)return;RectF b=memoHitBoxes.get(selectedMemo);if(b==null||selectedMemo.page!=page||selectedMemo.minimized){return;}
-        float d=getResources().getDisplayMetrics().density;Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2*d);p.setColor(0xFF007AFF);p.setPathEffect(new DashPathEffect(new float[]{8*d,5*d},0));canvas.drawRoundRect(b,10*d,10*d,p);p.setPathEffect(null);
-        p.setStyle(Paint.Style.FILL);p.setColor(Color.WHITE);canvas.drawCircle(b.right,b.bottom,10*d,p);p.setStyle(Paint.Style.STROKE);p.setColor(0xFF007AFF);canvas.drawCircle(b.right,b.bottom,10*d,p);
-        p.setStyle(Paint.Style.FILL);p.setTextSize(11*d);p.setTextAlign(Paint.Align.CENTER);canvas.drawText("↘",b.right,b.bottom+4*d,p);
+        if(selSticky==null)return;RectF b=stBox(selSticky);if(b==null||stPage(selSticky)!=page||stMin(selSticky)){return;}
+        float d=getResources().getDisplayMetrics().density;Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);canvas.save();canvas.rotate(stRot(selSticky),b.centerX(),b.centerY());
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2*d);p.setColor(0xFF007AFF);p.setPathEffect(new DashPathEffect(new float[]{8*d,5*d},0));canvas.drawRoundRect(b,10*d,10*d,p);p.setPathEffect(null);
+        canvas.drawLine(b.centerX(),b.top,b.centerX(),b.top-28*d,p);
+        float[][] cs={{b.left,b.top},{b.right,b.top},{b.left,b.bottom},{b.right,b.bottom}};
+        for(float[] c:cs){p.setStyle(Paint.Style.FILL);p.setColor(Color.WHITE);canvas.drawCircle(c[0],c[1],8*d,p);p.setStyle(Paint.Style.STROKE);p.setColor(0xFF007AFF);canvas.drawCircle(c[0],c[1],8*d,p);}
+        p.setStyle(Paint.Style.FILL);p.setColor(0xFF007AFF);canvas.drawCircle(b.centerX(),b.top-28*d,12*d,p);p.setColor(Color.WHITE);p.setTextSize(15*d);p.setTextAlign(Paint.Align.CENTER);canvas.drawText("↻",b.centerX(),b.top-28*d+5*d,p);
+        p.setColor(0xFFFF3B30);canvas.drawCircle(b.right+14*d,b.top-28*d,12*d,p);p.setColor(Color.WHITE);p.setTextSize(16*d);canvas.drawText("×",b.right+14*d,b.top-28*d+5.5f*d,p);
+        canvas.restore();
     }
     private boolean handleMemoGesture(MotionEvent e,RectF dest){
-        if(selectedMemo==null)return false;RectF b=memoHitBoxes.get(selectedMemo);if(b==null||selectedMemo.page!=page||selectedMemo.minimized){selectedMemo=null;return false;}
-        int action=e.getActionMasked();float density=getResources().getDisplayMetrics().density;
+        if(selSticky==null)return false;RectF b=stBox(selSticky);if(b==null||stPage(selSticky)!=page||stMin(selSticky)){selSticky=null;return false;}
+        int action=e.getActionMasked();float d=getResources().getDisplayMetrics().density;
         if(action==MotionEvent.ACTION_DOWN&&e.getPointerCount()==1&&!isStylus(e)){
-            if(Math.hypot(e.getX()-b.right,e.getY()-b.bottom)<=26*density){memoDrag=1;memoStartX=e.getX();memoStartY=e.getY();memoW0=b.width()/density;memoH0=b.height()/density;listener.onSelectionAdjustStarted();getParent().requestDisallowInterceptTouchEvent(true);return true;}
-            return false;
+            float rot=stRot(selSticky);float[] q=unrotate(b,rot,e.getX(),e.getY());float x=q[0],y=q[1];int hit=0;
+            if(Math.hypot(x-(b.right+14*d),y-(b.top-28*d))<=20*d)hit=7;
+            else if(Math.hypot(x-b.centerX(),y-(b.top-28*d))<=20*d)hit=5;
+            else if(Math.hypot(x-b.left,y-b.top)<=22*d)hit=1;else if(Math.hypot(x-b.right,y-b.top)<=22*d)hit=2;else if(Math.hypot(x-b.left,y-b.bottom)<=22*d)hit=3;else if(Math.hypot(x-b.right,y-b.bottom)<=22*d)hit=4;
+            else if(b.contains(x,y))hit=6;
+            if(hit==0)return false;
+            stDrag=hit;stMoved=false;stStartX=e.getX();stStartY=e.getY();stW0=b.width()/d;stH0=b.height()/d;stAx0=stAx(selSticky);stAy0=stAy(selSticky);
+            if(hit!=7)listener.onSelectionAdjustStarted();getParent().requestDisallowInterceptTouchEvent(true);return true;
         }
-        if(memoDrag==0)return false;
-        if(action==MotionEvent.ACTION_MOVE){float w=memoW0+(e.getX()-memoStartX)/density,h=memoH0+(e.getY()-memoStartY)/density;selectedMemo.boxW=Math.max(90f,Math.min(Math.min(560f,dest.width()/density*.92f),w));selectedMemo.boxH=Math.max(48f,Math.min(700f,h));invalidate();return true;}
-        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){memoDrag=0;getParent().requestDisallowInterceptTouchEvent(false);if(action==MotionEvent.ACTION_UP)listener.onInkChanged();invalidate();return true;}
+        if(stDrag==0)return false;
+        float rot=stRot(selSticky);
+        if(action==MotionEvent.ACTION_MOVE){
+            float dx=e.getX()-stStartX,dy=e.getY()-stStartY;
+            if(stDrag==6){if(!stMoved&&Math.hypot(dx,dy)<touchSlop())return true;stMoved=true;stSetAnchor(selSticky,stAx0+dx/dest.width(),stAy0+dy/dest.height());invalidate();return true;}
+            if(stDrag==5){double ang=Math.toDegrees(Math.atan2(e.getY()-b.centerY(),e.getX()-b.centerX()))+90;float r=(float)((ang%360+360)%360);for(int k=0;k<=360;k+=90)if(Math.abs(r-k)<4)r=k%360;stSetRot(selSticky,r);stMoved=true;invalidate();return true;}
+            if(stDrag>=1&&stDrag<=4){
+                double rr=Math.toRadians(-rot);float lx=(float)(dx*Math.cos(rr)-dy*Math.sin(rr))/d,ly=(float)(dx*Math.sin(rr)+dy*Math.cos(rr))/d;
+                boolean left=stDrag==1||stDrag==3,top=stDrag==1||stDrag==2;float maxW=Math.min(560f,dest.width()/d*.92f);
+                float w=Math.max(90f,Math.min(maxW,left?stW0-lx:stW0+lx)),h=Math.max(48f,Math.min(700f,top?stH0-ly:stH0+ly));
+                stSetSize(selSticky,w,h);stSetAnchor(selSticky,stAx0+(left?(stW0-w)*d/dest.width():0),stAy0+(top?(stH0-h)*d/dest.height():0));stMoved=true;invalidate();return true;
+            }
+            return true;
+        }
+        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
+            int mode=stDrag;stDrag=0;getParent().requestDisallowInterceptTouchEvent(false);Object o=selSticky;
+            if(action==MotionEvent.ACTION_UP){
+                if(mode==7){selSticky=null;if(o instanceof AnnotationStore.Mark&&marks!=null)marks.remove(o);else if(translations!=null)translations.remove(o);listener.onInkChanged();}
+                else if(mode==6&&!stMoved){selSticky=null;if(o instanceof AnnotationStore.Mark)listener.onMarkTapped((AnnotationStore.Mark)o);else listener.onTranslationTapped((AnnotationStore.TranslationNote)o);}
+                else if(stMoved)listener.onInkChanged();
+            }
+            invalidate();return true;
+        }
         return true;
     }
-    private void drawMemo(Canvas canvas,RectF dest,AnnotationStore.Mark m){memoHitBoxes.put(m,drawSticky(canvas,dest,m.right,m.top,m.note,m.minimized,0xFFFFB300,m.paper,m.fontSp,m.boxSize,m.boxW,m.boxH));}
-    private void drawTranslation(Canvas canvas,RectF dest,AnnotationStore.TranslationNote n){noteHitBoxes.put(n,drawSticky(canvas,dest,n.right,n.top,n.translated,n.minimized,0xFF7C3AED));}
+    private void drawMemo(Canvas canvas,RectF dest,AnnotationStore.Mark m){memoHitBoxes.put(m,drawSticky(canvas,dest,m.right,m.top,m.note,m.minimized,0xFFFFB300,m.paper,m.fontSp,m.boxSize,m.boxW,m.boxH,m.rot));}
+    private void drawTranslation(Canvas canvas,RectF dest,AnnotationStore.TranslationNote n){noteHitBoxes.put(n,drawSticky(canvas,dest,n.right,n.top,n.translated,n.minimized,0xFF7C3AED,0xFFFFF3A6,13,1,n.boxW,n.boxH,n.rot));}
 
     private float strokeWidth(float base,float pressure,RectF dest){float p=Math.max(0.12f,Math.min(1f,pressure));return Math.max(1.5f,base*dest.width()*(0.45f+p*1.15f));}
 
@@ -729,7 +828,7 @@ final class PdfPageView extends View {
             if (scalingOccurred) {
                 panning = false; return true;
             }
-            if(Math.hypot(e.getX()-startX,e.getY()-startY)<20){for(AnnotationStore.TranslationNote n:noteHitBoxes.keySet()){RectF b=noteHitBoxes.get(n);if(b!=null&&b.contains(e.getX(),e.getY())){listener.onTranslationTapped(n);return true;}}for(AnnotationStore.Mark m:memoHitBoxes.keySet()){RectF b=memoHitBoxes.get(m);if(b!=null&&b.contains(e.getX(),e.getY())){if(!m.minimized&&m!=selectedMemo){selectedMemo=m;invalidate();return true;}selectedMemo=null;listener.onMarkTapped(m);return true;}}if(selectedMemo!=null){selectedMemo=null;invalidate();}}
+            if(Math.hypot(e.getX()-startX,e.getY()-startY)<20){Object hitSticky=stickyAt(e.getX(),e.getY());if(hitSticky!=null){if(!stMin(hitSticky)&&hitSticky!=selSticky){selSticky=hitSticky;selectedElement=null;invalidate();return true;}selSticky=null;if(hitSticky instanceof AnnotationStore.Mark)listener.onMarkTapped((AnnotationStore.Mark)hitSticky);else listener.onTranslationTapped((AnnotationStore.TranslationNote)hitSticky);return true;}if(selSticky!=null){selSticky=null;invalidate();}}
             if (drawing) {
                 currentX = Math.max(dest.left, Math.min(dest.right, e.getX()));
                 currentY = Math.max(dest.top, Math.min(dest.bottom, e.getY()));
