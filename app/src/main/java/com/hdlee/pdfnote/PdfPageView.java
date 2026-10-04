@@ -261,7 +261,7 @@ final class PdfPageView extends View {
     void showPage(Bitmap pageBitmap, int pageNumber, List<AnnotationStore.Mark> allMarks, List<AnnotationStore.InkStroke> allStrokes, List<AnnotationStore.TranslationNote> allTranslations) {
         clearLassoSelection();
         stopTextSelection();
-        noteHitBoxes.clear(); memoHitBoxes.clear(); selectedElement = null; elementDrag = 0;
+        noteHitBoxes.clear(); memoHitBoxes.clear(); selectedElement = null; selSticky = null; stDrag = 0; elementDrag = 0;
         if (bitmap != null && bitmap != pageBitmap) bitmap.recycle();
         bitmap = pageBitmap;
         page = pageNumber;
@@ -485,8 +485,8 @@ final class PdfPageView extends View {
         }
         if(strokes!=null){for(AnnotationStore.InkStroke s:strokes)if(s.page==page)AnnotationPainter.stroke(canvas,dest,s);paint.setStyle(Paint.Style.FILL);}
         memoHitBoxes.clear();if(marks!=null)for(AnnotationStore.Mark m:marks)if(m.page==page&&m.visible&&(m.noteOnly||(m.note!=null&&!m.note.isEmpty())))drawMemo(canvas,dest,m);
-        drawMemoSelection(canvas);
         noteHitBoxes.clear();if(translations!=null)for(AnnotationStore.TranslationNote n:translations)if(n.page==page&&n.visible)drawTranslation(canvas,dest,n);
+        drawMemoSelection(canvas);
         if (!suppressSelection && drawing) {
             paint.setColor(highlightColor);
             float centerY = (startY + currentY) / 2f;
@@ -577,41 +577,90 @@ final class PdfPageView extends View {
         return text.toString();
     }
 
-    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){return drawSticky(canvas,dest,nx,ny,text,minimized,accent,0xFFFFF3A6,13,1,0,0);}
-    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent,int paper,int fontSp,int boxSize,float customW,float customH){
+    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent){return drawSticky(canvas,dest,nx,ny,text,minimized,accent,0xFFFFF3A6,13,1,0,0,0);}
+    private RectF drawSticky(Canvas canvas,RectF dest,float nx,float ny,String text,boolean minimized,int accent,int paper,int fontSp,int boxSize,float customW,float customH,float rot){
         float density=getResources().getDisplayMetrics().density;
         float anchorX=dest.left+nx*dest.width(),anchorY=dest.top+ny*dest.height();
         if(minimized){float r=14*density;RectF box=new RectF(anchorX-r,anchorY-r,anchorX+r,anchorY+r);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,r,paint);paint.setColor(Color.WHITE);paint.setTextSize(17*density);paint.setTextAlign(Paint.Align.CENTER);canvas.drawText("▣",anchorX,anchorY+6*density,paint);paint.setTextAlign(Paint.Align.LEFT);return box;}
         float[] boxW={150,220,300},boxH={64,96,170};float w=Math.min(boxW[boxSize]*density,dest.width()*(boxSize==2?0.7f:0.46f)),h=boxH[boxSize]*density;if(customW>0&&customH>0){w=Math.min(customW*density,dest.width()*.92f);h=customH*density;}
         float left=Math.min(dest.right-w-6*density,anchorX+8*density);if(left<dest.left)left=dest.left+6*density;
         float top=Math.max(dest.top+6*density,Math.min(dest.bottom-h-6*density,anchorY));RectF box=new RectF(left,top,left+w,top+h);
+        canvas.save();if(rot!=0)canvas.rotate(rot,box.centerX(),box.centerY());try{drawStickyBody(canvas,box,anchorX,anchorY,text,accent,paper,fontSp,density);}finally{canvas.restore();}return box;
+    }
+    private void drawStickyBody(Canvas canvas,RectF box,float anchorX,float anchorY,String text,int accent,int paper,int fontSp,float density){
         paint.setColor(paper);canvas.drawRoundRect(box,10*density,10*density,paint);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,6*density,paint);
         paint.setColor(0xFF3F3A2D);paint.setTextSize(fontSp*density);float lineHeight=fontSp*1.4f*density;float x=box.left+10*density,y=box.top+(fontSp+9)*density,max=box.width()-20*density;
-        for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=lineHeight;line=word;if(y>box.bottom-12*density)return box;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return box;}}
-        return box;
+        for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=lineHeight;line=word;if(y>box.bottom-12*density)return;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return;}}
+        return;
     }
-    private AnnotationStore.Mark selectedMemo;private int memoDrag;private float memoStartX,memoStartY,memoW0,memoH0;
-    /** A tapped memo shows a dashed frame with a round handle at its lower-right corner; dragging the handle resizes the memo. */
+    /** Selected post-it (a memo Mark or a TranslationNote): shape-like frame with 4 corner handles, rotate knob, delete badge; body drag moves it. */
+    private Object selSticky;private int stDrag;private boolean stMoved;private float stStartX,stStartY,stW0,stH0,stAx0,stAy0;
+    private RectF stBox(Object o){return o instanceof AnnotationStore.Mark?memoHitBoxes.get(o):noteHitBoxes.get(o);}
+    private float stRot(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).rot:((AnnotationStore.TranslationNote)o).rot;}
+    private boolean stMin(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).minimized:((AnnotationStore.TranslationNote)o).minimized;}
+    private int stPage(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).page:((AnnotationStore.TranslationNote)o).page;}
+    private float stAx(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).right:((AnnotationStore.TranslationNote)o).right;}
+    private float stAy(Object o){return o instanceof AnnotationStore.Mark?((AnnotationStore.Mark)o).top:((AnnotationStore.TranslationNote)o).top;}
+    private void stSetAnchor(Object o,float x,float y){x=Math.max(0f,Math.min(1f,x));y=Math.max(0f,Math.min(1f,y));if(o instanceof AnnotationStore.Mark){((AnnotationStore.Mark)o).right=x;((AnnotationStore.Mark)o).top=y;}else{((AnnotationStore.TranslationNote)o).right=x;((AnnotationStore.TranslationNote)o).top=y;}}
+    private void stSetSize(Object o,float w,float h){if(o instanceof AnnotationStore.Mark){((AnnotationStore.Mark)o).boxW=w;((AnnotationStore.Mark)o).boxH=h;}else{((AnnotationStore.TranslationNote)o).boxW=w;((AnnotationStore.TranslationNote)o).boxH=h;}}
+    private void stSetRot(Object o,float r){if(o instanceof AnnotationStore.Mark)((AnnotationStore.Mark)o).rot=r;else((AnnotationStore.TranslationNote)o).rot=r;}
+    private float[] unrotate(RectF b,float rot,float x,float y){double r=Math.toRadians(-rot);float dx=x-b.centerX(),dy=y-b.centerY();return new float[]{(float)(b.centerX()+dx*Math.cos(r)-dy*Math.sin(r)),(float)(b.centerY()+dx*Math.sin(r)+dy*Math.cos(r))};}
+    private Object stickyAt(float x,float y){
+        for(AnnotationStore.TranslationNote n:noteHitBoxes.keySet()){RectF b=noteHitBoxes.get(n);if(b!=null){float[] q=n.minimized?new float[]{x,y}:unrotate(b,n.rot,x,y);if(b.contains(q[0],q[1]))return n;}}
+        for(AnnotationStore.Mark m:memoHitBoxes.keySet()){RectF b=memoHitBoxes.get(m);if(b!=null){float[] q=m.minimized?new float[]{x,y}:unrotate(b,m.rot,x,y);if(b.contains(q[0],q[1]))return m;}}
+        return null;
+    }
     private void drawMemoSelection(Canvas canvas){
-        if(selectedMemo==null)return;RectF b=memoHitBoxes.get(selectedMemo);if(b==null||selectedMemo.page!=page||selectedMemo.minimized){return;}
-        float d=getResources().getDisplayMetrics().density;Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2*d);p.setColor(0xFF007AFF);p.setPathEffect(new DashPathEffect(new float[]{8*d,5*d},0));canvas.drawRoundRect(b,10*d,10*d,p);p.setPathEffect(null);
-        p.setStyle(Paint.Style.FILL);p.setColor(Color.WHITE);canvas.drawCircle(b.right,b.bottom,10*d,p);p.setStyle(Paint.Style.STROKE);p.setColor(0xFF007AFF);canvas.drawCircle(b.right,b.bottom,10*d,p);
-        p.setStyle(Paint.Style.FILL);p.setTextSize(11*d);p.setTextAlign(Paint.Align.CENTER);canvas.drawText("↘",b.right,b.bottom+4*d,p);
+        if(selSticky==null)return;RectF b=stBox(selSticky);if(b==null||stPage(selSticky)!=page||stMin(selSticky)){return;}
+        float d=getResources().getDisplayMetrics().density;Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);canvas.save();canvas.rotate(stRot(selSticky),b.centerX(),b.centerY());
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2*d);p.setColor(0xFF007AFF);p.setPathEffect(new DashPathEffect(new float[]{8*d,5*d},0));canvas.drawRoundRect(b,10*d,10*d,p);p.setPathEffect(null);
+        canvas.drawLine(b.centerX(),b.top,b.centerX(),b.top-28*d,p);
+        float[][] cs={{b.left,b.top},{b.right,b.top},{b.left,b.bottom},{b.right,b.bottom}};
+        for(float[] c:cs){p.setStyle(Paint.Style.FILL);p.setColor(Color.WHITE);canvas.drawCircle(c[0],c[1],8*d,p);p.setStyle(Paint.Style.STROKE);p.setColor(0xFF007AFF);canvas.drawCircle(c[0],c[1],8*d,p);}
+        p.setStyle(Paint.Style.FILL);p.setColor(0xFF007AFF);canvas.drawCircle(b.centerX(),b.top-28*d,12*d,p);p.setColor(Color.WHITE);p.setTextSize(15*d);p.setTextAlign(Paint.Align.CENTER);canvas.drawText("↻",b.centerX(),b.top-28*d+5*d,p);
+        p.setColor(0xFFFF3B30);canvas.drawCircle(b.right+14*d,b.top-28*d,12*d,p);p.setColor(Color.WHITE);p.setTextSize(16*d);canvas.drawText("×",b.right+14*d,b.top-28*d+5.5f*d,p);
+        canvas.restore();
     }
     private boolean handleMemoGesture(MotionEvent e,RectF dest){
-        if(selectedMemo==null)return false;RectF b=memoHitBoxes.get(selectedMemo);if(b==null||selectedMemo.page!=page||selectedMemo.minimized){selectedMemo=null;return false;}
-        int action=e.getActionMasked();float density=getResources().getDisplayMetrics().density;
+        if(selSticky==null)return false;RectF b=stBox(selSticky);if(b==null||stPage(selSticky)!=page||stMin(selSticky)){selSticky=null;return false;}
+        int action=e.getActionMasked();float d=getResources().getDisplayMetrics().density;
         if(action==MotionEvent.ACTION_DOWN&&e.getPointerCount()==1&&!isStylus(e)){
-            if(Math.hypot(e.getX()-b.right,e.getY()-b.bottom)<=26*density){memoDrag=1;memoStartX=e.getX();memoStartY=e.getY();memoW0=b.width()/density;memoH0=b.height()/density;listener.onSelectionAdjustStarted();getParent().requestDisallowInterceptTouchEvent(true);return true;}
-            return false;
+            float rot=stRot(selSticky);float[] q=unrotate(b,rot,e.getX(),e.getY());float x=q[0],y=q[1];int hit=0;
+            if(Math.hypot(x-(b.right+14*d),y-(b.top-28*d))<=20*d)hit=7;
+            else if(Math.hypot(x-b.centerX(),y-(b.top-28*d))<=20*d)hit=5;
+            else if(Math.hypot(x-b.left,y-b.top)<=22*d)hit=1;else if(Math.hypot(x-b.right,y-b.top)<=22*d)hit=2;else if(Math.hypot(x-b.left,y-b.bottom)<=22*d)hit=3;else if(Math.hypot(x-b.right,y-b.bottom)<=22*d)hit=4;
+            else if(b.contains(x,y))hit=6;
+            if(hit==0)return false;
+            stDrag=hit;stMoved=false;stStartX=e.getX();stStartY=e.getY();stW0=b.width()/d;stH0=b.height()/d;stAx0=stAx(selSticky);stAy0=stAy(selSticky);
+            if(hit!=7)listener.onSelectionAdjustStarted();getParent().requestDisallowInterceptTouchEvent(true);return true;
         }
-        if(memoDrag==0)return false;
-        if(action==MotionEvent.ACTION_MOVE){float w=memoW0+(e.getX()-memoStartX)/density,h=memoH0+(e.getY()-memoStartY)/density;selectedMemo.boxW=Math.max(90f,Math.min(Math.min(560f,dest.width()/density*.92f),w));selectedMemo.boxH=Math.max(48f,Math.min(700f,h));invalidate();return true;}
-        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){memoDrag=0;getParent().requestDisallowInterceptTouchEvent(false);if(action==MotionEvent.ACTION_UP)listener.onInkChanged();invalidate();return true;}
+        if(stDrag==0)return false;
+        float rot=stRot(selSticky);
+        if(action==MotionEvent.ACTION_MOVE){
+            float dx=e.getX()-stStartX,dy=e.getY()-stStartY;
+            if(stDrag==6){if(!stMoved&&Math.hypot(dx,dy)<touchSlop())return true;stMoved=true;stSetAnchor(selSticky,stAx0+dx/dest.width(),stAy0+dy/dest.height());invalidate();return true;}
+            if(stDrag==5){double ang=Math.toDegrees(Math.atan2(e.getY()-b.centerY(),e.getX()-b.centerX()))+90;float r=(float)((ang%360+360)%360);for(int k=0;k<=360;k+=90)if(Math.abs(r-k)<4)r=k%360;stSetRot(selSticky,r);stMoved=true;invalidate();return true;}
+            if(stDrag>=1&&stDrag<=4){
+                double rr=Math.toRadians(-rot);float lx=(float)(dx*Math.cos(rr)-dy*Math.sin(rr))/d,ly=(float)(dx*Math.sin(rr)+dy*Math.cos(rr))/d;
+                boolean left=stDrag==1||stDrag==3,top=stDrag==1||stDrag==2;float maxW=Math.min(560f,dest.width()/d*.92f);
+                float w=Math.max(90f,Math.min(maxW,left?stW0-lx:stW0+lx)),h=Math.max(48f,Math.min(700f,top?stH0-ly:stH0+ly));
+                stSetSize(selSticky,w,h);stSetAnchor(selSticky,stAx0+(left?(stW0-w)*d/dest.width():0),stAy0+(top?(stH0-h)*d/dest.height():0));stMoved=true;invalidate();return true;
+            }
+            return true;
+        }
+        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
+            int mode=stDrag;stDrag=0;getParent().requestDisallowInterceptTouchEvent(false);Object o=selSticky;
+            if(action==MotionEvent.ACTION_UP){
+                if(mode==7){selSticky=null;if(o instanceof AnnotationStore.Mark&&marks!=null)marks.remove(o);else if(translations!=null)translations.remove(o);listener.onInkChanged();}
+                else if(mode==6&&!stMoved){selSticky=null;if(o instanceof AnnotationStore.Mark)listener.onMarkTapped((AnnotationStore.Mark)o);else listener.onTranslationTapped((AnnotationStore.TranslationNote)o);}
+                else if(stMoved)listener.onInkChanged();
+            }
+            invalidate();return true;
+        }
         return true;
     }
-    private void drawMemo(Canvas canvas,RectF dest,AnnotationStore.Mark m){memoHitBoxes.put(m,drawSticky(canvas,dest,m.right,m.top,m.note,m.minimized,0xFFFFB300,m.paper,m.fontSp,m.boxSize,m.boxW,m.boxH));}
-    private void drawTranslation(Canvas canvas,RectF dest,AnnotationStore.TranslationNote n){noteHitBoxes.put(n,drawSticky(canvas,dest,n.right,n.top,n.translated,n.minimized,0xFF7C3AED));}
+    private void drawMemo(Canvas canvas,RectF dest,AnnotationStore.Mark m){memoHitBoxes.put(m,drawSticky(canvas,dest,m.right,m.top,m.note,m.minimized,0xFFFFB300,m.paper,m.fontSp,m.boxSize,m.boxW,m.boxH,m.rot));}
+    private void drawTranslation(Canvas canvas,RectF dest,AnnotationStore.TranslationNote n){noteHitBoxes.put(n,drawSticky(canvas,dest,n.right,n.top,n.translated,n.minimized,0xFF7C3AED,0xFFFFF3A6,13,1,n.boxW,n.boxH,n.rot));}
 
     private float strokeWidth(float base,float pressure,RectF dest){float p=Math.max(0.12f,Math.min(1f,pressure));return Math.max(1.5f,base*dest.width()*(0.45f+p*1.15f));}
 
@@ -779,7 +828,7 @@ final class PdfPageView extends View {
             if (scalingOccurred) {
                 panning = false; return true;
             }
-            if(Math.hypot(e.getX()-startX,e.getY()-startY)<20){for(AnnotationStore.TranslationNote n:noteHitBoxes.keySet()){RectF b=noteHitBoxes.get(n);if(b!=null&&b.contains(e.getX(),e.getY())){listener.onTranslationTapped(n);return true;}}for(AnnotationStore.Mark m:memoHitBoxes.keySet()){RectF b=memoHitBoxes.get(m);if(b!=null&&b.contains(e.getX(),e.getY())){if(!m.minimized&&m!=selectedMemo){selectedMemo=m;invalidate();return true;}selectedMemo=null;listener.onMarkTapped(m);return true;}}if(selectedMemo!=null){selectedMemo=null;invalidate();}}
+            if(Math.hypot(e.getX()-startX,e.getY()-startY)<20){Object hitSticky=stickyAt(e.getX(),e.getY());if(hitSticky!=null){if(!stMin(hitSticky)&&hitSticky!=selSticky){selSticky=hitSticky;selectedElement=null;invalidate();return true;}selSticky=null;if(hitSticky instanceof AnnotationStore.Mark)listener.onMarkTapped((AnnotationStore.Mark)hitSticky);else listener.onTranslationTapped((AnnotationStore.TranslationNote)hitSticky);return true;}if(selSticky!=null){selSticky=null;invalidate();}}
             if (drawing) {
                 currentX = Math.max(dest.left, Math.min(dest.right, e.getX()));
                 currentY = Math.max(dest.top, Math.min(dest.bottom, e.getY()));

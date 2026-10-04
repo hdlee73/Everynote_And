@@ -664,7 +664,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void showTranslationResult(String source,String translated,RectF bounds){
         final AnnotationStore targetStore=store;final int targetPage=currentPage;
         final AnnotationStore.TranslationNote note=new AnnotationStore.TranslationNote();note.page=targetPage;note.left=bounds.left;note.top=bounds.top;note.right=bounds.right;note.bottom=bounds.bottom;note.source=source;note.translated=translated.trim();
-        targetStore.translations.add(note);targetStore.save();pageView.invalidate();
         final boolean toKorean=!source.matches(".*[가-힣].*");
         final Dialog dialog=new Dialog(this,R.style.SheetDialog);
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setTag("translation_card");card.setBackground(round(Color.WHITE,24));card.setPadding(dp(20),dp(18),dp(20),dp(8));
@@ -676,17 +675,16 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         TextView originalLabel=new TextView(this);originalLabel.setText("원문");originalLabel.setTextSize(12);originalLabel.setTextColor(0xFF8E8E93);originalLabel.setPadding(dp(2),dp(16),0,dp(4));card.addView(originalLabel);
         TextView original=new TextView(this);original.setText(source);original.setTextSize(14);original.setTextColor(0xFF48484A);original.setLineSpacing(0,1.25f);original.setTextIsSelectable(true);original.setBackground(round(0xFFF2F2F7,14));original.setPadding(dp(14),dp(10),dp(14),dp(10));original.setMaxLines(5);
         ScrollView originalScroll=new ScrollView(this);originalScroll.addView(original);card.addView(originalScroll,new LinearLayout.LayoutParams(-1,-2));
-        TextView resultLabel=new TextView(this);resultLabel.setText("번역 · 페이지에 포스트잇으로 들어갔습니다");resultLabel.setTextSize(12);resultLabel.setTextColor(0xFF8E8E93);resultLabel.setPadding(dp(2),dp(14),0,dp(4));card.addView(resultLabel);
+        TextView resultLabel=new TextView(this);resultLabel.setText("번역 · 직접 고칠 수 있습니다");resultLabel.setTextSize(12);resultLabel.setTextColor(0xFF8E8E93);resultLabel.setPadding(dp(2),dp(14),0,dp(4));card.addView(resultLabel);
         final EditText result=new EditText(this);result.setTag("translation_result");result.setText(note.translated);result.setTextSize(17);result.setTextColor(NAVY);result.setLineSpacing(0,1.25f);result.setMinLines(2);result.setMaxLines(8);result.setGravity(Gravity.TOP);result.setBackground(round(0xFFEAF3FF,14));result.setPadding(dp(14),dp(12),dp(14),dp(12));
         card.addView(result,new LinearLayout.LayoutParams(-1,-2));
         View line=new View(this);line.setBackgroundColor(0xFFE5E5EA);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,Math.max(1,dp(1)/2));lp.topMargin=dp(14);card.addView(line,lp);
         LinearLayout buttons=new LinearLayout(this);buttons.setGravity(Gravity.CENTER_VERTICAL);
-        buttons.addView(dialogButton("삭제",0xFFFF3B30,false,()->{targetStore.translations.remove(note);targetStore.save();pageView.invalidate();note.translated="";dialog.dismiss();toast("번역 포스트잇을 삭제했습니다");}),new LinearLayout.LayoutParams(-2,dp(48)));
-        buttons.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
         buttons.addView(dialogButton("복사",0xFF8E8E93,false,()->{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("번역",result.getText().toString()));toast("번역을 복사했습니다");}),new LinearLayout.LayoutParams(-2,dp(48)));
-        buttons.addView(dialogButton("완료",ACCENT,true,dialog::dismiss),new LinearLayout.LayoutParams(-2,dp(48)));
+        buttons.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
+        buttons.addView(dialogButton("닫기",0xFF8E8E93,false,dialog::dismiss),new LinearLayout.LayoutParams(-2,dp(48)));
+        buttons.addView(dialogButton("포스트잇 붙이기",ACCENT,true,()->{String value=result.getText().toString().trim();if(!value.isEmpty())note.translated=value;targetStore.translations.add(note);targetStore.save();pageView.invalidate();dialog.dismiss();toast("페이지에 포스트잇으로 붙였습니다");}),new LinearLayout.LayoutParams(-2,dp(48)));
         card.addView(buttons,new LinearLayout.LayoutParams(-1,-2));
-        dialog.setOnDismissListener(d->{if(!targetStore.translations.contains(note))return;String value=result.getText().toString().trim();if(!value.isEmpty()&&!value.equals(note.translated)){note.translated=value;targetStore.save();pageView.invalidate();}});
         ScrollView scroll=new ScrollView(this);scroll.addView(card);dialog.setContentView(scroll);
         Window window=dialog.getWindow();if(window!=null){window.setGravity(Gravity.CENTER);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(32),dp(460)),ViewGroup.LayoutParams.WRAP_CONTENT);window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);}
         dialog.setCanceledOnTouchOutside(true);dialog.show();
@@ -2188,7 +2186,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         {"12. 음성 녹음 · 검색 · 번역",
          "음성 녹음|개요 패널의 마이크 탭에서 녹음하면 현재 페이지에 ‘▶ 녹음’ 표시가 붙고, 탭하면 재생합니다.",
          "검색|돋보기 아이콘으로 본문 글자를 찾고, 손글씨 필기도 검색됩니다.",
-         "번역·읽어주기|글자를 선택한 뒤 팝업에서 번역을 누르면 기기 안에서 바로 번역해(처음 한 번만 번역 모델을 내려받습니다) 결과를 그 자리에 포스트잇으로 넣고, 원문과 번역을 보여 주는 창이 열립니다. 창에서 번역을 고치거나 복사·삭제할 수 있습니다. 읽어주기는 선택한 글자를 소리 내어 읽습니다."},
+         "번역·읽어주기|글자를 선택한 뒤 팝업에서 번역을 누르면 기기 안에서 바로 번역해(처음 한 번만 번역 모델을 내려받습니다) 원문과 번역을 보여 주는 창이 열립니다. 창에서 번역을 고치거나 복사할 수 있고, '포스트잇 붙이기'를 누르면 그 자리에 포스트잇으로 붙습니다. 메모·번역 포스트잇은 한 번 탭하면 도형처럼 테두리가 나타나 모서리 핸들로 크기, 위쪽 ↻로 회전, ×로 삭제, 몸통을 끌어 이동할 수 있습니다(한 번 더 탭하면 내용 편집). 읽어주기는 선택한 글자를 소리 내어 읽습니다."},
         {"13. 문서 변환 · 내보내기",
          "Office·한글 문서|HWP · HWPX · DOC · DOCX · PPT · PPTX · XLS · XLSX는 PDF로 변환해 문서함에 가져와 엽니다. 서식은 변환 엔진과 글꼴에 따라 달라질 수 있고, HWP·DOC의 본문 미리보기는 글자만 표시합니다.",
          "내보내기·백업|더보기 메뉴에서 기록이 포함된 PDF를 내보내거나, ‘원본 파일 내보내기’로 기록 없는 원본만 저장하거나, 기록을 파일로 백업·복원합니다. ‘인쇄’는 필기와 글상자까지 함께 시스템 인쇄 화면으로 보내며, 거기서 PDF로 저장할 수도 있습니다."}};

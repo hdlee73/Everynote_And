@@ -28,10 +28,11 @@ final class AnnotationStore {
         int paper = 0xFFFFF3A6, fontSp = 13, boxSize = 1;
         /** Own box size in dp (0 = use {@link #boxSize}); set by dragging the corner handle of a selected memo. */
         float boxW, boxH;
+        float rot;
 
         JSONObject toJson() throws JSONException {
             JSONObject o = new JSONObject();
-            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize).put("boxW", boxW).put("boxH", boxH);
+            o.put("paper", paper).put("fontSp", fontSp).put("boxSize", boxSize).put("boxW", boxW).put("boxH", boxH).put("rot", rot);
             o.put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom)
                     .put("color", color).put("note", note == null ? "" : note)
@@ -57,6 +58,7 @@ final class AnnotationStore {
             m.boxSize = Math.max(0, Math.min(2, o.optInt("boxSize", 1)));
             m.boxW = (float) Math.max(0, Math.min(800, o.optDouble("boxW", 0)));
             m.boxH = (float) Math.max(0, Math.min(1200, o.optDouble("boxH", 0)));
+            m.rot = (float) o.optDouble("rot", 0);
             return m;
         }
     }
@@ -103,9 +105,10 @@ final class AnnotationStore {
         String source, translated;
         boolean visible = true;
         boolean minimized;
+        float boxW, boxH, rot;
 
         JSONObject toJson() throws JSONException {
-            return new JSONObject().put("page", page).put("left", left).put("top", top)
+            return new JSONObject().put("boxW", boxW).put("boxH", boxH).put("rot", rot).put("page", page).put("left", left).put("top", top)
                     .put("right", right).put("bottom", bottom).put("source", source)
                     .put("translated", translated).put("visible", visible)
                     .put("minimized", minimized);
@@ -116,7 +119,7 @@ final class AnnotationStore {
             n.page=o.optInt("page"); n.left=(float)o.optDouble("left"); n.top=(float)o.optDouble("top");
             n.right=(float)o.optDouble("right"); n.bottom=(float)o.optDouble("bottom");
             n.source=o.optString("source",""); n.translated=o.optString("translated","");
-            n.visible=o.optBoolean("visible",true); n.minimized=o.optBoolean("minimized",false); return n;
+            n.visible=o.optBoolean("visible",true); n.minimized=o.optBoolean("minimized",false); n.boxW=(float)o.optDouble("boxW",0); n.boxH=(float)o.optDouble("boxH",0); n.rot=(float)o.optDouble("rot",0); return n;
         }
     }
 
