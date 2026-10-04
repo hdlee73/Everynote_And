@@ -94,7 +94,7 @@ final class AlertDialog extends Dialog {
             FrameLayout frame = new FrameLayout(context);
             if (items == null) frame.addView(card(dialog), new FrameLayout.LayoutParams(-1, -2)); else frame.addView(sheet(dialog), new FrameLayout.LayoutParams(-1, -2));
             dialog.setContentView(frame);
-            Window w = dialog.getWindow(); if (w != null) w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            Window w = dialog.getWindow(); if (w != null) { w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT)); if (items != null) w.setDimAmount(0.12f); }
             return dialog;
         }
 

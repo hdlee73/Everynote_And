@@ -51,7 +51,7 @@ public class InlineTextTest {
         int before=Math.round(AnnotationStore.PageElement.DEFAULT_TEXT_SIZE*595);
         byTag("text_bold").performClick();byTag("text_italic").performClick();
         View bigger=byDescription(root,"글자 크게");bigger.performClick();bigger.performClick();bigger.performClick();
-        ViewGroup fonts=(ViewGroup)byTag("text_fonts");fonts.getChildAt(1).performClick();
+        assertTrue(byTag("text_fonts") instanceof TextView);java.lang.reflect.Method pick=activity.getClass().getDeclaredMethod("setInlineFont",String.class);pick.setAccessible(true);pick.invoke(activity,"serif");
         View color=byDescription(root,"색상 6");color.performClick();
         assertEquals((before+3)+"pt",((TextView)byTag("text_size")).getText().toString());
         byTag("text_done").performClick();

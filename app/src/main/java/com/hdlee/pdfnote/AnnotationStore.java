@@ -153,7 +153,7 @@ final class AnnotationStore {
         static final float DEFAULT_TEXT_SIZE = .027f;
         static final int DEFAULT_TEXT_COLOR = 0xFF1C1C1E;
         /** sans=고딕, serif=명조, mono=고정폭, hand=손글씨체 */
-        static final List<String> FONTS = java.util.Arrays.asList("sans", "serif", "mono", "hand");
+        static final List<String> FONTS = java.util.Arrays.asList("sans", "medium", "light", "black", "condensed", "serif", "mono", "typewriter", "hand", "casual");
         int page;
         String kind = "text", text = "", asset = "";
         float left = .1f, top = .1f, right = .8f, bottom = .3f;

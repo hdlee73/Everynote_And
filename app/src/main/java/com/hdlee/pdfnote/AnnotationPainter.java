@@ -14,6 +14,12 @@ final class AnnotationPainter {
         if("serif".equals(font))base=Typeface.SERIF;
         else if("mono".equals(font))base=Typeface.MONOSPACE;
         else if("hand".equals(font))base=Typeface.create("cursive",Typeface.NORMAL);
+        else if("casual".equals(font))base=Typeface.create("casual",Typeface.NORMAL);
+        else if("typewriter".equals(font))base=Typeface.create("serif-monospace",Typeface.NORMAL);
+        else if("medium".equals(font))base=Typeface.create("sans-serif-medium",Typeface.NORMAL);
+        else if("light".equals(font))base=Typeface.create("sans-serif-light",Typeface.NORMAL);
+        else if("black".equals(font))base=Typeface.create("sans-serif-black",Typeface.NORMAL);
+        else if("condensed".equals(font))base=Typeface.create("sans-serif-condensed",Typeface.NORMAL);
         else base=Typeface.SANS_SERIF;
         return Typeface.create(base,style);
     }

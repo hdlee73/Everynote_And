@@ -26,7 +26,7 @@ final class AnchoredMenu {
     static final int INK = 0xFF1C1C1E, ACCENT = 0xFF007AFF, GRAY = 0xFF8E8E93, LINE = 0xFFE5E5EA, RED = 0xFFFF3B30;
 
     static final class Row {
-        final String label; final int icon; final Runnable action; boolean selected, danger, submenu, divider; View custom; int tint;
+        final String label; final int icon; final Runnable action; boolean selected, danger, submenu, divider; View custom; int tint; List<Row> children;
         Row(String label, int icon, Runnable action) { this.label = label; this.icon = icon; this.action = action; }
         static Row divider() { Row r = new Row("", 0, null); r.divider = true; return r; }
         static Row custom(View view) { Row r = new Row("", 0, null); r.custom = view; return r; }
@@ -34,6 +34,9 @@ final class AnchoredMenu {
         Row selected(boolean value) { selected = value; return this; }
         Row danger() { danger = true; return this; }
         Row submenu() { submenu = true; return this; }
+        /** Rows shown in a second card right next to this one when this row is tapped (the parent card stays open). */
+        Row children(List<Row> rows) { children = rows; submenu = true; return this; }
+        Row copy(Runnable newAction) { Row r = new Row(label, icon, newAction); r.selected = selected; r.danger = danger; r.submenu = submenu; r.divider = divider; r.custom = custom; r.tint = tint; r.children = children; return r; }
     }
     static final class Shortcut {
         final String description; final int icon; final boolean active; final Runnable action;
@@ -46,11 +49,15 @@ final class AnchoredMenu {
     static PopupWindow show(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts) { return show(context, anchor, above, rows, shortcuts, null); }
 
     /** @param avoid screen rectangle the card must not cover (e.g. the selected text); the card goes below, above, beside it, whichever fits. */
-    static PopupWindow show(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid) {
+    static PopupWindow show(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid) { return build(context, anchor, above, rows, shortcuts, avoid, 0, true); }
+
+    private static PopupWindow build(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid, int mode, boolean focusable) {
+        final boolean beside = mode == 1;
         final float density = context.getResources().getDisplayMetrics().density;
         final int screenW = context.getResources().getDisplayMetrics().widthPixels, screenH = context.getResources().getDisplayMetrics().heightPixels;
-        final PopupWindow[] holder = new PopupWindow[1];
-        LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL); card.setTag("anchored_menu");
+        final PopupWindow[] holder = new PopupWindow[1], childWin = new PopupWindow[1];
+        final LinearLayout[] cardRef = new LinearLayout[1];
+        LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL); card.setTag("anchored_menu"); cardRef[0] = card;
         GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.WHITE); bg.setCornerRadius(18 * density); bg.setStroke(Math.max(1, Math.round(density * .5f)), 0x14000000); card.setBackground(bg);
         card.setPadding(Math.round(6 * density), Math.round(6 * density), Math.round(6 * density), Math.round(6 * density)); card.setElevation(12 * density);
         LinearLayout list = new LinearLayout(context); list.setOrientation(LinearLayout.VERTICAL);
@@ -63,7 +70,17 @@ final class AnchoredMenu {
             TextView text = new TextView(context); text.setText(row.label); text.setTextSize(15); text.setSingleLine(); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setTextColor(row.danger ? RED : row.selected ? ACCENT : INK); if (row.selected) text.setTypeface(Typeface.DEFAULT_BOLD);
             line.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
             if (row.selected || row.submenu) { ImageView mark = new ImageView(context); mark.setImageResource(row.submenu ? R.drawable.ic_chevron_right : R.drawable.ic_check_bold); mark.setColorFilter(row.submenu ? GRAY : ACCENT); mark.setScaleType(ImageView.ScaleType.FIT_CENTER); LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(Math.round((row.submenu ? 18 : 20) * density), Math.round((row.submenu ? 18 : 20) * density)); mp.leftMargin = Math.round(8 * density); line.addView(mark, mp); }
-            line.setOnClickListener(v -> { if (holder[0] != null) holder[0].dismiss(); if (row.action != null) row.action.run(); });
+            line.setOnClickListener(v -> {
+                if (row.children != null && holder[0] != null) {
+                    if (childWin[0] != null) childWin[0].dismiss();
+                    int[] loc = new int[2]; cardRef[0].getLocationOnScreen(loc);
+                    android.graphics.Rect box = new android.graphics.Rect(loc[0], loc[1], loc[0] + cardRef[0].getWidth(), loc[1] + cardRef[0].getHeight());
+                    List<Row> inner = new ArrayList<>();
+                    for (final Row child : row.children) inner.add(child.custom != null || child.divider ? child : child.copy(() -> { if (holder[0] != null) holder[0].dismiss(); if (child.action != null) child.action.run(); }));
+                    childWin[0] = build(context, anchor, above, inner, null, box, 1, false);
+                    return;
+                }
+                if (holder[0] != null) holder[0].dismiss(); if (row.action != null) row.action.run(); });
             list.addView(line, new LinearLayout.LayoutParams(-1, Math.round(44 * density)));
         }
         ScrollView scroll = new ScrollView(context) { @Override protected void onMeasure(int w, int h) { super.onMeasure(w, MeasureSpec.makeMeasureSpec(Math.round(screenH * .6f), MeasureSpec.AT_MOST)); } };
@@ -80,7 +97,8 @@ final class AnchoredMenu {
         }
         card.measure(View.MeasureSpec.makeMeasureSpec(Math.round(Math.min(screenW - 24 * density, (wide ? 268 : 240) * density)), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(screenH, View.MeasureSpec.AT_MOST));
         int w = card.getMeasuredWidth(), h = card.getMeasuredHeight();
-        PopupWindow window = new PopupWindow(card, w, h, true); holder[0] = window;
+        PopupWindow window = new PopupWindow(card, w, h, focusable); holder[0] = window;
+        window.setOnDismissListener(() -> { if (childWin[0] != null) childWin[0].dismiss(); });
         window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT)); window.setElevation(12 * density); window.setOutsideTouchable(true);
         int[] at = new int[2]; anchor.getLocationOnScreen(at);
         int margin = Math.round(8 * density), gap = Math.round(6 * density);
@@ -90,13 +108,16 @@ final class AnchoredMenu {
         y = Math.max(margin, Math.min(screenH - h - margin, y));
         if (avoid != null) {
             int topLimit = Math.round(24 * density);
-            int[][] tries = {
+            int[][] tries = beside ? new int[][]{
+                {avoid.left - w - gap, avoid.top}, {avoid.right + gap, avoid.top},
+                {avoid.centerX() - w / 2, avoid.bottom + gap}, {avoid.centerX() - w / 2, avoid.top - h - gap}} : new int[][]{
                 {avoid.centerX() - w / 2, avoid.bottom + gap}, {avoid.centerX() - w / 2, avoid.top - h - gap},
                 {avoid.right + gap, avoid.centerY() - h / 2}, {avoid.left - w - gap, avoid.centerY() - h / 2}};
             boolean placed = false;
             for (int[] t : tries) {
                 int tx = Math.max(margin, Math.min(screenW - w - margin, t[0])), ty = t[1];
-                if (ty < topLimit || ty + h > screenH - margin) { if (t == tries[2] || t == tries[3]) ty = Math.max(topLimit, Math.min(screenH - h - margin, ty)); else continue; }
+                boolean sideTry = beside ? (t == tries[0] || t == tries[1]) : (t == tries[2] || t == tries[3]);
+                if (ty < topLimit || ty + h > screenH - margin) { if (sideTry) ty = Math.max(topLimit, Math.min(screenH - h - margin, ty)); else continue; }
                 if (tx + w + gap / 2 <= avoid.left || tx >= avoid.right + gap / 2 || ty + h + gap / 2 <= avoid.top || ty >= avoid.bottom + gap / 2) { x = tx; y = ty; placed = true; break; }
             }
             if (!placed) {
@@ -106,8 +127,16 @@ final class AnchoredMenu {
                 y = coverTop <= coverBottom ? topY : bottomY; x = Math.max(margin, Math.min(screenW - w - margin, avoid.centerX() - w / 2));
             }
         }
+        if (mode == 2) { x = (screenW - w) / 2; y = Math.max(margin, (screenH - h) / 3); }
         window.showAtLocation(anchor.getRootView(), Gravity.TOP | Gravity.START, x, y);
         return window;
+    }
+    /** A titled menu card in the middle of the screen (no dimming), for lists that are not opened from one particular button. */
+    static PopupWindow showCentered(Context context, View anyView, String title, List<Row> rows) {
+        List<Row> all = new ArrayList<>();
+        if (title != null) { TextView t = new TextView(context); t.setText(title); t.setTextSize(13); t.setTextColor(GRAY); t.setPadding(Math.round(12 * context.getResources().getDisplayMetrics().density), Math.round(8 * context.getResources().getDisplayMetrics().density), Math.round(12 * context.getResources().getDisplayMetrics().density), Math.round(4 * context.getResources().getDisplayMetrics().density)); all.add(Row.custom(t)); }
+        all.addAll(rows);
+        return build(context, anyView, false, all, null, null, 2, true);
     }
     static List<Row> rows(Row... rows) { List<Row> list = new ArrayList<>(); for (Row r : rows) list.add(r); return list; }
 }
