@@ -349,14 +349,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             public void status(String text){status.setText(text);}
             public void failure(String reason){hwpConversion=null;officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){new AlertDialog.Builder(MainActivity.this).setTitle("한글 문서 변환 실패").setMessage("PDF 변환을 완료하지 못했습니다.\n\n"+reason).setPositiveButton("다른 방법으로 열기",(d,w)->offerOfficeImport(source,name)).setNegativeButton("닫기",null).show();}}
             public void success(File pdf){
-                hwpConversion=null;dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
-                java.util.function.Consumer<Boolean> save=split->{status.setText("문서함에 저장하는 중");
-                    new Thread(()->{File use=pdf;try{if(split){File cut=File.createTempFile("hwp-split-",".pdf",getCacheDir());try{HwpConversion.splitSpreads(MainActivity.this,pdf,cut);use=cut;}catch(Exception e){cut.delete();}}
-                        Uri saved=Uri.fromFile(importConverted(use,name));runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast(split?"두 쪽을 한 쪽씩 나누어 저장했습니다":"문서함에 PDF로 변환해 저장했습니다");}});}
-                    catch(Exception e){runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed())toast("PDF 저장 실패: "+e.getMessage());});}finally{pdf.delete();if(use!=pdf)use.delete();}},"hwp-save").start();};
-                new Thread(()->{boolean spread=HwpConversion.looksLikeSpread(MainActivity.this,pdf);runOnUiThread(()->{
-                    if(!spread||isFinishing()||isDestroyed()){save.accept(false);return;}
-                    new AlertDialog.Builder(MainActivity.this).setTitle("두 쪽 보기 문서").setMessage("가로로 넓은 면에 두 쪽이 나란히 들어 있는 문서로 보입니다. 한 쪽씩 나누어 열까요?").setCancelable(false).setPositiveButton("한 쪽씩 나누기",(d,w)->save.accept(true)).setNegativeButton("그대로 열기",(d,w)->save.accept(false)).show();});},"hwp-check").start();
+                hwpConversion=null;status.setText("문서함에 저장하는 중");dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
+                new Thread(()->{try{Uri saved=Uri.fromFile(importConverted(pdf,name));runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast("문서함에 PDF로 변환해 저장했습니다");}});}
+                    catch(Exception e){runOnUiThread(()->{officeConverting=false;dialog.dismiss();if(!isFinishing()&&!isDestroyed())toast("PDF 저장 실패: "+e.getMessage());});}finally{pdf.delete();}},"hwp-save").start();
             }
         });
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{if(hwpConversion!=null)hwpConversion.cancel();hwpConversion=null;officeConverting=false;dialog.dismiss();});
@@ -924,15 +919,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         String mime=getContentResolver().getType(documentUri);if(mime==null||mime.isEmpty())mime="application/octet-stream";
         exportOriginalSource=documentUri;
         try{startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(mime).putExtra(Intent.EXTRA_TITLE,documentTitle),EXPORT_ORIGINAL);}catch(RuntimeException error){toast("저장 위치를 열 수 없습니다");}
-    }
-    /** Makes a copy of the open PDF with every landscape page cut into a left and a right page (for two-page spreads) and opens it from the library. */
-    private void splitCurrentDocument(){
-        if(activeSession==null||documentUri==null){toast("문서를 먼저 여세요");return;}
-        final Uri source=documentUri;final String title=documentTitle==null?"문서":documentTitle;toast("한 쪽씩 나누는 중입니다");
-        new Thread(()->{File in=null,cut=null;try{in=File.createTempFile("split-in-",".pdf",getCacheDir());try(java.io.InputStream input=getContentResolver().openInputStream(source);java.io.OutputStream out=new java.io.FileOutputStream(in)){byte[] buffer=new byte[1<<16];int n;while((n=input.read(buffer))>0)out.write(buffer,0,n);}
-            cut=File.createTempFile("split-out-",".pdf",getCacheDir());HwpConversion.splitSpreads(MainActivity.this,in,cut);
-            Uri saved=Uri.fromFile(importConverted(cut,title.replaceFirst("(?i)\\.pdf$","")+" (한 쪽씩)"));runOnUiThread(()->{if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast("나눈 사본을 문서함에 저장했습니다");}});}
-            catch(Exception e){runOnUiThread(()->toast("나누기 실패: "+e.getMessage()));}finally{if(in!=null)in.delete();if(cut!=null)cut.delete();}},"split-copy").start();
     }
     private Uri exportOriginalSource;
     private void receiveOriginalExport(int result,Intent data){
@@ -1502,7 +1488,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("주석 백업",R.drawable.ic_copy,this::exportAnnotations));
                 t.add(new Tile("주석 백업 복원",R.drawable.ic_undo,this::importSidecar));
                 t.add(new Tile("원본 파일 내보내기",R.drawable.ic_folder_open,this::exportOriginal));
-                t.add(new Tile("두 쪽 나눈 사본 만들기",R.drawable.ic_book,this::splitCurrentDocument));
                 break;
         }
         return t;
@@ -2187,7 +2172,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
          "번역·읽어주기|글자를 선택한 뒤 팝업에서 번역을 누르면 기기 안에서 바로 번역해(처음 한 번만 번역 모델을 내려받습니다) 원문과 번역을 보여 주는 창이 열립니다. 창에서 번역을 고치거나 복사할 수 있고, '포스트잇 붙이기'를 누르면 그 자리에 포스트잇으로 붙습니다. 메모·번역 포스트잇은 한 번 탭하면 도형처럼 테두리가 나타나 모서리 핸들로 크기, 위쪽 ↻로 회전, ×로 삭제, 몸통을 끌어 이동할 수 있습니다(한 번 더 탭하면 내용 편집). 읽어주기는 선택한 글자를 소리 내어 읽습니다."},
         {"13. 문서 변환 · 내보내기",
          "Office·한글 문서|HWP · HWPX · DOC · DOCX · PPT · PPTX · XLS · XLSX는 PDF로 변환해 문서함에 가져와 엽니다. 서식은 변환 엔진과 글꼴에 따라 달라질 수 있고, HWP·DOC의 본문 미리보기는 글자만 표시합니다.",
-         "내보내기·백업|더보기 메뉴에서 기록이 포함된 PDF를 내보내거나, ‘원본 파일 내보내기’로 기록 없는 원본만 저장하거나, 기록을 파일로 백업·복원합니다. ‘인쇄’는 필기와 글상자까지 함께 시스템 인쇄 화면으로 보내며, 거기서 PDF로 저장할 수도 있습니다. 두 쪽이 한 면에 들어 있는 문서는 ‘두 쪽 나눈 사본 만들기’로 한 쪽씩 나눈 사본을 문서함에 만들 수 있습니다."}};
+         "내보내기·백업|더보기 메뉴에서 기록이 포함된 PDF를 내보내거나, ‘원본 파일 내보내기’로 기록 없는 원본만 저장하거나, 기록을 파일로 백업·복원합니다. ‘인쇄’는 필기와 글상자까지 함께 시스템 인쇄 화면으로 보내며, 거기서 PDF로 저장할 수도 있습니다."}};
     private void showHelp(){
         final Dialog dialog=new Dialog(this,R.style.SheetDialog);
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setBackground(round(Color.WHITE,20));card.setPadding(dp(22),dp(20),dp(22),dp(6));
