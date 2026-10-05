@@ -33,6 +33,10 @@ final class PageCurlView extends View {
     void setup(Bitmap fixedHalf, Bitmap under, Bitmap front, Bitmap back, boolean mirrored, float spineFraction) {
         this.fixedHalf = fixedHalf; this.under = under; this.front = front; this.back = back; this.mirrored = mirrored; this.spine = spineFraction; touched = false; touch = .88f;
     }
+    private float ox, oy, cw, ch;
+    /** Where the page rectangle sits inside this (larger) view and its size; the flap may be drawn outside it. */
+    void setOrigin(float x, float y, float w, float h) { ox = x; oy = y; cw = w; ch = h; }
+    float contentWidth() { return cw; }
     void setProgress(float value) { progress = Math.max(0f, Math.min(1f, value)); invalidate(); }
     float progress() { return progress; }
     void release() { for (Bitmap b : new Bitmap[]{fixedHalf, under, front, back}) if (b != null && !b.isRecycled()) b.recycle(); fixedHalf = under = front = back = null; }
@@ -57,8 +61,8 @@ final class PageCurlView extends View {
 
     @Override protected void onDraw(Canvas canvas) {
         if (front == null || under == null || back == null) return;
-        final float w = getWidth(), h = getHeight(), s = spine * w, lw = w - s, t = progress;
-        canvas.save();
+        final float w = cw > 0f ? cw : getWidth(), h = ch > 0f ? ch : getHeight(), s = spine * w, lw = w - s, t = progress;
+        canvas.save(); canvas.translate(ox, oy);
         if (mirrored) canvas.scale(-1f, 1f, w / 2f, 0f);
         if (fixedHalf != null) canvas.drawBitmap(fixedHalf, 0, 0, null);
         canvas.drawBitmap(under, s, 0, null);
