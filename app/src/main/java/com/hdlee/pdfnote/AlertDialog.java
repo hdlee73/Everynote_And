@@ -29,6 +29,7 @@ final class AlertDialog extends Dialog {
     private final TextView[] buttons = new TextView[3];
     private final boolean sheet;
     private TextView titleView, messageView;
+    private int widthDp;
 
     private AlertDialog(Context context, boolean sheet) { super(context, R.style.SheetDialog); this.sheet = sheet; }
 
@@ -43,7 +44,7 @@ final class AlertDialog extends Dialog {
         int screen = getContext().getResources().getDisplayMetrics().widthPixels;
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         if (sheet) { window.setGravity(Gravity.CENTER); window.setWindowAnimations(android.R.style.Animation_Dialog); window.setLayout(Math.min(screen - Math.round(40 * density), Math.round(320 * density)), ViewGroup.LayoutParams.WRAP_CONTENT); }
-        else { window.setGravity(Gravity.CENTER); window.setWindowAnimations(android.R.style.Animation_Dialog); window.setLayout(Math.min(screen - Math.round(48 * density), Math.round(330 * density)), ViewGroup.LayoutParams.WRAP_CONTENT); }
+        else { window.setGravity(Gravity.CENTER); window.setWindowAnimations(android.R.style.Animation_Dialog); window.setLayout(Math.min(screen - Math.round((widthDp > 330 ? 32 : 48) * density), Math.round((widthDp > 0 ? widthDp : 330) * density)), ViewGroup.LayoutParams.WRAP_CONTENT); }
     }
 
     private static final class LimitedScroll extends ScrollView {
@@ -57,7 +58,7 @@ final class AlertDialog extends Dialog {
         private CharSequence title, message; private View view; private CharSequence[] items; private int checked = -1; private boolean choice;
         private DialogInterface.OnClickListener itemListener;
         private final CharSequence[] labels = new CharSequence[3]; private final DialogInterface.OnClickListener[] listeners = new DialogInterface.OnClickListener[3];
-        private boolean cancelable = true; private DialogInterface.OnDismissListener dismiss; private DialogInterface.OnCancelListener cancel;
+        private boolean cancelable = true; private DialogInterface.OnDismissListener dismiss; private DialogInterface.OnCancelListener cancel; private int widthDp;
 
         Builder(Context context) { this.context = context; density = context.getResources().getDisplayMetrics().density; }
         Builder setTitle(CharSequence t) { title = t; return this; }
@@ -69,23 +70,30 @@ final class AlertDialog extends Dialog {
         Builder setNegativeButton(CharSequence t, DialogInterface.OnClickListener l) { labels[1] = t; listeners[1] = l; return this; }
         Builder setNeutralButton(CharSequence t, DialogInterface.OnClickListener l) { labels[2] = t; listeners[2] = l; return this; }
         Builder setCancelable(boolean c) { cancelable = c; return this; }
+        /** Card width in dp (default 330) for dialogs whose custom view needs more room, e.g. rows of colour swatches. */
+        Builder setWidth(int dp) { widthDp = dp; return this; }
         Builder setOnDismissListener(DialogInterface.OnDismissListener l) { dismiss = l; return this; }
         Builder setOnCancelListener(DialogInterface.OnCancelListener l) { cancel = l; return this; }
         AlertDialog show() { AlertDialog d = create(); d.show(); return d; }
 
         private int dp(float v) { return Math.round(v * density); }
         private GradientDrawable round(int color, int radius) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(radius)); return g; }
+        private android.graphics.drawable.Drawable pressable(float[] radii) {
+            GradientDrawable on = new GradientDrawable(); on.setColor(0xFFF2F2F7); on.setCornerRadii(radii);
+            android.graphics.drawable.StateListDrawable states = new android.graphics.drawable.StateListDrawable();
+            states.addState(new int[]{android.R.attr.state_pressed}, on); states.addState(new int[0], new ColorDrawable(Color.TRANSPARENT)); return states;
+        }
         private View hairline(boolean vertical) { View v = new View(context); v.setBackgroundColor(LINE); v.setLayoutParams(vertical ? new LinearLayout.LayoutParams(Math.max(1, dp(.5f)), -1) : new LinearLayout.LayoutParams(-1, Math.max(1, dp(.5f)))); return v; }
 
         AlertDialog create() {
-            final AlertDialog dialog = new AlertDialog(context, items != null);
+            final AlertDialog dialog = new AlertDialog(context, items != null); dialog.widthDp = widthDp;
             dialog.setCancelable(cancelable); dialog.setCanceledOnTouchOutside(cancelable);
             if (dismiss != null) dialog.setOnDismissListener(dismiss);
             if (cancel != null) dialog.setOnCancelListener(cancel);
             final int[] which = {BUTTON_POSITIVE, BUTTON_NEGATIVE, BUTTON_NEUTRAL};
             for (int i = 0; i < 3; i++) {
                 final int slot = i;
-                TextView b = new TextView(context); b.setTextSize(17); b.setGravity(Gravity.CENTER); b.setSingleLine(); b.setText(labels[i]); b.setContentDescription(labels[i]); b.setPadding(dp(12), 0, dp(12), 0);
+                TextView b = new TextView(context); b.setTextSize(17); b.setGravity(Gravity.CENTER); b.setTextAlignment(View.TEXT_ALIGNMENT_CENTER); b.setIncludeFontPadding(false); b.setSingleLine(); b.setEllipsize(android.text.TextUtils.TruncateAt.END); b.setText(labels[i]); b.setContentDescription(labels[i]); b.setPadding(dp(8), 0, dp(8), 0); b.setTag("dialog_button");
                 b.setTextColor(ACCENT); b.setTypeface(i == 0 ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
                 if (i == 1 && labels[i] != null && labels[i].toString().contains("삭제")) b.setTextColor(0xFFFF3B30);
                 b.setOnClickListener(v -> { if (listeners[slot] != null) listeners[slot].onClick(dialog, which[slot]); dialog.dismiss(); });
@@ -100,9 +108,9 @@ final class AlertDialog extends Dialog {
 
         private View card(AlertDialog dialog) {
             LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL); card.setBackground(round(Color.WHITE, 18)); card.setTag("alert_card");
-            LinearLayout body = new LinearLayout(context); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(20), dp(20), dp(20), dp(16));
-            if (title != null) { TextView t = new TextView(context); t.setText(title); t.setTextSize(17); t.setTextColor(INK); t.setTypeface(Typeface.DEFAULT_BOLD); t.setGravity(Gravity.CENTER); t.setTag("dialog_title"); body.addView(t, new LinearLayout.LayoutParams(-1, -2)); dialog.titleView = t; }
-            if (message != null) { TextView m = new TextView(context); m.setText(message); m.setTextSize(14); m.setTextColor(0xFF48484A); m.setGravity(Gravity.CENTER); m.setLineSpacing(0, 1.15f); m.setTag("dialog_message"); LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, -2); mp.topMargin = dp(title == null ? 0 : 8); LimitedScroll s = new LimitedScroll(context, Math.round(context.getResources().getDisplayMetrics().heightPixels * .5f)); s.addView(m); body.addView(s, mp); dialog.messageView = m; }
+            LinearLayout body = new LinearLayout(context); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(20), dp(22), dp(20), dp(18));
+            if (title != null) { TextView t = new TextView(context); t.setText(title); t.setTextSize(17); t.setTextColor(INK); t.setTypeface(Typeface.DEFAULT_BOLD); t.setGravity(Gravity.CENTER); t.setTextAlignment(View.TEXT_ALIGNMENT_CENTER); t.setTag("dialog_title"); body.addView(t, new LinearLayout.LayoutParams(-1, -2)); dialog.titleView = t; }
+            if (message != null) { TextView m = new TextView(context); m.setText(message); m.setTextSize(14); m.setTextColor(0xFF48484A); m.setGravity(Gravity.CENTER); m.setTextAlignment(View.TEXT_ALIGNMENT_CENTER); m.setLineSpacing(0, 1.2f); m.setTag("dialog_message"); LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(-1, -2); mp.topMargin = dp(title == null ? 0 : 8); LimitedScroll s = new LimitedScroll(context, Math.round(context.getResources().getDisplayMetrics().heightPixels * .5f)); s.addView(m); body.addView(s, mp); dialog.messageView = m; }
             if (view != null) { if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view); LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(-1, -2); vp.topMargin = dp(title == null && message == null ? 0 : 12); body.addView(view, vp); }
             card.addView(body, new LinearLayout.LayoutParams(-1, -2));
             int count = 0; for (CharSequence l : labels) if (l != null) count++;
@@ -110,11 +118,16 @@ final class AlertDialog extends Dialog {
             card.addView(hairline(false));
             boolean row = count <= 2 && labels[2] == null;
             LinearLayout bar = new LinearLayout(context); bar.setOrientation(row ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-            int[] order = row ? new int[]{1, 0} : new int[]{0, 2, 1}; boolean first = true;
+            int[] order = row ? new int[]{1, 0} : new int[]{0, 2, 1}; boolean first = true; int index = 0;
             for (int slot : order) {
                 if (labels[slot] == null) continue;
                 if (!first) bar.addView(hairline(row)); first = false;
-                bar.addView(dialog.buttons[slot], row ? new LinearLayout.LayoutParams(0, dp(48), 1) : new LinearLayout.LayoutParams(-1, dp(48)));
+                // iOS alert buttons: equal-width halves (or full-width rows), label centred in its own cell, a soft grey press highlight
+                // that follows the card's rounded bottom corners
+                boolean last = ++index == count, firstCell = index == 1; float r = dp(18);
+                float bl = row ? (firstCell ? r : 0) : (last ? r : 0), br = row ? (last ? r : 0) : (last ? r : 0);
+                dialog.buttons[slot].setBackground(pressable(new float[]{0, 0, 0, 0, br, br, bl, bl}));
+                bar.addView(dialog.buttons[slot], row ? new LinearLayout.LayoutParams(0, dp(50), 1) : new LinearLayout.LayoutParams(-1, dp(50)));
             }
             card.addView(bar, new LinearLayout.LayoutParams(-1, -2));
             return card;
