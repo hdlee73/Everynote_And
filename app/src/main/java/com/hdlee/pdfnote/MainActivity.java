@@ -1737,8 +1737,11 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         placeInlineBar(top,editBottom);
     }
     /** Keeps the toolbar clear of the text being typed: above the box first (the keyboard covers the lower part), else below, else at the top. */
+    /** The style bar never wider than the page area (a side panel makes that narrower); smaller widths scroll sideways. */
+    private int inlineBarWidth(){int area=viewportLayer!=null&&viewportLayer.getWidth()>0?viewportLayer.getWidth():getResources().getDisplayMetrics().widthPixels;return Math.max(dp(120),Math.min(dp(330),area-dp(16)));}
     private void placeInlineBar(int editTop,int editBottom){
         if(inlineBar==null||viewportLayer==null||viewportLayer.getHeight()<=0)return;
+        {FrameLayout.LayoutParams wl=(FrameLayout.LayoutParams)inlineBar.getLayoutParams();int bw=inlineBarWidth();if(wl.width!=bw){wl.width=bw;inlineBar.setLayoutParams(wl);}}
         int barH=inlineBar.getHeight()>0?inlineBar.getHeight():dp(42),H=viewportLayer.getHeight(),gap=dp(4);
         FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)inlineBar.getLayoutParams();
         int topMargin;
@@ -1787,8 +1790,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         ImageButton remove=icon(R.drawable.ic_delete,"글상자 삭제",0xFFFF3B30,v->deleteInlineText());remove.setPadding(dp(7),dp(7),dp(7),dp(7));row.addView(remove,new LinearLayout.LayoutParams(dp(34),dp(34)));
         ImageButton done=icon(R.drawable.ic_check,"입력 완료",Color.WHITE,v->commitInlineText());done.setTag("text_done");done.setBackground(round(ACCENT,17));done.setPadding(dp(7),dp(7),dp(7),dp(7));LinearLayout.LayoutParams dp2=new LinearLayout.LayoutParams(dp(34),dp(34));dp2.setMargins(dp(4),0,0,0);row.addView(done,dp2);
         card.addView(row,new LinearLayout.LayoutParams(-1,dp(38)));card.addView(panel,new LinearLayout.LayoutParams(-1,-2));
-        inlineBar=card;card.setBackground(round(0xF2FFFFFF,20));card.setElevation(dp(6));
-        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(Math.min(dp(330),getResources().getDisplayMetrics().widthPixels-dp(16)),-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);lp.setMargins(dp(8),0,dp(8),0);viewportLayer.addView(inlineBar,lp);
+        HorizontalScrollView scroller=new HorizontalScrollView(this);scroller.setHorizontalScrollBarEnabled(false);scroller.setFillViewport(true);scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);card.setMinimumWidth(dp(300));scroller.addView(card,new FrameLayout.LayoutParams(-1,-2));
+        inlineBar=scroller;scroller.setBackground(round(0xF2FFFFFF,20));scroller.setElevation(dp(6));
+        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(inlineBarWidth(),-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);lp.setMargins(dp(8),0,dp(8),0);viewportLayer.addView(inlineBar,lp);
     }
     private LinearLayout zoomPanel;private TextView zoomLabel;
     private void stepZoom(float factor){if(pageView==null||renderer==null)return;float next=Math.round((pageView.zoom()+(factor>1f?.05f:-.05f))*20f)/20f;pageView.setZoom(next);}
