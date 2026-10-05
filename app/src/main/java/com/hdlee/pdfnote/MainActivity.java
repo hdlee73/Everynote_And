@@ -948,7 +948,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void applyFloatPos(final View target,final String key){target.post(()->moveFloating(target,dp(1)*recentPrefs.getFloat(key+"_dx",0f),dp(1)*recentPrefs.getFloat(key+"_dy",0f)));}
     private View makeGrip(final View target,final String key){
         View grip=new View(this){private final Paint dots=new Paint(Paint.ANTI_ALIAS_FLAG);
-            @Override protected void onDraw(Canvas c){dots.setColor(0xFFB0B0B8);float cx=getWidth()/2f,cy=getHeight()/2f;for(int i=-1;i<=1;i++)for(int j=0;j<2;j++)c.drawCircle(cx+(j-0.5f)*dp(5),cy+i*dp(6),dp(1.6f),dots);}};
+            @Override protected void onDraw(Canvas c){dots.setColor(0xFFB0B0B8);float cx=getWidth()/2f,cy=getHeight()/2f;for(int i=-1;i<=1;i++)for(int j=0;j<2;j++)c.drawCircle(cx+(j-0.5f)*dp(5),cy+i*dp(6),1.6f*getResources().getDisplayMetrics().density,dots);}};
         grip.setContentDescription("메뉴 위치 이동 · 끌어서 옮기기");final float[] d=new float[4];
         grip.setOnTouchListener((v,e)->{switch(e.getActionMasked()){
             case MotionEvent.ACTION_DOWN:d[0]=e.getRawX();d[1]=e.getRawY();d[2]=target.getTranslationX();d[3]=target.getTranslationY();if(v.getParent()!=null)v.getParent().requestDisallowInterceptTouchEvent(true);return true;
