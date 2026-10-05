@@ -53,8 +53,8 @@ final class AnchoredMenu {
 
     private static PopupWindow build(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid, int mode, boolean focusable) { return build(context, anchor, above, rows, shortcuts, avoid, mode, focusable, null); }
 
-    /** @param row for a submenu: the tapped row on screen; the new card opens right beside it, level with it. */
-    private static PopupWindow build(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid, int mode, boolean focusable, android.graphics.Rect row) {
+    /** @param tapped for a submenu: the tapped row on screen; the new card opens right beside it, level with it. */
+    private static PopupWindow build(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid, int mode, boolean focusable, android.graphics.Rect tapped) {
         final boolean beside = mode == 1;
         final float density = context.getResources().getDisplayMetrics().density;
         final int screenW = context.getResources().getDisplayMetrics().widthPixels, screenH = context.getResources().getDisplayMetrics().heightPixels;
@@ -122,7 +122,7 @@ final class AnchoredMenu {
             int sideGap = Math.round(4 * density);
             x = sideRight ? avoid.right + sideGap : avoid.left - w - sideGap;
             if (x < margin || x + w > screenW - margin) x = Math.max(margin, Math.min(screenW - w - margin, x));   // tight screen: overlap the parent a little rather than leave the screen
-            int rowTop = row != null ? row.top - Math.round(6 * density) : avoid.top;   // first child row sits level with the tapped row
+            int rowTop = tapped != null ? tapped.top - Math.round(6 * density) : avoid.top;   // first child row sits level with the tapped row
             y = Math.max(margin, Math.min(screenH - h - margin, rowTop));
         } else if (avoid != null && mode != 3) {
             int topLimit = Math.round(24 * density);
