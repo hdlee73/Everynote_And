@@ -90,8 +90,8 @@ final class AnchoredMenu {
         ScrollView scroll = new ScrollView(context) { @Override protected void onMeasure(int w, int h) { super.onMeasure(w, MeasureSpec.makeMeasureSpec(Math.round(screenH * .6f), MeasureSpec.AT_MOST)); } };
         scroll.setVerticalScrollBarEnabled(false); scroll.addView(list);
         android.widget.FrameLayout scrollBox = new android.widget.FrameLayout(context); scrollBox.addView(scroll, new android.widget.FrameLayout.LayoutParams(-1, -2));
-        // more rows below the visible part: a fading "▾ 아래에 더 있음" strip that disappears at the end of the list
-        final TextView more = new TextView(context); more.setText("▾  아래에 더 있음"); more.setTextSize(11); more.setTextColor(ACCENT); more.setGravity(Gravity.CENTER); more.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); more.setTag("menu_more");
+        // more rows below the visible part: a fading strip with a double chevron (⌄⌄) that disappears at the end of the list
+        final ImageView more = new ImageView(context); more.setImageResource(R.drawable.ic_chevron_double_down); more.setColorFilter(ACCENT); more.setScaleType(ImageView.ScaleType.CENTER_INSIDE); more.setPadding(0, Math.round(5 * density), 0, Math.round(3 * density)); more.setTag("menu_more"); more.setContentDescription("아래에 더 있음");
         more.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0x00FFFFFF, 0xF2FFFFFF, 0xFFFFFFFF})); more.setVisibility(View.GONE);
         more.setOnClickListener(v -> scroll.smoothScrollBy(0, Math.round(screenH * .3f)));
         scrollBox.addView(more, new android.widget.FrameLayout.LayoutParams(-1, Math.round(30 * density), Gravity.BOTTOM));
@@ -110,11 +110,14 @@ final class AnchoredMenu {
         }
         float natural = Math.min(screenW - 24 * density, (wide ? 268 : 250) * density);
         boolean sideRight = true;
+        final android.graphics.Rect bar = verticalBar(anchor);
         if (beside && avoid != null) {
             // a submenu opens right next to its parent: on whichever side has room, narrowed (rows ellipsize) when the screen is tight
             float roomRight = screenW - avoid.right - 14 * density, roomLeft = avoid.left - 14 * density;
             if (roomRight >= natural) sideRight = true; else if (roomLeft >= natural) sideRight = false;
             else { sideRight = roomRight >= roomLeft; natural = Math.max(Math.min(natural, 150 * density), Math.max(roomRight, roomLeft)); natural = Math.min(natural, screenW - 24 * density); }
+            // opened from a side toolbar: keep growing away from the bar (narrowed if needed) rather than doubling back over it
+            if (bar != null) { boolean barLeft = bar.centerX() < screenW / 2; float room = barLeft ? roomRight : roomLeft; if (room >= 150 * density && sideRight != barLeft) { sideRight = barLeft; natural = Math.min(natural, room); } }
         }
         card.measure(View.MeasureSpec.makeMeasureSpec(Math.round(natural), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(screenH, View.MeasureSpec.AT_MOST));
         int w = card.getMeasuredWidth(), h = card.getMeasuredHeight();
@@ -154,10 +157,26 @@ final class AnchoredMenu {
                 y = coverTop <= coverBottom ? topY : bottomY; x = Math.max(margin, Math.min(screenW - w - margin, avoid.centerX() - w / 2));
             }
         }
+        if (bar != null && !beside && avoid == null && mode == 0) {
+            // vertical toolbar: the card opens beside the bar, level with the tapped button, never on top of the bar
+            boolean right = bar.centerX() < screenW / 2;
+            x = right ? bar.right + gap : bar.left - w - gap; x = Math.max(margin, Math.min(screenW - w - margin, x));
+            y = Math.max(margin, Math.min(screenH - h - margin, at[1] + anchor.getHeight() / 2 - h / 2));
+        }
         if (mode == 3 && avoid != null) { x = Math.min(screenW - w - margin, avoid.right + gap); y = Math.max(margin, Math.min(screenH - h - margin, at[1] + anchor.getHeight() / 2 - h / 2)); }
         if (mode == 2) { x = (screenW - w) / 2; y = Math.max(margin, (screenH - h) / 3); }
         window.showAtLocation(anchor.getRootView(), Gravity.TOP | Gravity.START, x, y);
         return window;
+    }
+    /** Screen bounds of the vertical (side) toolbar that holds {@code anchor}, or null when the anchor is not in one. */
+    static android.graphics.Rect verticalBar(View anchor) {
+        for (android.view.ViewParent p = anchor.getParent(); p instanceof View; p = p.getParent()) {
+            View v = (View) p; Object tag = v.getTag();
+            if (("reading_toolbar".equals(tag) || "fullscreen_toolbar".equals(tag)) && v instanceof LinearLayout && ((LinearLayout) v).getOrientation() == LinearLayout.VERTICAL) {
+                int[] l = new int[2]; v.getLocationOnScreen(l); return new android.graphics.Rect(l[0], l[1], l[0] + v.getWidth(), l[1] + v.getHeight());
+            }
+        }
+        return null;
     }
     /** A menu card that opens to the right of {@code panel} (e.g. the side panel), level with the tapped ⋮ button. */
     static PopupWindow showRightOf(Context context, View anchor, View panel, List<Row> rows) {

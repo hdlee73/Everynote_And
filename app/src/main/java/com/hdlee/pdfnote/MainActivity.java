@@ -147,7 +147,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         showTranslationResult(source,translated==null?"":translated.toString(),bounds);
     }
 
-    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",false);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
+    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",false);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);selectedColor=(Math.max(26,Math.min(255,recentPrefs.getInt("highlight_alpha",Color.alpha(selectedColor))))<<24)|(selectedColor&0xFFFFFF);firstPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));secondPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
     private void applyKeepAwake(){if(recentPrefs.getBoolean("keep_awake",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
     @Override protected void onResume(){super.onResume();applyKeepAwake();if(!updateChecked){updateChecked=true;root.postDelayed(this::autoCheckForUpdate,4000);}if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
         .setMessage("문서 앱에서 PDF로 내보냈다면 파일을 가져와 필기와 주석을 이어갈 수 있습니다.")
@@ -193,7 +193,17 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 if(stolen){if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_CANCEL){stolen=false;tracking=false;}return true;}
                 return super.dispatchTouchEvent(e);
             }
-        };viewportLayer=viewport;installDrop(viewport);LinearLayout papers=new LinearLayout(this);
+        };viewportLayer=viewport;installDrop(viewport);
+        // two-page spread: the pages touch at the seam and a zoomed page may reach into the other half, so a gesture goes to the page under the finger (not the half)
+        LinearLayout papers=new LinearLayout(this){PdfPageView routed;
+            @Override public boolean dispatchTouchEvent(MotionEvent e){
+                if(e.getActionMasked()==MotionEvent.ACTION_DOWN){routed=null;
+                    if(twoPage&&secondPageView.getVisibility()==View.VISIBLE&&firstPageView.getMatrix().isIdentity()&&secondPageView.getMatrix().isIdentity()){PdfPageView under=e.getX()<secondPageView.getLeft()?firstPageView:secondPageView;
+                        for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView}){RectF r=v.pageRect();r.offset(v.getLeft(),v.getTop());if(r.contains(e.getX(),e.getY())){if(v!=under)routed=v;break;}}}}
+                if(routed==null)return super.dispatchTouchEvent(e);
+                MotionEvent c=MotionEvent.obtain(e);c.offsetLocation(-routed.getLeft(),-routed.getTop());boolean handled=routed.dispatchTouchEvent(c);c.recycle();
+                if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL)routed=null;return handled;
+            }};papers.setClipChildren(false);papers.setMotionEventSplittingEnabled(false);
         PageListener firstListener=new PageListener(),secondListener=new PageListener();
         firstPageView=new PdfPageView(this,firstListener);secondPageView=new PdfPageView(this,secondListener);firstListener.view=firstPageView;secondListener.view=secondPageView;pageView=firstPageView;
         firstPageView.setPageDrag(pageDragHandler);secondPageView.setPageDrag(pageDragHandler);papers.addView(firstPageView,new LinearLayout.LayoutParams(0,-1,1));papers.addView(secondPageView,new LinearLayout.LayoutParams(0,-1,1));secondPageView.setVisibility(twoPage?View.VISIBLE:View.GONE);viewport.addView(papers,new FrameLayout.LayoutParams(-1,-1));
@@ -211,7 +221,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         content.addView(studySplit,new LinearLayout.LayoutParams(-1,0,1));layoutStudyPanel();
         bottomBar=new LinearLayout(this);bottomBar.setTag("reading_toolbar");bottomBar.setGravity(Gravity.CENTER_VERTICAL);bottomBar.setPadding(dp(6),0,dp(6),0);barSurface=new GradientDrawable();barSurface.setColor(Color.WHITE);barSurface.setCornerRadii(new float[]{dp(22),dp(22),dp(22),dp(22),0,0,0,0});bottomBar.setBackground(barSurface);bottomBar.setElevation(dp(8));
         readBar=new LinearLayout(this);readBar.setTag("read_bar");readBar.setGravity(Gravity.CENTER_VERTICAL);writeBar=new LinearLayout(this);writeBar.setTag("writing_toolbar");writeBar.setGravity(Gravity.CENTER_VERTICAL);writeBar.setVisibility(View.GONE);
-        pageLabel=new TextView(this);pageLabel.setTag("page_indicator");pageLabel.setGravity(Gravity.CENTER);pageLabel.setTextColor(0xFF8E8E93);pageLabel.setTextSize(11);pageLabel.setSingleLine();pageLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);pageLabel.setBackground(round(0xFFF2F2F7,10));pageLabel.setContentDescription("페이지 번호 · 눌러 이동");pageLabel.setOnClickListener(v->{if(renderer==null)showAddDocumentMenu();else goToPage();});LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(dp(86),dp(32));pp.setMargins(0,0,dp(5),0);readBar.addView(pageLabel,pp);
+        pageLabel=new TextView(this);pageLabel.setTag("page_indicator");pageLabel.setGravity(Gravity.CENTER);pageLabel.setIncludeFontPadding(false);pageLabel.setPadding(0,0,0,0);pageLabel.setTextAlignment(View.TEXT_ALIGNMENT_GRAVITY);pageLabel.setTextColor(0xFF8E8E93);pageLabel.setTextSize(11);pageLabel.setSingleLine();pageLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);pageLabel.setBackground(round(0xFFF2F2F7,10));pageLabel.setContentDescription("페이지 번호 · 눌러 이동");pageLabel.setOnClickListener(v->{if(renderer==null)showAddDocumentMenu();else goToPage();});LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(dp(86),dp(32));pp.setMargins(0,0,dp(5),0);readBar.addView(pageLabel,pp);
         barIcon(readBar,R.drawable.ic_outline,"문서 개요",0xFF007AFF,v->showOutlineList());
         barIcon(readBar,R.drawable.ic_eye,"보기 방법",0xFF30B0C7,v->showViewMenu(v));
         bookmarkButton=barIcon(readBar,R.drawable.ic_star_outline,"즐겨찾기",0xFFF5A623,v->toggleBookmark());
@@ -221,23 +231,23 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         barIcon(writeBar,R.drawable.ic_book,"읽기 모드",0xFF007AFF,v->setWriteMode(false));
         penButton=barIcon(writeBar,R.drawable.ic_ink,"펜",0xFF1C1C1E,v->penTap(v));
         hlButton=barIcon(writeBar,R.drawable.ic_highlight,"형광펜",0xFFF5C400,v->highlightTap(v));
-        eraserButton=barIcon(writeBar,R.drawable.ic_eraser,"지우개",0xFFFF6B8A,v->{if(renderer==null)toast("문서를 먼저 여세요");else setInkMode(2);});
+        eraserButton=barIcon(writeBar,R.drawable.ic_eraser,"지우개",0xFFFF6B8A,v->eraserTap(v));
         lassoButton=barIcon(writeBar,R.drawable.ic_lasso,"올가미 선택",0xFFAF52DE,v->toggleLasso());
         memoButton=barIcon(writeBar,R.drawable.ic_note_add,"메모 추가",0xFFFF9500,v->toggleMemoMode());
         barIcon(writeBar,R.drawable.ic_insert,"삽입 · 사진 스티커 도형 표",0xFFFF2D55,v->showInsertMenu(v));
         barIcon(writeBar,R.drawable.ic_undo,"실행 취소",0xFF8E8E93,v->undoInk());
         barIcon(writeBar,R.drawable.ic_redo,"다시 실행",0xFF8E8E93,v->redoInk());
         barGrip=makeGrip(bottomBar,"bar");barGrip.setVisibility(View.GONE);bottomBar.addView(barGrip,new LinearLayout.LayoutParams(dp(18),dp(44)));bottomBar.addView(readBar,new LinearLayout.LayoutParams(0,-1,1));bottomBar.addView(writeBar,new LinearLayout.LayoutParams(0,-1,1));barMenuButton=icon(R.drawable.ic_float,"하단 메뉴 위치·방향",0xFF8E8E93,v->showBarLayoutMenu(v));barMenuButton.setTag("bar_layout");barMenuButton.setPadding(dp(8),dp(8),dp(8),dp(8));bottomBar.addView(barMenuButton,new LinearLayout.LayoutParams(dp(38),dp(44)));content.addView(bottomBar,new LinearLayout.LayoutParams(-1,dp(54)));
-        fullscreenDock=new LinearLayout(this);fullscreenDock.setTag("fullscreen_toolbar");fullscreenDock.setGravity(Gravity.CENTER_VERTICAL);fullscreenDock.setPadding(dp(6),0,dp(6),0);fullscreenDock.setBackground(round(0xF5FFFFFF,24));fullscreenDock.setElevation(dp(6));fullscreenDock.setVisibility(View.GONE);
-        fullscreenDock.addView(dockIcon(R.drawable.ic_outline,"전체 화면 개요",NAVY,v->showOutlineList()),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        fullscreenDock.addView(dockIcon(R.drawable.ic_eye,"전체 화면 보기 방법",NAVY,v->showViewMenu(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        fullscreenDock.addView(dockIcon(R.drawable.ic_ink,"전체 화면 필기도구",NAVY,v->penTap(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        fullscreenDock.addView(dockIcon(R.drawable.ic_note_add,"전체 화면 메모 추가",NAVY,v->toggleMemoMode()),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        fullscreenDock.addView(dockIcon(R.drawable.ic_insert,"전체 화면 삽입",NAVY,v->showInsertMenu(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        fullscreenDock.addView(dockIcon(R.drawable.ic_text,"전체 화면 타이핑",NAVY,v->toggleTyping()),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        fullscreenDock.addView(dockIcon(R.drawable.ic_lasso,"전체 화면 올가미",NAVY,v->toggleLasso()),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock=new LinearLayout(this);fullscreenDock.setTag("fullscreen_toolbar");fullscreenDock.setGravity(Gravity.CENTER_VERTICAL);fullscreenDock.setPadding(dp(6),0,dp(6),0);GradientDrawable dockSurface=round(Color.WHITE,24);dockSurface.setStroke(Math.max(1,dp(1)/2),0x14000000);fullscreenDock.setBackground(dockSurface);fullscreenDock.setElevation(dp(10));   // same solid surface and coloured icons as the normal bottom barfullscreenDock.setVisibility(View.GONE);
+        fullscreenDock.addView(dockIcon(R.drawable.ic_outline,"전체 화면 개요",0xFF007AFF,v->showOutlineList()),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_eye,"전체 화면 보기 방법",0xFF30B0C7,v->showViewMenu(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_ink,"전체 화면 필기도구",0xFF5856D6,v->penTap(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_note_add,"전체 화면 메모 추가",0xFFFF9500,v->toggleMemoMode()),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_insert,"전체 화면 삽입",0xFFFF2D55,v->showInsertMenu(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_text,"전체 화면 타이핑",0xFF34C759,v->toggleTyping()),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_lasso,"전체 화면 올가미",0xFFAF52DE,v->toggleLasso()),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_more_vert,"전체 화면 메뉴",NAVY,v->showMainMenu(v,true)),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        dockGrip=makeGrip(fullscreenDock,"dock");dockGrip.setVisibility(View.GONE);fullscreenDock.addView(dockGrip,0,new LinearLayout.LayoutParams(dp(18),dp(44)));fullscreenExit=dockIcon(R.drawable.ic_fullscreen_exit,"전체 화면 종료",NAVY,v->toggleFullscreen());fullscreenDock.addView(fullscreenExit,new LinearLayout.LayoutParams(dp(44),dp(44)));FrameLayout.LayoutParams ep=new FrameLayout.LayoutParams(-2,dp(44),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);ep.setMargins(dp(8),0,dp(8),dp(14));root.addView(fullscreenDock,ep);
+        dockGrip=makeGrip(fullscreenDock,"dock");dockGrip.setVisibility(View.GONE);fullscreenDock.addView(dockGrip,0,new LinearLayout.LayoutParams(dp(18),dp(44)));fullscreenExit=dockIcon(R.drawable.ic_fullscreen_exit,"전체 화면 종료",0xFF8E8E93,v->toggleFullscreen());fullscreenDock.addView(fullscreenExit,new LinearLayout.LayoutParams(dp(44),dp(44)));FrameLayout.LayoutParams ep=new FrameLayout.LayoutParams(-2,dp(44),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);ep.setMargins(dp(8),0,dp(8),dp(14));root.addView(fullscreenDock,ep);
         fullscreenDock.setOnTouchListener((v,e)->{if(dockShown){v.removeCallbacks(dockHider);if(!dockPinned()&&(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL))v.postDelayed(dockHider,6000);}return false;});
         dockHandle=new View(this);dockHandle.setTag("fullscreen_handle");dockHandle.setContentDescription("도구 모음 열기 · 위로 쓸어올리기");dockHandle.setBackground(round(0x66000000,3));dockHandle.setVisibility(View.GONE);dockHandle.setOnClickListener(v->showFullscreenDock(false));
         FrameLayout.LayoutParams hp=new FrameLayout.LayoutParams(dp(44),dp(5),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);hp.bottomMargin=dp(40);root.addView(dockHandle,hp);
@@ -277,10 +287,32 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box),AnchoredMenu.Row.divider(),new AnchoredMenu.Row("직선",R.drawable.ic_line,()->setInkMode(3)).selected(inkMode==3).tint(inkColor|0xFF000000),new AnchoredMenu.Row("손가락 필기",R.drawable.ic_touch,this::toggleFingerInk).tint(0xFF007AFF).selected(fingerInk)),null);
     }
     private boolean highlightFree;private float highlightThick=0.022f;
+    /** Highlighter colour incl. its opacity; the opacity is remembered for the next session (new strokes only, old marks keep theirs). */
+    private void setHighlightColor(int color){selectedColor=color;recentPrefs.edit().putInt("highlight_alpha",Color.alpha(color)).apply();pageView.setHighlightMode(highlightMode,selectedColor);syncOtherTools();updateInkButton();}
+    private static final int[] ERASER_SIZES={5,10,18,28,40};
+    private void eraserTap(View anchor){
+        if(renderer==null){toast("문서를 먼저 여세요");return;}
+        if(inkMode==2&&!highlightMode)showEraserMenu(anchor);else setInkMode(2);
+    }
+    /** Eraser range: five circle sizes; the chosen radius is shown under the pen while erasing. */
+    private void showEraserMenu(View anchor){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(6),dp(2),0);
+        TextView label=new TextView(this);label.setTextSize(12);label.setTextColor(0xFF8E8E93);label.setPadding(dp(10),0,dp(10),dp(2));label.setTag("eraser_size_label");
+        Runnable show=()->label.setText("지우개 범위 · 지름 "+Math.round(pageView.eraserRadius()*2)+"dp");show.run();box.addView(label);
+        java.util.function.IntSupplier current=()->{int best=0;for(int i=1;i<ERASER_SIZES.length;i++)if(Math.abs(ERASER_SIZES[i]-pageView.eraserRadius())<Math.abs(ERASER_SIZES[best]-pageView.eraserRadius()))best=i;return best;};
+        LinearLayout sizes=iconSegmented(ERASER_SIZES.length,current,i->{setEraserRadius(ERASER_SIZES[i]);show.run();},(c,w,h,i)->{float d=getResources().getDisplayMetrics().density;Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);float r=Math.min(h*.42f,(3+i*3.2f)*d);p.setColor(0x22FF6B8A);c.drawCircle(w/2f,h/2f,r,p);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.5f*d);p.setColor(0xFFFF6B8A);c.drawCircle(w/2f,h/2f,r,p);});
+        for(int i=0;i<sizes.getChildCount();i++)sizes.getChildAt(i).setContentDescription("지우개 크기 "+(i+1));
+        box.addView(sizes);
+        AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box)),null);
+    }
+    private void setEraserRadius(float dp){recentPrefs.edit().putFloat("eraser_radius",dp).apply();firstPageView.setEraserRadius(dp);secondPageView.setEraserRadius(dp);}
     private void applyHighlightStyle(){pageView.setHighlightStyle(highlightFree,highlightThick);syncOtherTools();}
     private void showHighlightMenu(View anchor){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(6),dp(2),0);
-        box.addView(swatches(HIGHLIGHT_COLORS,()->selectedColor,c->{selectedColor=c;pageView.setHighlightMode(highlightMode,selectedColor);syncOtherTools();updateInkButton();},30,2));
+        // presets keep the chosen opacity: compare by colour only, apply the saved alpha
+        java.util.function.IntSupplier preset=()->{for(int c:HIGHLIGHT_COLORS)if((c&0xFFFFFF)==(selectedColor&0xFFFFFF))return c;return selectedColor;};
+        box.addView(swatches(HIGHLIGHT_COLORS,preset,c->{boolean isPreset=false;for(int h:HIGHLIGHT_COLORS)if(h==c)isPreset=true;setHighlightColor(isPreset?(Color.alpha(selectedColor)<<24)|(c&0xFFFFFF):c);},30,2));
+        box.addView(opacityBar(()->Color.alpha(selectedColor),a->setHighlightColor((a<<24)|(selectedColor&0xFFFFFF))));
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(8),dp(8),dp(4));
         TextView label=new TextView(this);label.setTextSize(12);label.setTextColor(0xFF8E8E93);label.setText("굵기 "+Math.round(highlightThick*1000f));row.addView(label,new LinearLayout.LayoutParams(dp(72),-2));
         android.widget.SeekBar bar=new android.widget.SeekBar(this);bar.setMax(30);bar.setProgress(Math.round((highlightThick-.008f)/.0024f));
@@ -310,6 +342,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             new AnchoredMenu.Row("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).danger());
         AnchoredMenu.show(this,anchor,true,rows,null);
     }
+    private List<AnchoredMenu.Row> libraryBackupRows(){return AnchoredMenu.rows(new AnchoredMenu.Row("모든 문서 백업",R.drawable.ic_backup,this::startLibraryBackup).tint(0xFF007AFF),new AnchoredMenu.Row("모든 문서 복원",R.drawable.ic_import,this::startLibraryRestore).tint(0xFF007AFF));}
     private List<AnchoredMenu.Row> rowsOf(int category){List<AnchoredMenu.Row> rows=new ArrayList<>();for(Tile t:categoryTiles(category)){AnchoredMenu.Row r=new AnchoredMenu.Row(t.label,t.icon,t.action).selected(t.selected);if(t.tint!=0)r.danger();rows.add(r);}return rows;}
     /** Compact top-right menu: the common actions, with the long tail grouped into sub menus. */
     private void showMainMenu(View anchor,boolean above){
@@ -325,15 +358,13 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             rows.add(new AnchoredMenu.Row("번역 포스트잇",R.drawable.ic_translate,this::showTranslations).tint(0xFFAF52DE));
             rows.add(new AnchoredMenu.Row("삽입",R.drawable.ic_insert,null).children(rowsOf(2)).tint(0xFF5856D6).submenu());
             rows.add(new AnchoredMenu.Row("학습·주석",R.drawable.ic_study,null).children(rowsOf(3)).tint(0xFF30B0C7).submenu());
-            rows.add(new AnchoredMenu.Row("내보내기·백업",R.drawable.ic_share,null).children(rowsOf(4)).tint(0xFF007AFF).submenu());
         }
+        // whole-library backup / restore lives only in 내보내기·백업 (also offered with no document open)
+        rows.add(new AnchoredMenu.Row("내보내기·백업",R.drawable.ic_share,null).children(doc?rowsOf(4):libraryBackupRows()).tint(0xFF007AFF).submenu());
         rows.add(AnchoredMenu.Row.divider());
         rows.add(new AnchoredMenu.Row("화면 켜 둠",R.drawable.ic_clock,()->{recentPrefs.edit().putBoolean("keep_awake",!awake).apply();applyKeepAwake();toast(!awake?"읽는 동안 화면이 꺼지지 않습니다":"화면 자동 꺼짐을 따릅니다");}).tint(0xFF8E8E93).selected(awake));
         rows.add(new AnchoredMenu.Row("전체 화면 메뉴 계속 표시",R.drawable.ic_float,this::toggleDockPinned).tint(0xFF8E8E93).selected(dockPinned()));
         rows.add(AnchoredMenu.Row.divider());
-        rows.add(new AnchoredMenu.Row("모든 문서 백업·복원",R.drawable.ic_backup,null).children(new ArrayList<>(Arrays.asList(
-            new AnchoredMenu.Row("모든 문서 통째로 백업",R.drawable.ic_backup,this::startLibraryBackup).tint(0xFF007AFF),
-            new AnchoredMenu.Row("백업 파일에서 모든 문서 복원",R.drawable.ic_import,this::startLibraryRestore).tint(0xFF007AFF)))).tint(0xFF007AFF).submenu());
         rows.add(new AnchoredMenu.Row("사용법",R.drawable.ic_outline,this::showHelp).tint(0xFF8E8E93));
         rows.add(new AnchoredMenu.Row("앱 정보·업데이트",R.drawable.ic_more_vert,this::showAbout).tint(0xFF8E8E93));
         List<AnchoredMenu.Shortcut> shortcuts=new ArrayList<>();
@@ -517,6 +548,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         commitInlineText();onSelectionAdjustStarted();stopInlinePlayer();if(renderer==null||index<0||index>=renderer.getPageCount())return;++ocrGeneration;resetPageTransforms();
         int first=twoPage?(index/2)*2:index;firstPageView.showPage(renderPage(renderer,first),first,store.marks,store.strokes,store.translations);firstPageView.setAnnotationStore(store);
         if(twoPage&&first+1<renderer.getPageCount()){secondPageView.setVisibility(View.VISIBLE);secondPageView.showPage(renderPage(renderer,first+1),first+1,store.marks,store.strokes,store.translations);secondPageView.setAnnotationStore(store);}else{secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);}
+        boolean spread=twoPage&&secondPageView.getVisibility()==View.VISIBLE;firstPageView.setSpread(-1,spread?secondPageView:null);secondPageView.setSpread(1,spread?firstPageView:null);
         if(carryScale>0f){firstPageView.restoreView(carryScale,carryPanX,carryPanY);if(secondPageView.getVisibility()==View.VISIBLE)secondPageView.restoreView(carryScale,carryPanX,carryPanY);}carryScale=-1f;
         pageView=twoPage&&index!=first?secondPageView:firstPageView;currentPage=index;activeSession.page=index;updateZoomLabel(pageView.zoom());syncOtherTools();
         previousOverlay.setVisibility(first>0?View.VISIBLE:View.GONE);nextOverlay.setVisibility(first+(twoPage?2:1)<renderer.getPageCount()||isNotebook(activeSession)?View.VISIBLE:View.GONE);nextOverlay.setContentDescription(first+(twoPage?2:1)>=renderer.getPageCount()&&isNotebook(activeSession)?"새 페이지 추가":"다음 페이지");
@@ -1143,7 +1175,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         String kind=element.kind;
         List<AnchoredMenu.Row> rows=new ArrayList<>();
         if(kind.equals("link"))rows.add(new AnchoredMenu.Row("링크 열기",R.drawable.ic_link,()->{if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}}).tint(0xFF5856D6));
-        if(kind.equals("video")){rows.add(new AnchoredMenu.Row("여기서 재생",R.drawable.ic_video,()->playInline(element)).tint(0xFFFF3B30));rows.add(new AnchoredMenu.Row("크게 보기",R.drawable.ic_fullscreen,()->showVideoPlayer(element)).tint(0xFF8E8E93));}
+        if(kind.equals("video")){rows.add(new AnchoredMenu.Row("여기서 재생",R.drawable.ic_video,()->playInline(element)).tint(0xFFFF3B30));rows.add(new AnchoredMenu.Row("크게 보기",R.drawable.ic_fullscreen,()->showVideoPlayer(element)).tint(0xFF8E8E93));rows.add(new AnchoredMenu.Row("다른 앱으로 재생",R.drawable.ic_share,()->openVideoExternally(new File(new File(getFilesDir(),"videos"),element.text))).tint(0xFF8E8E93));}
         if(kind.equals("youtube")){rows.add(new AnchoredMenu.Row("여기서 재생",R.drawable.ic_youtube,()->playInline(element)).tint(0xFFFF0000));rows.add(new AnchoredMenu.Row("유튜브 앱에서 열기",R.drawable.ic_link,()->openYoutube(element.text)).tint(0xFF8E8E93));}
         if(kind.equals("shape"))rows.add(new AnchoredMenu.Row("색·선 굵기",R.drawable.ic_palette,()->showShapeDialog(element)).tint(0xFFAF52DE));
         if(kind.equals("table")){rows.add(new AnchoredMenu.Row("셀 내용 편집",R.drawable.ic_table,()->editTableCells(element)).tint(0xFF30B0C7));rows.add(new AnchoredMenu.Row("행·열·색상",R.drawable.ic_sliders,()->showTableDialog(element)).tint(0xFFAF52DE));}
@@ -1186,7 +1218,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** The system photo picker (Android 13+, has its own close button); older versions use the gallery. */
     private void pickPhoto(){if(renderer==null)return;try{Intent pick=Build.VERSION.SDK_INT>=33?new Intent(android.provider.MediaStore.ACTION_PICK_IMAGES):new Intent(Intent.ACTION_PICK,android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI).setType("image/*");startActivityForResult(pick,IMPORT_IMAGE);}catch(RuntimeException error){pickImage();}}
     private void pickImage(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),IMPORT_IMAGE);}
-    private void pickVideo(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("video/*"),IMPORT_VIDEO);}
+    private void pickVideo(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("video/*").putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"video/*","application/vnd.ms-asf","application/x-msvideo","application/x-matroska","application/x-mpegurl"}),IMPORT_VIDEO);}
     private static final String[][] STICKER_GROUPS={
         {"⭐","🌟","✨","❤️","🧡","💛","💚","💙","💜","🖤","💖","💯"},
         {"🍂","🍁","🍃","🌿","🍀","🌸","🌼","🌻","🌹","🌷","🌲","🌵"},
@@ -1283,7 +1315,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(32),dp(32),Gravity.TOP|Gravity.START);fp.setMargins(dp(4),dp(4),0,0);
         ImageButton big=icon(R.drawable.ic_fullscreen,"크게 보기",Color.WHITE,v->{stopInlinePlayer();showVideoPlayer(element);});big.setBackground(round(0x99000000,16));big.setPadding(dp(6),dp(6),dp(6),dp(6));frame.addView(big,fp);
         final Runnable[] stopBar=new Runnable[1];
-        video.setOnPreparedListener(m->{video.start();stopBar[0]=addVideoBar(frame,video);});video.setOnErrorListener((m,what,extra)->{toast("이 동영상은 재생할 수 없습니다 (형식 미지원). 다른 앱으로 열어 보세요");return true;});
+        video.setOnPreparedListener(m->{video.start();stopBar[0]=addVideoBar(frame,video);});video.setOnErrorListener((m,what,extra)->{stopInlinePlayer();videoUnsupported(file);return true;});
         inlineStopper=()->{if(stopBar[0]!=null)stopBar[0].run();video.stopPlayback();};
     }
     private TextView barButton(String label,View.OnClickListener click){TextView b=new TextView(this);b.setText(label);b.setTextColor(Color.WHITE);b.setTextSize(15);b.setGravity(Gravity.CENTER);b.setPadding(dp(12),dp(6),dp(12),dp(6));b.setOnClickListener(click);return b;}
@@ -1331,7 +1363,17 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         final Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);
         VideoView video=new VideoView(this);video.setVideoURI(Uri.fromFile(file));frame.addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));final Runnable[] stopBar=new Runnable[1];
         ImageButton close=icon(R.drawable.ic_close,"동영상 닫기",Color.WHITE,v->dialog.dismiss());FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.TOP|Gravity.END);cp.setMargins(0,dp(24),dp(8),0);frame.addView(close,cp);
-        dialog.setContentView(frame);dialog.setOnDismissListener(d->{if(stopBar[0]!=null)stopBar[0].run();video.stopPlayback();});video.setOnPreparedListener(m->{video.start();stopBar[0]=addVideoBar(frame,video);});video.setOnErrorListener((m,w,x)->{toast("이 동영상은 재생할 수 없습니다 (형식 미지원)");return true;});dialog.show();
+        dialog.setContentView(frame);dialog.setOnDismissListener(d->{if(stopBar[0]!=null)stopBar[0].run();video.stopPlayback();});video.setOnPreparedListener(m->{video.start();stopBar[0]=addVideoBar(frame,video);});video.setOnErrorListener((m,w,x)->{dialog.dismiss();videoUnsupported(file);return true;});dialog.show();
+    }
+    /** The built-in player (MediaPlayer) cannot decode every container/codec (AVI with DivX/Xvid, WMV/ASF, FLV ...): hand the file to an installed video app instead of just failing. */
+    private void videoUnsupported(File file){
+        String mime=ShareProvider.videoMime(file);String kind=mime.contains("msvideo")?"AVI":mime.contains("wmv")?"WMV":mime.contains("matroska")?"MKV":mime.contains("flv")?"FLV":mime.contains("quicktime")?"MOV":mime.contains("mpeg")&&!mime.contains("mp4")?"MPEG":"이 형식";
+        new AlertDialog.Builder(this).setTitle("앱 안에서 재생할 수 없는 동영상").setMessage("이 기기의 내장 재생기는 "+kind+" 동영상의 코덱을 지원하지 않습니다. 설치된 동영상 앱(VLC, MX Player 등)으로 바로 재생할 수 있습니다.").setPositiveButton("다른 앱으로 재생",(d,w)->openVideoExternally(file)).setNegativeButton("닫기",null).show();
+    }
+    private void openVideoExternally(File file){
+        if(!file.isFile()){toast("동영상 파일을 찾을 수 없습니다");return;}
+        try{Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(ShareProvider.videoUri(this,file),ShareProvider.videoMime(file)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(Intent.createChooser(view,"동영상 재생 앱 선택").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));}
+        catch(ActivityNotFoundException error){toast("이 동영상을 재생할 앱이 없습니다. VLC 같은 동영상 앱을 설치해 보세요");}
     }
     // ---- insert menu, shapes, tables, drag and drop
     private List<AnchoredMenu.Row> insertRows(){
@@ -1372,11 +1414,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             GradientDrawable m=new GradientDrawable();m.setShape(GradientDrawable.OVAL);
             if(custom){m.setColor(chosen[0]);m.setStroke(dp(3),ACCENT);}else{m.setGradientType(GradientDrawable.SWEEP_GRADIENT);m.setColors(new int[]{0xFFFF3B30,0xFFFFCC00,0xFF34C759,0xFF00C7BE,0xFF007AFF,0xFFAF52DE,0xFFFF3B30});m.setStroke(dp(1),0xFFC7C7CC);}
             swatches[colors.length].setBackground(m);};
-        for(int i=0;i<colors.length;i++){final int color=colors[i];View v=new View(this);v.setContentDescription((color>>>24)==0?"없음":"색상");swatches[i]=v;v.setOnClickListener(x->{chosen[0]=color;refresh[0].run();});LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1);lp.setMargins(dp(3),dp(2),dp(3),dp(2));row.addView(v,lp);}
-        View more=new View(this);more.setContentDescription("다른 색·투명도 선택");swatches[colors.length]=more;more.setOnClickListener(x->ColorPicker.show(this,"색·투명도",chosen[0]==0?0x80007AFF:chosen[0],true,c->{chosen[0]=c;refresh[0].run();}));
-        LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(0,dp(32),1);mp.setMargins(dp(3),dp(2),dp(3),dp(2));row.addView(more,mp);
+        // each swatch is a true circle: a square dot (side = the smaller of its cell's width and 30dp) centred in an equal-width cell
+        for(int i=0;i<colors.length;i++){final int color=colors[i];View v=squareDot();v.setContentDescription((color>>>24)==0?"없음":"색상");swatches[i]=v;v.setOnClickListener(x->{chosen[0]=color;refresh[0].run();});row.addView(dotCell(v),new LinearLayout.LayoutParams(0,dp(34),1));}
+        View more=squareDot();more.setContentDescription("다른 색·투명도 선택");swatches[colors.length]=more;more.setOnClickListener(x->ColorPicker.show(this,"색·투명도",chosen[0]==0?0x80007AFF:chosen[0],true,c->{chosen[0]=c;refresh[0].run();}));
+        row.addView(dotCell(more),new LinearLayout.LayoutParams(0,dp(34),1));
         refresh[0].run();return row;
     }
+    private View squareDot(){return new View(this){@Override protected void onMeasure(int w,int h){int side=Math.min(Math.min(View.MeasureSpec.getSize(w),View.MeasureSpec.getSize(h)),dp(30));setMeasuredDimension(side,side);}};}
+    private FrameLayout dotCell(View dot){FrameLayout cell=new FrameLayout(this);cell.addView(dot,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));return cell;}
     private TextView sectionLabel(String text){TextView t=new TextView(this);t.setText(text);t.setTextSize(12);t.setTextColor(0xFF8E8E93);t.setPadding(dp(4),dp(10),0,dp(2));return t;}
     private void showShapeDialog(AnnotationStore.PageElement existing){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
@@ -1425,7 +1470,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         final Shapes.Table base=existing!=null?Shapes.Table.parse(existing.text):Shapes.Table.create(3,3,0xFF3A3A3C,0xFFE5F0FF,0x00FFFFFF);
         final int[] line={base.line},head={base.head},fill={base.fill};
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(14),dp(4),dp(14),dp(4));
-        LinearLayout sizes=new LinearLayout(this);sizes.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout sizes=new LinearLayout(this);sizes.setGravity(Gravity.CENTER);
         EditText rowsInput=new EditText(this),colsInput=new EditText(this);rowsInput.setInputType(2);colsInput.setInputType(2);rowsInput.setText(String.valueOf(base.rows));colsInput.setText(String.valueOf(base.cols));rowsInput.setGravity(Gravity.CENTER);colsInput.setGravity(Gravity.CENTER);
         TextView a=new TextView(this);a.setText("행 ");TextView b=new TextView(this);b.setText("   열 ");sizes.addView(a);sizes.addView(rowsInput,new LinearLayout.LayoutParams(dp(64),-2));sizes.addView(b);sizes.addView(colsInput,new LinearLayout.LayoutParams(dp(64),-2));
         box.addView(sizes);
@@ -1433,7 +1478,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         box.addView(sectionLabel("머리글 칸 색 (첫 줄)"));box.addView(colorRow(headColors,head));
         box.addView(sectionLabel("바탕 색"));box.addView(colorRow(fillColors,fill));
         android.widget.ScrollView scroll=new android.widget.ScrollView(this);scroll.addView(box);
-        new AlertDialog.Builder(this).setTitle(existing==null?"표 만들기":"표 모양 수정").setView(scroll).setPositiveButton(existing==null?"넣기":"적용",(d,w)->{
+        new AlertDialog.Builder(this).setTitle(existing==null?"표 만들기":"표 모양 수정").setWidth(400).setView(scroll).setPositiveButton(existing==null?"넣기":"적용",(d,w)->{
             int r=3,c=3;try{r=Integer.parseInt(rowsInput.getText().toString().trim());c=Integer.parseInt(colsInput.getText().toString().trim());}catch(NumberFormatException ignored){}
             r=Math.max(1,Math.min(30,r));c=Math.max(1,Math.min(12,c));
             Shapes.Table t=base.resized(r,c);t.line=line[0];t.head=head[0];t.fill=fill[0];
@@ -1458,9 +1503,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void askYoutube(){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
-        EditText input=new EditText(this);input.setSingleLine();input.setHint("https://youtu.be/… 또는 youtube.com/watch?v=…");input.setPadding(dp(24),dp(12),dp(24),dp(12));
+        EditText input=new EditText(this);input.setSingleLine();input.setTextSize(15);input.setHint("https://youtu.be/… 또는 youtube.com/watch?v=…");input.setBackground(round(0xFFF2F2F7,12));input.setPadding(dp(14),dp(12),dp(14),dp(12));input.setSelectAllOnFocus(true);
         ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData data=clipboard.getPrimaryClip();if(data!=null&&data.getItemCount()>0&&data.getItemAt(0).getText()!=null&&youtubeId(data.getItemAt(0).getText().toString())!=null)input.setText(data.getItemAt(0).getText());
-        new AlertDialog.Builder(this).setTitle("유튜브 링크").setView(input).setPositiveButton("넣기",(d,w)->{String id=youtubeId(input.getText().toString());if(id==null)toast("유튜브 주소를 입력하세요");else importYoutube(id);}).setNegativeButton("취소",null).show();
+        new AlertDialog.Builder(this).setTitle("유튜브 링크").setMessage("동영상 주소를 붙여 넣으면 페이지에 넣을 수 있습니다").setView(input).setPositiveButton("넣기",(d,w)->{String id=youtubeId(input.getText().toString());if(id==null)toast("유튜브 주소를 입력하세요");else importYoutube(id);}).setNegativeButton("취소",null).show();
     }
     private void openYoutube(String id){try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://www.youtube.com/watch?v="+id)));}catch(ActivityNotFoundException error){toast("유튜브를 열 앱이 없습니다");}}
     /** A YouTube video is stored as its video id plus a downloaded thumbnail; tapping it opens the video in YouTube. */
@@ -1777,6 +1822,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("이 문서 필기 백업 불러오기",R.drawable.ic_import,this::importSidecar));
                 t.add(new Tile("원본 파일 내보내기",R.drawable.ic_original,this::exportOriginal));
                 t.add(new Tile("다른 기기와 동기화",R.drawable.ic_sync,this::showDeviceSync));
+                t.add(new Tile("모든 문서 백업",R.drawable.ic_backup,this::startLibraryBackup));
+                t.add(new Tile("모든 문서 복원",R.drawable.ic_import,this::startLibraryRestore));
                 break;
         }
         return t;
@@ -2123,7 +2170,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         Window window=dialog.getWindow();if(window!=null){window.setGravity(Gravity.CENTER);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(32),dp(420)),ViewGroup.LayoutParams.WRAP_CONTENT);window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);}
         return dialog;
     }
-    private TextView dialogButton(String label,int color,boolean bold,Runnable action){TextView b=new TextView(this);b.setText(label);b.setTextSize(16);b.setTextColor(color);if(bold)b.setTypeface(Typeface.DEFAULT_BOLD);b.setGravity(Gravity.CENTER);b.setPadding(dp(12),0,dp(12),0);b.setContentDescription(label);b.setOnClickListener(v->action.run());return b;}
+    private TextView dialogButton(String label,int color,boolean bold,Runnable action){TextView b=new TextView(this);b.setText(label);b.setTextSize(16);b.setTextColor(color);if(bold)b.setTypeface(Typeface.DEFAULT_BOLD);b.setGravity(Gravity.CENTER);b.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);b.setIncludeFontPadding(false);b.setSingleLine();b.setPadding(dp(12),0,dp(12),0);b.setContentDescription(label);b.setOnClickListener(v->action.run());return b;}
 
     // ================================================================== side panel: search / page previews / outline / recordings
     private LinearLayout sidePanel,outlineList,recordingList;private FrameLayout sideContent;private TextView sideTitle;private ImageButton sideMore;private ScrollView outlineScroll,recordingScroll;
