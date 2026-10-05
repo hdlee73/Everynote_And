@@ -1538,6 +1538,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("필기 백업 파일 저장",R.drawable.ic_backup,this::exportAnnotations));
                 t.add(new Tile("필기 백업 파일 불러오기",R.drawable.ic_import,this::importSidecar));
                 t.add(new Tile("원본 파일 내보내기",R.drawable.ic_original,this::exportOriginal));
+                t.add(new Tile("다른 기기와 동기화",R.drawable.ic_sync,this::showDeviceSync));
                 break;
         }
         return t;
@@ -1976,6 +1977,51 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     // ================================================================== voice recording attached to a page
     private MediaRecorder recorder;private File recordingFile;private long recordingStarted;private int recordingPage;private AnnotationStore recordingStore;private LinearLayout recorderBar;private TextView recorderTime;private static final int REQUEST_RECORD=31;
     private static String clock(long seconds){seconds=Math.max(0,seconds);return (seconds/60)+":"+(seconds%60<10?"0":"")+(seconds%60);}
+    // ---- same-Wi-Fi device sync (user triggered; this phone is the server while the card is open)
+    private DeviceSync deviceSync;
+    private <T> T onUi(java.util.concurrent.Callable<T> job)throws Exception{
+        if(Looper.myLooper()==Looper.getMainLooper())return job.call();
+        final Object[] box=new Object[2];final java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);
+        runOnUiThread(()->{try{box[0]=job.call();}catch(Exception e){box[1]=e;}latch.countDown();});
+        if(!latch.await(30,java.util.concurrent.TimeUnit.SECONDS))throw new IOException("앱이 응답하지 않습니다");
+        if(box[1]!=null)throw (Exception)box[1];@SuppressWarnings("unchecked")T result=(T)box[0];return result;
+    }
+    private final DeviceSync.Host syncHost=new DeviceSync.Host(){
+        private void collect(File dir,String prefix,org.json.JSONArray out)throws Exception{
+            for(File f:library.list(dir)){String rel=prefix+f.getName();
+                if(f.isDirectory())collect(f,rel+"/",out);
+                else{org.json.JSONObject o=new org.json.JSONObject();o.put("path",rel);o.put("size",f.length());o.put("mtime",Math.max(f.lastModified(),AnnotationStore.modified(MainActivity.this,Uri.fromFile(f))));out.put(o);}}}
+        @Override public String listLibrary()throws Exception{org.json.JSONArray out=new org.json.JSONArray();collect(library.root,"",out);return out.toString();}
+        @Override public File libraryFile(String rel){
+            if(rel==null||rel.isEmpty()||rel.length()>400||rel.startsWith("/")||rel.contains("\\")||rel.contains("\0")||!rel.toLowerCase(java.util.Locale.ROOT).endsWith(".pdf"))return null;
+            for(String part:rel.split("/",-1))if(part.isEmpty()||part.equals(".")||part.equals("..")||part.startsWith("."))return null;
+            File f=new File(library.root,rel);return library.managed(f)?f:null;}
+        @Override public boolean isOpen(String rel)throws Exception{
+            final File f=libraryFile(rel);if(f==null)return false;
+            return onUi(()->{for(DocumentSession s:sessions)if(s.uri!=null&&"file".equals(s.uri.getScheme())&&f.getPath().equals(s.uri.getPath()))return true;return false;});}
+        @Override public String exportNote(String rel)throws Exception{
+            File f=libraryFile(rel);if(f==null||!f.isFile())return null;
+            AnnotationStore st=new AnnotationStore(MainActivity.this);Uri uri=Uri.fromFile(f);st.open(uri);return st.exportJson(uri,f.getName());}
+        @Override public void importNote(String rel,String json)throws Exception{
+            File f=libraryFile(rel);if(f==null||!f.isFile())throw new IOException("문서가 없습니다");
+            AnnotationStore st=new AnnotationStore(MainActivity.this);st.open(Uri.fromFile(f));st.importJson(json,Integer.MAX_VALUE);}
+        @Override public File assetFile(String name){
+            if(name==null)return null;if(name.endsWith(".png")){File d=new File(getFilesDir(),"images");d.mkdirs();return new File(d,name);}
+            if(name.endsWith(".m4a"))return new File(recordingsDir(),name);
+            if(name.endsWith(".mp4")){File d=new File(getFilesDir(),"videos");d.mkdirs();return new File(d,name);}return null;}
+        @Override public void onActivity(String message){runOnUiThread(()->toast(message));}
+    };
+    private void showDeviceSync(){
+        if(deviceSync!=null)return;
+        final DeviceSync sync=new DeviceSync(syncHost);final String address=DeviceSync.localAddress();
+        try{sync.start();}catch(IOException error){toast("동기화를 시작할 수 없습니다: "+error.getMessage());return;}
+        deviceSync=sync;getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        String where=address==null?"(Wi-Fi에 연결되어 있지 않습니다)":address+":"+sync.port();
+        new AlertDialog.Builder(this).setTitle("다른 기기와 동기화")
+            .setMessage("같은 Wi-Fi에 연결된 PC 앱(Everynote for Windows)의 ‘기기 동기화’에서 아래 주소와 코드를 입력하세요. 보낼 문서와 방향은 PC 앱에서 고릅니다.\n\n주소  "+where+"\n코드  "+sync.code()+"\n\n· 선택한 문서의 PDF·노트·이미지·녹음이 통째로 덮어써집니다.\n· 이 앱에서 열려 있는 문서는 덮어쓸 수 없으니 닫아 두세요.\n· 이 창을 닫으면 동기화가 끝납니다.")
+            .setPositiveButton("닫기",null)
+            .setOnDismissListener(d->{sync.stop();if(deviceSync==sync)deviceSync=null;getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}).show();
+    }
     private File recordingsDir(){File dir=new File(getFilesDir(),"recordings");dir.mkdirs();return dir;}
     private void startRecording(){
         if(renderer==null||store==null){toast("문서를 먼저 여세요");return;}
