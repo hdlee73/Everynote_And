@@ -1979,7 +1979,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private static String clock(long seconds){seconds=Math.max(0,seconds);return (seconds/60)+":"+(seconds%60<10?"0":"")+(seconds%60);}
     // ---- same-Wi-Fi device sync (user triggered; this phone is the server while the card is open)
     private DeviceSync deviceSync;
-    private final Map<String,String> sessionHashes=new HashMap<>();
     private <T> T onUi(java.util.concurrent.Callable<T> job)throws Exception{
         if(Looper.myLooper()==Looper.getMainLooper())return job.call();
         final Object[] box=new Object[2];final java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);
@@ -1987,23 +1986,25 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(!latch.await(30,java.util.concurrent.TimeUnit.SECONDS))throw new IOException("앱이 응답하지 않습니다");
         if(box[1]!=null)throw (Exception)box[1];@SuppressWarnings("unchecked")T result=(T)box[0];return result;
     }
-    private String hashOf(DocumentSession session)throws Exception{
-        String key=String.valueOf(session.uri);String cached=sessionHashes.get(key);if(cached!=null)return cached;
-        java.security.MessageDigest md=java.security.MessageDigest.getInstance("SHA-256");
-        try(InputStream in=getContentResolver().openInputStream(session.uri)){if(in==null)throw new IOException("문서를 읽을 수 없습니다");byte[] buf=new byte[65536];int n;while((n=in.read(buf))>0)md.update(buf,0,n);}
-        StringBuilder sb=new StringBuilder();for(byte b:md.digest())sb.append(String.format("%02x",b));sessionHashes.put(key,sb.toString());return sb.toString();
-    }
-    private DocumentSession sessionByHash(String id)throws Exception{for(DocumentSession s:onUi(()->new ArrayList<>(sessions)))if(id.equals(hashOf(s)))return s;return null;}
     private final DeviceSync.Host syncHost=new DeviceSync.Host(){
-        @Override public String listDocuments()throws Exception{
-            List<DocumentSession> copy=onUi(()->new ArrayList<>(sessions));org.json.JSONArray out=new org.json.JSONArray();
-            for(DocumentSession s:copy){org.json.JSONObject o=new org.json.JSONObject();o.put("id",hashOf(s));o.put("title",s.title);o.put("pages",s.renderer==null?0:s.renderer.getPageCount());out.put(o);}
-            return out.toString();}
-        @Override public String exportDocument(String id)throws Exception{
-            final DocumentSession s=sessionByHash(id);if(s==null)return null;return onUi(()->s.store.exportJson(s.uri,s.title));}
-        @Override public boolean importDocument(String id,String json)throws Exception{
-            final DocumentSession s=sessionByHash(id);if(s==null)return false;
-            onUi(()->{if(!sessions.contains(s))return null;s.store.importJson(json,s.renderer.getPageCount());s.redoStrokes.clear();switchDocument(s);toast("다른 기기에서 보낸 노트를 받았습니다");return null;});return true;}
+        private void collect(File dir,String prefix,org.json.JSONArray out)throws Exception{
+            for(File f:library.list(dir)){String rel=prefix+f.getName();
+                if(f.isDirectory())collect(f,rel+"/",out);
+                else{org.json.JSONObject o=new org.json.JSONObject();o.put("path",rel);o.put("size",f.length());o.put("mtime",Math.max(f.lastModified(),AnnotationStore.modified(MainActivity.this,Uri.fromFile(f))));out.put(o);}}}
+        @Override public String listLibrary()throws Exception{org.json.JSONArray out=new org.json.JSONArray();collect(library.root,"",out);return out.toString();}
+        @Override public File libraryFile(String rel){
+            if(rel==null||rel.isEmpty()||rel.length()>400||rel.startsWith("/")||rel.contains("\\")||rel.contains("\0")||!rel.toLowerCase(java.util.Locale.ROOT).endsWith(".pdf"))return null;
+            for(String part:rel.split("/",-1))if(part.isEmpty()||part.equals(".")||part.equals("..")||part.startsWith("."))return null;
+            File f=new File(library.root,rel);return library.managed(f)?f:null;}
+        @Override public boolean isOpen(String rel)throws Exception{
+            final File f=libraryFile(rel);if(f==null)return false;
+            return onUi(()->{for(DocumentSession s:sessions)if(s.uri!=null&&"file".equals(s.uri.getScheme())&&f.getPath().equals(s.uri.getPath()))return true;return false;});}
+        @Override public String exportNote(String rel)throws Exception{
+            File f=libraryFile(rel);if(f==null||!f.isFile())return null;
+            AnnotationStore st=new AnnotationStore(MainActivity.this);Uri uri=Uri.fromFile(f);st.open(uri);return st.exportJson(uri,f.getName());}
+        @Override public void importNote(String rel,String json)throws Exception{
+            File f=libraryFile(rel);if(f==null||!f.isFile())throw new IOException("문서가 없습니다");
+            AnnotationStore st=new AnnotationStore(MainActivity.this);st.open(Uri.fromFile(f));st.importJson(json,Integer.MAX_VALUE);}
         @Override public File assetFile(String name){
             if(name==null)return null;if(name.endsWith(".png")){File d=new File(getFilesDir(),"images");d.mkdirs();return new File(d,name);}
             if(name.endsWith(".m4a"))return new File(recordingsDir(),name);
@@ -2017,7 +2018,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         deviceSync=sync;getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         String where=address==null?"(Wi-Fi에 연결되어 있지 않습니다)":address+":"+sync.port();
         new AlertDialog.Builder(this).setTitle("다른 기기와 동기화")
-            .setMessage("같은 Wi-Fi에 연결된 PC 앱(Everynote for Windows)의 ‘기기 동기화’에서 아래 주소와 코드를 입력하세요.\n\n주소  "+where+"\n코드  "+sync.code()+"\n\n· 동기화할 문서를 이 앱과 PC 앱에서 모두 열어 두세요.\n· 이 창을 닫으면 동기화가 끝납니다.\n· 자동 동기화는 하지 않습니다.")
+            .setMessage("같은 Wi-Fi에 연결된 PC 앱(Everynote for Windows)의 ‘기기 동기화’에서 아래 주소와 코드를 입력하세요. 보낼 문서와 방향은 PC 앱에서 고릅니다.\n\n주소  "+where+"\n코드  "+sync.code()+"\n\n· 선택한 문서의 PDF·노트·이미지·녹음이 통째로 덮어써집니다.\n· 이 앱에서 열려 있는 문서는 덮어쓸 수 없으니 닫아 두세요.\n· 이 창을 닫으면 동기화가 끝납니다.")
             .setPositiveButton("닫기",null)
             .setOnDismissListener(d->{sync.stop();if(deviceSync==sync)deviceSync=null;getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}).show();
     }

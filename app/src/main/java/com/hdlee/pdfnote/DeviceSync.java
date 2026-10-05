@@ -12,18 +12,22 @@ import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 /**
- * Tiny LAN server for device-to-device note sync (no cloud, no automatic sync): while the "다른 기기와 동기화" card is open, another
- * Everynote (the Windows app) on the same Wi-Fi can list the open documents, download / upload their notes (sidecar JSON) and the
- * referenced images / recordings. Every request needs the 6-digit code shown on the card. Plain HTTP, private networks only.
+ * Tiny LAN server for device-to-device sync (no cloud, no automatic sync): while the "다른 기기와 동기화" card is open, the Windows app
+ * on the same Wi-Fi can list the document library, download / upload whole documents (PDF + notes JSON) and the referenced images /
+ * recordings. Documents are identified by their library-relative path. Every request needs the 6-digit code shown on the card.
  */
 final class DeviceSync {
     interface Host {
-        /** Open documents as JSON text: [{"id":sha256 of the PDF,"title":..,"pages":n}]. */
-        String listDocuments() throws Exception;
-        /** Notes of the document as sidecar JSON, or null when no open document has this id. */
-        String exportDocument(String id) throws Exception;
-        /** Replaces the notes of the open document with the sidecar JSON; false when no open document has this id. */
-        boolean importDocument(String id, String json) throws Exception;
+        /** Library as JSON text: [{"path":"folder/name.pdf","size":bytes,"mtime":ms (PDF or notes, whichever is newer)}]. */
+        String listLibrary() throws Exception;
+        /** True while the document is open in the app (it cannot be replaced then). */
+        boolean isOpen(String path) throws Exception;
+        /** The library file for a relative path (may not exist yet), or null when the path is not a valid library PDF path. */
+        File libraryFile(String path);
+        /** Notes of the library document as sidecar JSON, or null when there is no such document. */
+        String exportNote(String path) throws Exception;
+        /** Replaces the notes of the (existing) library document with the sidecar JSON. */
+        void importNote(String path, String json) throws Exception;
         /** The file of an image / recording / video asset (may not exist yet), or null for an invalid name. */
         File assetFile(String name);
         void onActivity(String message);
@@ -32,6 +36,7 @@ final class DeviceSync {
     static final Pattern ASSET = Pattern.compile("^[a-f0-9-]{36}\\.(png|m4a|mp4)$");
     private static final int MAX_JSON = 16 * 1024 * 1024;
     private static final long MAX_ASSET = 256L * 1024 * 1024;
+    private static final long MAX_PDF = 1024L * 1024 * 1024;
 
     private final Host host;
     private final String code;
@@ -110,20 +115,45 @@ final class DeviceSync {
     }
 
     private void route(String method, String path, long length, InputStream in, OutputStream out) throws Exception {
-        int q = path.indexOf('?'); if (q >= 0) path = path.substring(0, q);
-        if (method.equals("GET") && path.equals("/v1/docs")) { reply(out, 200, "application/json", bytes(host.listDocuments())); return; }
-        if (path.startsWith("/v1/doc/")) {
-            String id = path.substring(8);
-            if (!id.matches("[a-f0-9]{64}")) { reply(out, 400, "text/plain", bytes("bad id")); return; }
+        int q = path.indexOf('?'); String query = q >= 0 ? path.substring(q + 1) : null; if (q >= 0) path = path.substring(0, q);
+        if (method.equals("GET") && path.equals("/v1/library")) { reply(out, 200, "application/json", bytes(host.listLibrary())); return; }
+        if (path.equals("/v1/pdf") || path.equals("/v1/note")) {
+            String rel = null;
+            if (query != null) for (String kv : query.split("&")) if (kv.startsWith("p=")) rel = URLDecoder.decode(kv.substring(2), "UTF-8");
+            File file = rel == null ? null : host.libraryFile(rel);
+            if (file == null) { reply(out, 400, "text/plain", bytes("bad path")); return; }
+            boolean pdf = path.equals("/v1/pdf");
             if (method.equals("GET")) {
-                String json = host.exportDocument(id);
-                if (json == null) reply(out, 404, "text/plain", bytes("document not open")); else reply(out, 200, "application/json", bytes(json));
+                if (!file.isFile()) { reply(out, 404, "text/plain", bytes("missing")); return; }
+                if (pdf) {
+                    writeHead(out, 200, "application/pdf", file.length());
+                    try (InputStream f = new FileInputStream(file)) { byte[] b = new byte[16384]; int n; while ((n = f.read(b)) > 0) out.write(b, 0, n); }
+                    out.flush();
+                } else {
+                    String json = host.exportNote(rel);
+                    if (json == null) reply(out, 404, "text/plain", bytes("missing")); else reply(out, 200, "application/json", bytes(json));
+                }
                 return;
             }
             if (method.equals("PUT")) {
-                if (length > MAX_JSON) { reply(out, 413, "text/plain", bytes("too large")); return; }
-                String json = new String(readBody(in, (int) length), StandardCharsets.UTF_8);
-                if (host.importDocument(id, json)) { host.onActivity("받음"); reply(out, 200, "text/plain", bytes("ok")); } else reply(out, 404, "text/plain", bytes("document not open"));
+                if (host.isOpen(rel)) { reply(out, 409, "text/plain", bytes("document is open")); return; }
+                if (pdf) {
+                    if (length > MAX_PDF) { reply(out, 413, "text/plain", bytes("too large")); return; }
+                    File dir = file.getParentFile(); if (dir != null) dir.mkdirs();
+                    File tmp = new File(dir, "." + file.getName() + ".part");
+                    try (OutputStream f = new FileOutputStream(tmp)) {
+                        byte[] b = new byte[16384]; long left = length;
+                        while (left > 0) { int n = in.read(b, 0, (int) Math.min(b.length, left)); if (n < 0) throw new EOFException(); f.write(b, 0, n); left -= n; }
+                    }
+                    if (!tmp.renameTo(file)) { file.delete(); if (!tmp.renameTo(file)) { tmp.delete(); throw new IOException("rename"); } }
+                    reply(out, 200, "text/plain", bytes("ok"));
+                } else {
+                    if (length > MAX_JSON) { reply(out, 413, "text/plain", bytes("too large")); return; }
+                    if (!file.isFile()) { reply(out, 404, "text/plain", bytes("send the PDF first")); return; }
+                    host.importNote(rel, new String(readBody(in, (int) length), StandardCharsets.UTF_8));
+                    host.onActivity("받음");
+                    reply(out, 200, "text/plain", bytes("ok"));
+                }
                 return;
             }
         }
@@ -167,7 +197,7 @@ final class DeviceSync {
         return c == -1 && sb.length() == 0 ? null : sb.toString();
     }
     private static void writeHead(OutputStream out, int status, String type, long length) throws IOException {
-        String text = status == 200 ? "OK" : status == 400 ? "Bad Request" : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 413 ? "Payload Too Large" : "Error";
+        String text = status == 200 ? "OK" : status == 400 ? "Bad Request" : status == 403 ? "Forbidden" : status == 404 ? "Not Found" : status == 409 ? "Conflict" : status == 413 ? "Payload Too Large" : "Error";
         out.write(bytes("HTTP/1.1 " + status + " " + text + "\r\nContent-Type: " + type + "; charset=utf-8\r\nContent-Length: " + length + "\r\nConnection: close\r\n\r\n"));
     }
     private static void reply(OutputStream out, int status, String type, byte[] body) throws IOException {
