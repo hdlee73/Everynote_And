@@ -302,6 +302,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             new AnchoredMenu.Row("넘김 효과",R.drawable.ic_magic,null).tint(0xFF8E8E93).children(choiceRows(ANIM_CHOICES,pageAnimStyle(),this::setPageAnim)),
             AnchoredMenu.Row.divider(),
             new AnchoredMenu.Row("페이지 추가",R.drawable.ic_page_add,()->choosePageToInsert(currentPage)).tint(0xFF34C759),
+            new AnchoredMenu.Row("다른 형식으로 페이지 추가",R.drawable.ic_page_add,()->chooseOtherPageFormat(currentPage)).tint(0xFF34C759),
             new AnchoredMenu.Row("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).danger());
         AnchoredMenu.show(this,anchor,true,rows,null);
     }
@@ -340,7 +341,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         restoringSessions=true;try{JSONArray saved=new JSONArray(raw);String active=recentPrefs.getString("active_uri","");for(int i=0;i<saved.length();i++){JSONObject entry=saved.getJSONObject(i);Uri uri=Uri.parse(entry.getString("uri"));openPdf(uri,entry.optBoolean("text_only",false),Math.max(0,entry.optInt("page",0)),uri.toString().equals(active));}}catch(Exception ignored){}finally{restoringSessions=false;}
         if(importing.isEmpty())saveSessionState();return !sessions.isEmpty()||!importing.isEmpty();
     }
-    private void choosePdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/pdf","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/x-hwp","application/vnd.hancom.hwp","application/vnd.hancom.hwpx","application/octet-stream"});startActivityForResult(i,OPEN_PDF);}
+    private void choosePdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/pdf","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/x-hwp","application/vnd.hancom.hwp","application/vnd.hancom.hwpx","image/*","application/octet-stream"});startActivityForResult(i,OPEN_PDF);}
     private void chooseConvertedPdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/pdf");startActivityForResult(i,OPEN_PDF);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req==EXPORT_PDF){receivePdfExport(result,data);return;}if(req==EXPORT_ORIGINAL){receiveOriginalExport(result,data);return;}if(req==IMPORT_IMAGE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importImage(data.getData());return;}if(req==IMPORT_TEMPLATE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)receiveTemplate(data.getData());return;}if(req==IMPORT_VIDEO){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importVideo(data.getData());return;}if(req==EXPORT_CAPTURE){receiveCaptureExport(result,data);return;}if(req==EXPORT_STUDY||req==IMPORT_SIDECAR){receiveStudyResult(req,result,data);return;}if(req==TRANSLATE_EXTERNAL){receiveExternalTranslation(result,data);return;}if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri u=data.getData();if(req==OPEN_PDF){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}openPdf(u);}else if(req==EXPORT_JSON){try(OutputStream out=getContentResolver().openOutputStream(u,"wt")){if(out==null||pendingJsonExport==null)throw new IOException("다시 백업하세요");out.write(pendingJsonExport.getBytes(java.nio.charset.StandardCharsets.UTF_8));toast("주석을 내보냈습니다");}catch(Exception e){toast("내보내기 실패: "+e.getMessage());}}}
     private boolean isOfficeDocument(String name){String value=name.toLowerCase(Locale.ROOT);return value.endsWith(".hwp")||value.endsWith(".hwpx")||value.endsWith(".doc")||value.endsWith(".docx")||value.endsWith(".ppt")||value.endsWith(".pptx")||value.endsWith(".xls")||value.endsWith(".xlsx");}
@@ -444,6 +445,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void openPdf(Uri uri,boolean textOnly,int requestedPage,boolean activate){
         String title=queryName(uri);
         if(isOfficeDocument(title)&&!textOnly){if(title.toLowerCase(Locale.ROOT).endsWith(".hwp")||title.toLowerCase(Locale.ROOT).endsWith(".hwpx"))convertHwp(uri,title);else if(canConvertOffice(title))convertOffice(uri,title);else offerOfficeImport(uri,title);return;}
+        if(!textOnly&&isPictureFile(title)&&!library.managed(uri)){convertPicture(uri,title);return;}
         if(!textOnly&&!library.managed(uri)){
             File saved=library.imported(uri);if(saved!=null){openPdf(Uri.fromFile(saved),false,requestedPage,activate);return;}
             importPdfToLibrary(uri,title,requestedPage,activate);return;
@@ -456,6 +458,27 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             if(session.descriptor==null)throw new IOException("파일을 읽을 수 없습니다");session.renderer=new PdfRenderer(session.descriptor);session.uri=uri;session.store=new AnnotationStore(this);session.store.open(uri);session.page=requestedPage<0?0:Math.min(requestedPage,session.renderer.getPageCount()-1);sessions.add(session);
             recentPrefs.edit().putString("last_uri",uri.toString()).putString("last_title",title).apply();if(activate||activeSession==null)switchDocument(session);else updateTabs();saveSessionState();
         }catch(Exception error){if(session.renderer!=null)session.renderer.close();if(session.descriptor!=null)try{session.descriptor.close();}catch(IOException ignored){}if(session.officePreview!=null)session.officePreview.delete();toast("문서 열기 실패: "+error.getMessage());if(sessions.isEmpty())showWelcome();}
+    }
+    private static boolean isPictureFile(String name){String v=name==null?"":name.toLowerCase(Locale.ROOT);return v.endsWith(".png")||v.endsWith(".jpg")||v.endsWith(".jpeg")||v.endsWith(".gif")||v.endsWith(".webp")||v.endsWith(".bmp")||v.endsWith(".heic")||v.endsWith(".heif");}
+    /** A picture becomes a document: one PDF page in the picture's own proportions (a very tall picture is cut into A4-shaped pages), saved to the library. */
+    private void convertPicture(Uri source,String title){
+        if(!importing.add(source.toString()))return;File destination=libraryFolder!=null&&libraryFolder.isDirectory()?libraryFolder:library.root;
+        ProgressDialog progress=ProgressDialog.show(this,"이미지 가져오기","문서로 만드는 중…",true,false);
+        new Thread(()->{File temp=null;try{
+            Bitmap picture;
+            if(Build.VERSION.SDK_INT>=28)picture=android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(getContentResolver(),source),(decoder,info,src)->{int big=Math.max(info.getSize().getWidth(),info.getSize().getHeight());if(big>3600)decoder.setTargetSampleSize((int)Math.ceil(big/3600.0));decoder.setAllocator(android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE);});
+            else try(java.io.InputStream in=getContentResolver().openInputStream(source)){picture=BitmapFactory.decodeStream(in);}
+            if(picture==null)throw new IOException("이미지를 읽을 수 없습니다");
+            temp=File.createTempFile("picture",".pdf",getCacheDir());
+            float aspect=picture.getHeight()/(float)picture.getWidth();int pw=aspect<1f?842:595;
+            android.graphics.pdf.PdfDocument pdf=new android.graphics.pdf.PdfDocument();Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+            if(aspect<=2.2f){android.graphics.pdf.PdfDocument.Page page=pdf.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(pw,Math.max(1,Math.round(pw*aspect)),1).create());page.getCanvas().drawBitmap(picture,null,new android.graphics.Rect(0,0,pw,Math.max(1,Math.round(pw*aspect))),paint);pdf.finishPage(page);}
+            else{int slice=Math.max(1,Math.round(picture.getWidth()*1.4142f)),no=1;for(int y=0;y<picture.getHeight();y+=slice,no++){int h=Math.min(slice,picture.getHeight()-y),ph=Math.max(1,Math.round(pw*h/(float)picture.getWidth()));android.graphics.pdf.PdfDocument.Page page=pdf.startPage(new android.graphics.pdf.PdfDocument.PageInfo.Builder(pw,ph,no).create());page.getCanvas().drawBitmap(picture,new android.graphics.Rect(0,y,picture.getWidth(),y+h),new android.graphics.Rect(0,0,pw,ph),paint);pdf.finishPage(page);}}
+            try(OutputStream out=new java.io.FileOutputStream(temp)){pdf.writeTo(out);}pdf.close();picture.recycle();
+            String base=title.replaceFirst("(?i)\\.[a-z0-9]+$","").replaceAll("[\\\\/:*?\"<>|]","_");if(base.trim().isEmpty())base="이미지";
+            Uri saved=Uri.fromFile(library.importPdf(Uri.fromFile(temp),base+".pdf",destination));
+            runOnUiThread(()->{importing.remove(source.toString());progress.dismiss();if(!isFinishing()&&!isDestroyed()){openPdf(saved);toast("이미지를 문서로 저장했습니다");}});
+        }catch(Exception|OutOfMemoryError error){runOnUiThread(()->{importing.remove(source.toString());progress.dismiss();if(!isFinishing()&&!isDestroyed())toast("이미지 가져오기 실패: "+error.getMessage());});}finally{if(temp!=null)temp.delete();}},"picture-import").start();
     }
     private void importPdfToLibrary(Uri source,String title,int page,boolean activate){
         if(!importing.add(source.toString()))return;File destination=libraryFolder!=null&&libraryFolder.isDirectory()?libraryFolder:library.root;boolean announce=!restoringSessions;
@@ -726,7 +749,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             mark.noteOnly?"메모 삭제":"하이라이트 삭제",()->{store.marks.remove(mark);store.save();pageView.invalidate();toast(mark.noteOnly?"메모를 삭제했습니다":"하이라이트를 삭제했습니다");},"표시 설정",()->showMemoDisplayOptions(mark));
     }
     private void showMemoDisplayOptions(AnnotationStore.Mark mark){String[] choices={"펼쳐서 표시","최소화","숨기기"};int checked=!mark.visible?2:(mark.minimized?1:0);showActionSheet("메모 포스트잇 표시",choices,checked,w->{mark.visible=w!=2;mark.minimized=w==1;store.save();pageView.invalidate();});}
-    private List<AnchoredMenu.Row> addDocumentRows(){return AnchoredMenu.rows(new AnchoredMenu.Row("파일 가져오기",R.drawable.ic_import,this::choosePdf).tint(0xFF007AFF),new AnchoredMenu.Row("저장된 문서 열기",R.drawable.ic_folder_open,this::showLibrary).tint(0xFFF5A623),new AnchoredMenu.Row("새 노트 만들기",R.drawable.ic_compose,this::newNotebook).tint(0xFF34C759));}
+    private List<AnchoredMenu.Row> addDocumentRows(){return AnchoredMenu.rows(new AnchoredMenu.Row("새 노트 만들기",R.drawable.ic_compose,this::newNotebook).tint(0xFF34C759),new AnchoredMenu.Row("파일 가져오기",R.drawable.ic_import,this::choosePdf).tint(0xFF007AFF),new AnchoredMenu.Row("저장된 문서 열기",R.drawable.ic_folder_open,this::showLibrary).tint(0xFFF5A623));}
     private void showAddDocumentMenu(){AnchoredMenu.showCentered(this,getWindow().getDecorView(),"문서 추가",addDocumentRows());}
     private void showOutlineList(){
         if(store==null){toast("PDF를 먼저 여세요");return;}
@@ -893,12 +916,25 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void choosePageToInsert(int afterIndex){
         if(activeSession==null)return;final DocumentSession session=activeSession;
         if(!library.managed(session.uri)){toast("문서함에 저장한 뒤 페이지를 추가하세요");return;}
-        NotebookFiles.Paper same=library.paper(new File(session.uri.getPath()));if(same!=null){insertPage(session,same,afterIndex);return;}
-        PaperChoiceView paper=new PaperChoiceView(this);paper.onTemplateRequest(()->requestTemplate(paper));new AlertDialog.Builder(this).setTitle("추가할 페이지 · p."+(afterIndex+1)+" 뒤").setView(paper).setPositiveButton("추가",(d,w)->{try{insertPage(session,paper.paper(),afterIndex);}catch(IllegalArgumentException error){toast(error.getMessage());}}).setNegativeButton("취소",null).show();
+        // default: a page like the one before it (same size, orientation and paper); "다른 형식으로 페이지 추가" offers other papers and sizes
+        NotebookFiles.Paper same=library.paper(new File(session.uri.getPath()));insertPage(session,same!=null?same:new NotebookFiles.Paper(0,Color.WHITE),afterIndex,0);
     }
-    private void insertPage(DocumentSession session,NotebookFiles.Paper paper,int afterIndex){
+    /** Lets the user pick another paper and size for the new page (default: same size as the previous page). */
+    private void chooseOtherPageFormat(int afterIndex){
+        if(activeSession==null)return;final DocumentSession session=activeSession;
+        if(!library.managed(session.uri)){toast("문서함에 저장한 뒤 페이지를 추가하세요");return;}
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+        PaperChoiceView paper=new PaperChoiceView(this);paper.onTemplateRequest(()->requestTemplate(paper));box.addView(paper,new LinearLayout.LayoutParams(-1,-2));
+        RadioGroup sizes=new RadioGroup(this);sizes.setPadding(dp(22),dp(4),dp(18),dp(4));String[] names={"이전 페이지와 같은 크기·방향","A4 세로","A4 가로"};
+        for(int i=0;i<names.length;i++){RadioButton b=new RadioButton(this);b.setText(names[i]);b.setId(100+i);b.setTextSize(15);sizes.addView(b);}sizes.check(100);box.addView(sizes,new LinearLayout.LayoutParams(-1,-2));
+        TextView note=new TextView(this);note.setText("서식 PDF를 고르면 그 서식의 크기를 따릅니다");note.setTextSize(12);note.setTextColor(0xFF8E8E93);note.setPadding(dp(24),0,dp(18),dp(6));box.addView(note);
+        ScrollView scroll=new ScrollView(this);scroll.addView(box);
+        new AlertDialog.Builder(this).setTitle("다른 형식으로 추가 · p."+(afterIndex+1)+" 뒤").setView(scroll).setPositiveButton("추가",(d,w)->{try{insertPage(session,paper.paper(),afterIndex,sizes.getCheckedRadioButtonId()-100);}catch(IllegalArgumentException error){toast(error.getMessage());}}).setNegativeButton("취소",null).show();
+    }
+    private void insertPage(DocumentSession session,NotebookFiles.Paper paper,int afterIndex){insertPage(session,paper,afterIndex,0);}
+    private void insertPage(DocumentSession session,NotebookFiles.Paper paper,int afterIndex,int sizeMode){
         final File file=new File(session.uri.getPath());
-        modifyPages(session,"새 페이지를 추가하는 중…",()->library.insertPage(file,paper,afterIndex),()->session.store.insertPageAfter(afterIndex),afterIndex+1,"페이지 추가 실패");
+        modifyPages(session,"새 페이지를 추가하는 중…",()->library.insertPage(file,paper,afterIndex,sizeMode),()->session.store.insertPageAfter(afterIndex),afterIndex+1,"페이지 추가 실패");
     }
     private void confirmDeletePage(int index){
         if(activeSession==null||renderer==null)return;final DocumentSession session=activeSession;
@@ -916,6 +952,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         AnchoredMenu.showRightOf(this,anchor,sidePanel,AnchoredMenu.rows(
             new AnchoredMenu.Row("이 페이지로 이동",R.drawable.ic_page,()->showPage(page)).tint(0xFF30B0C7),
             new AnchoredMenu.Row("뒤에 페이지 추가",R.drawable.ic_page_add,()->choosePageToInsert(page)).tint(0xFF34C759),
+            new AnchoredMenu.Row("다른 형식으로 뒤에 추가",R.drawable.ic_page_add,()->chooseOtherPageFormat(page)).tint(0xFF34C759),
             new AnchoredMenu.Row("이 페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(page)).danger()));
     }
     /** Runs a file-level page edit off the UI thread, then re-opens the renderer and shifts the annotations to match. */
@@ -1560,6 +1597,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("페이지 미리보기",R.drawable.ic_sidebar,this::toggleSidebar).selected(sidebarVisible));
                 t.add(new Tile("페이지로 이동",R.drawable.ic_page,this::goToPage));
                 t.add(new Tile("현재 페이지 뒤에 추가",R.drawable.ic_page_add,()->choosePageToInsert(currentPage)));
+                t.add(new Tile("다른 형식으로 페이지 추가",R.drawable.ic_page_add,()->chooseOtherPageFormat(currentPage)));
                 t.add(new Tile("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).tint(0xFFFF3B30));
                 t.add(new Tile("두 쪽 보기 · "+(twoPage?"켜짐":"꺼짐"),R.drawable.ic_book,this::toggleTwoPage).selected(twoPage));
                 t.add(new Tile("전체 화면",R.drawable.ic_fullscreen,this::toggleFullscreen));
@@ -1953,9 +1991,16 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         boolean narrow=width<dp(190);int button=narrow?dp(28):dp(36),close=narrow?dp(30):dp(38);
         LinearLayout.LayoutParams m=(LinearLayout.LayoutParams)sideMore.getLayoutParams();LinearLayout.LayoutParams c=(LinearLayout.LayoutParams)closePanelButton.getLayoutParams();
         if(m.width!=button||c.width!=close){m.width=button;c.width=close;sideMore.setPadding(narrow?dp(3):dp(7),dp(12),narrow?dp(3):dp(7),dp(12));closePanelButton.setPadding(narrow?dp(5):dp(9),dp(12),narrow?dp(5):dp(9),dp(12));sideMore.setLayoutParams(m);closePanelButton.setLayoutParams(c);}
-        ((LinearLayout)sideTitle.getParent()).setPadding(narrow?dp(8):dp(12),0,0,0);sideTitle.post(this::fitSideTitleText);
+        ((LinearLayout)sideTitle.getParent()).setPadding(narrow?dp(8):dp(12),0,0,0);sideTitle.post(this::fitSideTitleText);fitSearchRow(width);
     }
-    private ImageButton closePanelButton;
+    private ImageButton closePanelButton;private LinearLayout searchRow,searchNav;
+    /** In a narrow panel the search box gets its own full-width line and the ▲ ▼ ✕ buttons move below it, instead of squeezing the box. */
+    private void fitSearchRow(int width){
+        if(searchRow==null||searchNav==null)return;boolean stacked=width<dp(290);if((searchRow.getOrientation()==LinearLayout.VERTICAL)==stacked)return;
+        searchRow.setOrientation(stacked?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
+        searchInput.setLayoutParams(stacked?new LinearLayout.LayoutParams(-1,dp(40)):new LinearLayout.LayoutParams(0,dp(40),1));
+        searchNav.setLayoutParams(stacked?new LinearLayout.LayoutParams(-1,dp(40)):new LinearLayout.LayoutParams(-2,dp(40)));
+    }
     private void selectPanelTab(int tab){
         panelTab=tab;sidebarVisible=true;sidePanel.setVisibility(View.VISIBLE);if(sideResizer!=null)sideResizer.setVisibility(View.VISIBLE);
         searchPanel.setVisibility(tab==0?View.VISIBLE:View.GONE);thumbnailPanel.setVisibility(tab==1?View.VISIBLE:View.GONE);outlineScroll.setVisibility(tab==2?View.VISIBLE:View.GONE);recordingScroll.setVisibility(tab==3?View.VISIBLE:View.GONE);
@@ -1977,6 +2022,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             new AnchoredMenu.Row("전체 페이지",R.drawable.ic_thumbnails,()->{showAllThumbnails=true;recentPrefs.edit().putBoolean("thumb_all",true).apply();selectPanelTab(1);}).tint(0xFF007AFF).selected(showAllThumbnails),
             AnchoredMenu.Row.divider(),
             new AnchoredMenu.Row("페이지 추가",R.drawable.ic_page_add,this::chooseAddedPage).tint(0xFF34C759),
+            new AnchoredMenu.Row("다른 형식으로 페이지 추가",R.drawable.ic_page_add,()->chooseOtherPageFormat(renderer==null?0:renderer.getPageCount()-1)).tint(0xFF34C759),
             new AnchoredMenu.Row("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).danger()),null);
     }
     private TextView pill(String text,String description,int background,int foreground,View.OnClickListener action){TextView b=new TextView(this);b.setText(text);b.setTextSize(14);b.setTextColor(foreground);b.setTypeface(Typeface.DEFAULT_BOLD);b.setGravity(Gravity.CENTER);b.setContentDescription(description);b.setBackground(round(background,18));b.setOnClickListener(action);return b;}
@@ -2172,10 +2218,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             if(action==EditorInfo.IME_ACTION_SEARCH||action==EditorInfo.IME_ACTION_DONE||action==EditorInfo.IME_ACTION_GO||enter){if(!enter||event.getAction()==KeyEvent.ACTION_DOWN)startSearch();return true;}
             return false;
         });
+        searchRow=row;searchNav=new LinearLayout(this);searchNav.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         row.addView(searchInput,new LinearLayout.LayoutParams(0,dp(40),1));
-        row.addView(icon(R.drawable.ic_chevron_up,"이전 결과",NAVY,v->stepSearch(-1)),new LinearLayout.LayoutParams(dp(40),dp(40)));
-        row.addView(icon(R.drawable.ic_chevron_down,"다음 결과",NAVY,v->stepSearch(1)),new LinearLayout.LayoutParams(dp(40),dp(40)));
-        row.addView(icon(R.drawable.ic_close,"검색 닫기",0xFF8E8E93,v->closeSearch()),new LinearLayout.LayoutParams(dp(40),dp(40)));
+        searchNav.addView(icon(R.drawable.ic_chevron_up,"이전 결과",NAVY,v->stepSearch(-1)),new LinearLayout.LayoutParams(dp(40),dp(40)));
+        searchNav.addView(icon(R.drawable.ic_chevron_down,"다음 결과",NAVY,v->stepSearch(1)),new LinearLayout.LayoutParams(dp(40),dp(40)));
+        searchNav.addView(icon(R.drawable.ic_close,"검색 닫기",0xFF8E8E93,v->closeSearch()),new LinearLayout.LayoutParams(dp(40),dp(40)));
+        row.addView(searchNav,new LinearLayout.LayoutParams(-2,dp(40)));
         searchPanel.addView(row,new LinearLayout.LayoutParams(-1,-2));
         LinearLayout info=new LinearLayout(this);info.setGravity(Gravity.CENTER_VERTICAL);info.setPadding(dp(16),0,dp(10),dp(4));
         searchStatus=new TextView(this);searchStatus.setTag("search_status");searchStatus.setTextSize(12);searchStatus.setTextColor(0xFF8E8E93);searchStatus.setSingleLine();searchStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);info.addView(searchStatus,new LinearLayout.LayoutParams(0,dp(28),1));
@@ -2367,7 +2415,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         {"11. 새 노트와 서식",
          "새 노트|문서함에서 새 노트를 만들면 종이 서식을 고릅니다. 맨 위에 금감원노트·금감원노트_칸나누기·리갈노트 서식이 있고 기본값은 금감원노트입니다. 백지 · 줄노트(보통·좁게·넓게) · 모눈종이 · 리걸노트 · 점 격자 · 코넬 노트 · 오선지가 있고, 종이 색도 고를 수 있습니다.",
          "내 서식|‘내 PDF·이미지 서식’을 고르면 가지고 있는 PDF의 첫 페이지나 이미지를 모든 페이지의 배경으로 씁니다.",
-         "페이지 추가|노트의 마지막 장에서 다음으로 넘기면 같은 서식의 새 페이지가 붙습니다."},
+         "페이지 추가|‘페이지 추가’는 바로 앞 페이지와 같은 크기·방향·서식(백지, 금감원노트 등)의 새 페이지를 붙입니다. 노트의 마지막 장에서 다음으로 넘겨도 같은 페이지가 붙습니다. ‘다른 형식으로 페이지 추가’에서는 다른 종이와 A4 세로·가로 크기를 고를 수 있습니다."},
         {"12. 음성 녹음 · 검색 · 번역",
          "음성 녹음|개요 패널의 마이크 탭에서 녹음하면 현재 페이지에 ‘▶ 녹음’ 표시가 붙고, 탭하면 재생합니다.",
          "검색|돋보기 아이콘으로 본문 글자를 찾고, 손글씨 필기도 검색됩니다.",

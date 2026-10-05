@@ -254,8 +254,8 @@ final class LibraryDialog extends Dialog {
     private void newMenu(View anchor){
         final File target=mode==FOLDER?folder:repository.root;
         AnchoredMenu.showCentered(activity,anchor,"문서 추가",AnchoredMenu.rows(
-            new AnchoredMenu.Row("파일 가져오기",R.drawable.ic_import,()->{dismiss();actions.importFiles(target);}).tint(0xFF007AFF),
             new AnchoredMenu.Row("새 노트 만들기",R.drawable.ic_compose,()->actions.newNote(target,this::refresh)).tint(0xFF34C759),
+            new AnchoredMenu.Row("파일 가져오기",R.drawable.ic_import,()->{dismiss();actions.importFiles(target);}).tint(0xFF007AFF),
             new AnchoredMenu.Row("폴더 만들기",R.drawable.ic_folder_open,()->createFolder(target,()->{tree.reload();refresh();})).tint(0xFFF5A623)));
     }
     private void libraryMenu(View anchor){

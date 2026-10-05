@@ -68,16 +68,25 @@ final class NotebookFiles {
         }finally{temp.delete();}
     }
     /** Inserts a blank paper page right after {@code afterIndex} (the last page when out of range). */
-    static int insert(Context context,File file,Paper paper,int afterIndex)throws IOException{
+    static int insert(Context context,File file,Paper paper,int afterIndex)throws IOException{return insert(context,file,paper,afterIndex,0);}
+    /** @param sizeMode 0 = same size and orientation as the page it follows, 1 = A4 portrait, 2 = A4 landscape (a form PDF keeps its own size). */
+    static int insert(Context context,File file,Paper paper,int afterIndex,int sizeMode)throws IOException{
         File temp=File.createTempFile(".page-",".tmp",file.getParentFile());int count;
         try{
             try(PDDocument pdf=PDDocument.load(file,MemoryUsageSetting.setupTempFileOnly().setTempDir(context.getCacheDir()))){
                 if(!pdf.getCurrentAccessPermission().canModify())throw new IOException("페이지 추가가 허용되지 않는 PDF입니다");
                 java.util.List<Closeable> open=new java.util.ArrayList<>();
-                try{addPaper(pdf,paper,Math.min(afterIndex,pdf.getNumberOfPages()-1),open);count=pdf.getNumberOfPages();pdf.save(temp);}finally{for(Closeable c:open)try{c.close();}catch(IOException ignored){}}
+                try{int at=Math.min(afterIndex,pdf.getNumberOfPages()-1);addPaper(pdf,paper,at,open,pageSize(pdf,at,sizeMode));count=pdf.getNumberOfPages();pdf.save(temp);}finally{for(Closeable c:open)try{c.close();}catch(IOException ignored){}}
             }
             replace(temp,file);return count;
         }finally{temp.delete();}
+    }
+    /** Size of a new page: the reference page's visible size (rotation applied), or A4 portrait/landscape. */
+    private static PDRectangle pageSize(PDDocument pdf,int refIndex,int sizeMode){
+        if(sizeMode==1)return PDRectangle.A4;if(sizeMode==2)return new PDRectangle(PDRectangle.A4.getHeight(),PDRectangle.A4.getWidth());
+        if(refIndex<0||refIndex>=pdf.getNumberOfPages())return PDRectangle.A4;
+        PDPage ref=pdf.getPage(refIndex);PDRectangle box=ref.getCropBox()!=null?ref.getCropBox():ref.getMediaBox();int rotation=((ref.getRotation()%360)+360)%360;
+        float w=box.getWidth(),h=box.getHeight();if(w<=0||h<=0)return PDRectangle.A4;return rotation==90||rotation==270?new PDRectangle(h,w):new PDRectangle(w,h);
     }
     /** Deletes one page and returns the remaining page count. The last remaining page cannot be deleted. */
     static int delete(Context context,File file,int index)throws IOException{
@@ -96,7 +105,8 @@ final class NotebookFiles {
         try{Files.move(temp.toPath(),target.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);}
         catch(AtomicMoveNotSupportedException error){Files.move(temp.toPath(),target.toPath(),StandardCopyOption.REPLACE_EXISTING);}
     }
-    private static void addPaper(PDDocument pdf,Paper paper,int afterIndex,java.util.List<Closeable> open)throws IOException{
+    private static void addPaper(PDDocument pdf,Paper paper,int afterIndex,java.util.List<Closeable> open)throws IOException{addPaper(pdf,paper,afterIndex,open,null);}
+    private static void addPaper(PDDocument pdf,Paper paper,int afterIndex,java.util.List<Closeable> open,PDRectangle size)throws IOException{
         PDPage page;
         if(paper.kind==CUSTOM&&isPdf(paper.template)){
             PDDocument source=PDDocument.load(paper.template);open.add(source);
@@ -105,7 +115,7 @@ final class NotebookFiles {
             if(afterIndex>=0&&afterIndex<pdf.getNumberOfPages()-1){pdf.removePage(page);pdf.getPages().insertAfter(page,pdf.getPage(afterIndex));}
             return;
         }
-        page=new PDPage(PDRectangle.A4);if(afterIndex<0||afterIndex>=pdf.getNumberOfPages())pdf.addPage(page);else pdf.getPages().insertAfter(page,pdf.getPage(afterIndex));float width=page.getMediaBox().getWidth(),height=page.getMediaBox().getHeight();
+        page=new PDPage(size==null?PDRectangle.A4:size);if(afterIndex<0||afterIndex>=pdf.getNumberOfPages())pdf.addPage(page);else pdf.getPages().insertAfter(page,pdf.getPage(afterIndex));float width=page.getMediaBox().getWidth(),height=page.getMediaBox().getHeight();
         try(PDPageContentStream canvas=new PDPageContentStream(pdf,page)){
             canvas.setNonStrokingColor(Color.red(paper.color),Color.green(paper.color),Color.blue(paper.color));canvas.addRect(0,0,width,height);canvas.fill();
             if(paper.kind==CUSTOM){
