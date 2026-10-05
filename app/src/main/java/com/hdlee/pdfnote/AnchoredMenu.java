@@ -68,9 +68,9 @@ final class AnchoredMenu {
         for (final Row row : rows) {
             if (row.custom != null) { list.addView(row.custom, new LinearLayout.LayoutParams(-1, -2)); wide = true; continue; }
             if (row.divider) { View line = new View(context); line.setBackgroundColor(LINE); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, Math.round(density * .5f))); lp.setMargins(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(4 * density)); list.addView(line, lp); continue; }
-            LinearLayout line = new LinearLayout(context); line.setGravity(Gravity.CENTER_VERTICAL); line.setPadding(Math.round(12 * density), 0, Math.round(12 * density), 0); line.setContentDescription(row.label);
+            LinearLayout line = new LinearLayout(context); line.setGravity(Gravity.CENTER_VERTICAL); line.setPadding(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(4 * density)); line.setMinimumHeight(Math.round(42 * density)); line.setContentDescription(row.label);
             if (row.icon != 0) { ImageView glyph = new ImageView(context); glyph.setImageResource(row.icon); glyph.setColorFilter(row.danger ? RED : row.tint != 0 ? row.tint : ACCENT); LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(Math.round(20 * density), Math.round(20 * density)); gp.rightMargin = Math.round(12 * density); line.addView(glyph, gp); }
-            TextView text = new TextView(context); text.setText(row.label); text.setTextSize(14); text.setSingleLine(); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setAutoSizeTextTypeUniformWithConfiguration(10, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP);   // small screens: shrink before cutting text.setTextColor(row.danger ? RED : row.selected ? ACCENT : INK); if (row.selected) text.setTypeface(Typeface.DEFAULT_BOLD);
+            TextView text = new TextView(context); text.setText(row.label); text.setTextSize(14); text.setMaxLines(2); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP);   // small screens: shrink before cutting text.setTextColor(row.danger ? RED : row.selected ? ACCENT : INK); if (row.selected) text.setTypeface(Typeface.DEFAULT_BOLD);
             line.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
             if (row.selected || row.submenu) { ImageView mark = new ImageView(context); mark.setImageResource(row.submenu ? R.drawable.ic_chevron_right : R.drawable.ic_check_bold); mark.setColorFilter(row.submenu ? GRAY : ACCENT); mark.setScaleType(ImageView.ScaleType.FIT_CENTER); LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(Math.round((row.submenu ? 18 : 20) * density), Math.round((row.submenu ? 18 : 20) * density)); mp.leftMargin = Math.round(8 * density); line.addView(mark, mp); }
             line.setOnClickListener(v -> {
@@ -85,10 +85,19 @@ final class AnchoredMenu {
                     return;
                 }
                 if (holder[0] != null) holder[0].dismiss(); if (row.action != null) row.action.run(); });
-            list.addView(line, new LinearLayout.LayoutParams(-1, Math.round(42 * density)));
+            list.addView(line, new LinearLayout.LayoutParams(-1, -2));
         }
         ScrollView scroll = new ScrollView(context) { @Override protected void onMeasure(int w, int h) { super.onMeasure(w, MeasureSpec.makeMeasureSpec(Math.round(screenH * .6f), MeasureSpec.AT_MOST)); } };
-        scroll.setVerticalScrollBarEnabled(false); scroll.addView(list); card.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+        scroll.setVerticalScrollBarEnabled(false); scroll.addView(list);
+        android.widget.FrameLayout scrollBox = new android.widget.FrameLayout(context); scrollBox.addView(scroll, new android.widget.FrameLayout.LayoutParams(-1, -2));
+        // more rows below the visible part: a fading "▾ 아래에 더 있음" strip that disappears at the end of the list
+        final TextView more = new TextView(context); more.setText("▾  아래에 더 있음"); more.setTextSize(11); more.setTextColor(ACCENT); more.setGravity(Gravity.CENTER); more.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); more.setTag("menu_more");
+        more.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0x00FFFFFF, 0xF2FFFFFF, 0xFFFFFFFF})); more.setVisibility(View.GONE);
+        more.setOnClickListener(v -> scroll.smoothScrollBy(0, Math.round(screenH * .3f)));
+        scrollBox.addView(more, new android.widget.FrameLayout.LayoutParams(-1, Math.round(30 * density), Gravity.BOTTOM));
+        final Runnable checkMore = () -> more.setVisibility(scroll.canScrollVertically(1) ? View.VISIBLE : View.GONE);
+        scroll.setOnScrollChangeListener((v, x, y, ox, oy) -> checkMore.run()); scroll.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> checkMore.run()); scroll.post(checkMore);
+        card.addView(scrollBox, new LinearLayout.LayoutParams(-1, -2));
         if (shortcuts != null && !shortcuts.isEmpty()) {
             View line = new View(context); line.setBackgroundColor(LINE); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, Math.round(density * .5f))); lp.setMargins(Math.round(8 * density), Math.round(4 * density), Math.round(8 * density), Math.round(2 * density)); card.addView(line, lp);
             LinearLayout icons = new LinearLayout(context); icons.setGravity(Gravity.CENTER);
