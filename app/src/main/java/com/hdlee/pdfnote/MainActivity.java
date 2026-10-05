@@ -18,6 +18,10 @@ import android.text.style.StyleSpan;
 import android.util.TypedValue;
 import android.view.*;
 import android.view.inputmethod.EditorInfo;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 import com.google.mlkit.vision.common.InputImage;
@@ -145,7 +149,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
 
     @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",false);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
     private void applyKeepAwake(){if(recentPrefs.getBoolean("keep_awake",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
-    @Override protected void onResume(){super.onResume();applyKeepAwake();if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
+    @Override protected void onResume(){super.onResume();applyKeepAwake();if(!updateChecked){updateChecked=true;root.postDelayed(this::autoCheckForUpdate,4000);}if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
         .setMessage("문서 앱에서 PDF로 내보냈다면 파일을 가져와 필기와 주석을 이어갈 수 있습니다.")
         .setPositiveButton("PDF 가져오기",(d,w)->chooseConvertedPdf()).setNegativeButton("나중에",null).show());}}
     private LinearLayout contentColumn;private View barGrip,dockGrip;private int insetBottom;private GradientDrawable barSurface;private EditText titleEdit;
@@ -327,7 +331,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         rows.add(new AnchoredMenu.Row("화면 켜 둠",R.drawable.ic_clock,()->{recentPrefs.edit().putBoolean("keep_awake",!awake).apply();applyKeepAwake();toast(!awake?"읽는 동안 화면이 꺼지지 않습니다":"화면 자동 꺼짐을 따릅니다");}).tint(0xFF8E8E93).selected(awake));
         rows.add(new AnchoredMenu.Row("하단 메뉴 플로팅",R.drawable.ic_float,this::toggleFloatBar).tint(0xFF8E8E93).selected(floatBar()));
         rows.add(new AnchoredMenu.Row("전체 화면 메뉴 계속 표시",R.drawable.ic_float,this::toggleDockPinned).tint(0xFF8E8E93).selected(dockPinned()));
+        rows.add(AnchoredMenu.Row.divider());
+        rows.add(new AnchoredMenu.Row("전체 백업·복원",R.drawable.ic_backup,null).children(new ArrayList<>(Arrays.asList(
+            new AnchoredMenu.Row("전체 문서 백업 만들기",R.drawable.ic_backup,this::startLibraryBackup).tint(0xFF007AFF),
+            new AnchoredMenu.Row("백업에서 복원",R.drawable.ic_import,this::startLibraryRestore).tint(0xFF007AFF)))).tint(0xFF007AFF).submenu());
         rows.add(new AnchoredMenu.Row("사용법",R.drawable.ic_outline,this::showHelp).tint(0xFF8E8E93));
+        rows.add(new AnchoredMenu.Row("앱 정보·업데이트",R.drawable.ic_more_vert,this::showAbout).tint(0xFF8E8E93));
         List<AnchoredMenu.Shortcut> shortcuts=new ArrayList<>();
         shortcuts.add(new AnchoredMenu.Shortcut("문서함",R.drawable.ic_folder_open,false,this::showLibrary));
         shortcuts.add(new AnchoredMenu.Shortcut("문서·필기 검색",R.drawable.ic_search,false,this::searchDocument));
@@ -343,7 +352,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void choosePdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/pdf","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.ms-powerpoint","application/vnd.openxmlformats-officedocument.presentationml.presentation","application/x-hwp","application/vnd.hancom.hwp","application/vnd.hancom.hwpx","image/*","application/octet-stream"});startActivityForResult(i,OPEN_PDF);}
     private void chooseConvertedPdf(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/pdf");startActivityForResult(i,OPEN_PDF);}
-    @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req==EXPORT_PDF){receivePdfExport(result,data);return;}if(req==EXPORT_ORIGINAL){receiveOriginalExport(result,data);return;}if(req==IMPORT_IMAGE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importImage(data.getData());return;}if(req==IMPORT_TEMPLATE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)receiveTemplate(data.getData());return;}if(req==IMPORT_VIDEO){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importVideo(data.getData());return;}if(req==EXPORT_CAPTURE){receiveCaptureExport(result,data);return;}if(req==EXPORT_STUDY||req==IMPORT_SIDECAR){receiveStudyResult(req,result,data);return;}if(req==TRANSLATE_EXTERNAL){receiveExternalTranslation(result,data);return;}if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri u=data.getData();if(req==OPEN_PDF){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}openPdf(u);}else if(req==EXPORT_JSON){try(OutputStream out=getContentResolver().openOutputStream(u,"wt")){if(out==null||pendingJsonExport==null)throw new IOException("다시 백업하세요");out.write(pendingJsonExport.getBytes(java.nio.charset.StandardCharsets.UTF_8));toast("주석을 내보냈습니다");}catch(Exception e){toast("내보내기 실패: "+e.getMessage());}}}
+    @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req==EXPORT_PDF){receivePdfExport(result,data);return;}if(req==EXPORT_BACKUP){receiveBackupExport(result,data);return;}if(req==IMPORT_BACKUP){receiveBackupImport(result,data);return;}if(req==EXPORT_ORIGINAL){receiveOriginalExport(result,data);return;}if(req==IMPORT_IMAGE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importImage(data.getData());return;}if(req==IMPORT_TEMPLATE){if(result==RESULT_OK&&data!=null&&data.getData()!=null)receiveTemplate(data.getData());return;}if(req==IMPORT_VIDEO){if(result==RESULT_OK&&data!=null&&data.getData()!=null)importVideo(data.getData());return;}if(req==EXPORT_CAPTURE){receiveCaptureExport(result,data);return;}if(req==EXPORT_STUDY||req==IMPORT_SIDECAR){receiveStudyResult(req,result,data);return;}if(req==TRANSLATE_EXTERNAL){receiveExternalTranslation(result,data);return;}if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri u=data.getData();if(req==OPEN_PDF){try{getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(SecurityException ignored){}openPdf(u);}else if(req==EXPORT_JSON){try(OutputStream out=getContentResolver().openOutputStream(u,"wt")){if(out==null||pendingJsonExport==null)throw new IOException("다시 백업하세요");out.write(pendingJsonExport.getBytes(java.nio.charset.StandardCharsets.UTF_8));toast("주석을 내보냈습니다");}catch(Exception e){toast("내보내기 실패: "+e.getMessage());}}}
     private boolean isOfficeDocument(String name){String value=name.toLowerCase(Locale.ROOT);return value.endsWith(".hwp")||value.endsWith(".hwpx")||value.endsWith(".doc")||value.endsWith(".docx")||value.endsWith(".ppt")||value.endsWith(".pptx")||value.endsWith(".xls")||value.endsWith(".xlsx");}
     private boolean canConvertOffice(String name){String lower=name.toLowerCase(Locale.ROOT);return lower.endsWith(".doc")||lower.endsWith(".docx")||lower.endsWith(".ppt")||lower.endsWith(".pptx")||lower.endsWith(".xls")||lower.endsWith(".xlsx");}
     private void convertHwp(Uri source,String name){
@@ -506,7 +515,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void updateThumbnailSelection(){for(int i=0;i<thumbnailList.getChildCount();i++){View v=thumbnailList.getChildAt(i);Object tag=v.getTag();if(!(tag instanceof Integer))continue;boolean selected=((Integer)tag)==currentPage;GradientDrawable bg=round(selected?0xFFE5F0FF:Color.TRANSPARENT,8);if(selected)bg.setStroke(dp(2),ACCENT);v.setBackground(bg);}View selected=thumbnailList.findViewWithTag(currentPage);if(sidebarVisible&&selected!=null)selected.post(()->thumbnailPanel.smoothScrollTo(0,Math.max(0,selected.getTop()-dp(16))));}
     private Bitmap renderPage(PdfRenderer target,int index){try(PdfRenderer.Page page=target.openPage(index)){int width=Math.max(1080,getResources().getDisplayMetrics().widthPixels*(twoPage?1:2));float ratio=Math.min(2.5f,(float)width/page.getWidth());Bitmap image=Bitmap.createBitmap(Math.max(1,(int)(page.getWidth()*ratio)),Math.max(1,(int)(page.getHeight()*ratio)),Bitmap.Config.ARGB_8888);image.eraseColor(Color.WHITE);Matrix matrix=new Matrix();matrix.postScale(ratio,ratio);page.render(image,null,matrix,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);return image;}}
     private void showPage(int index){
-        commitInlineText();onSelectionAdjustStarted();if(renderer==null||index<0||index>=renderer.getPageCount())return;++ocrGeneration;resetPageTransforms();
+        commitInlineText();onSelectionAdjustStarted();stopInlinePlayer();if(renderer==null||index<0||index>=renderer.getPageCount())return;++ocrGeneration;resetPageTransforms();
         int first=twoPage?(index/2)*2:index;firstPageView.showPage(renderPage(renderer,first),first,store.marks,store.strokes,store.translations);firstPageView.setAnnotationStore(store);
         if(twoPage&&first+1<renderer.getPageCount()){secondPageView.setVisibility(View.VISIBLE);secondPageView.showPage(renderPage(renderer,first+1),first+1,store.marks,store.strokes,store.translations);secondPageView.setAnnotationStore(store);}else{secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);}
         if(carryScale>0f){firstPageView.restoreView(carryScale,carryPanX,carryPanY);if(secondPageView.getVisibility()==View.VISIBLE)secondPageView.restoreView(carryScale,carryPanX,carryPanY);}carryScale=-1f;
@@ -556,7 +565,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     @Override public void onMemoPointRequested(int page,float x,float y){if(!placementKind.isEmpty()){createPlacedElement(page,x,y);return;}AnnotationStore.Mark m=new AnnotationStore.Mark();m.page=page;m.left=Math.max(0f,x-0.025f);m.right=Math.min(1f,x+0.025f);m.top=Math.max(0f,y-0.025f);m.bottom=Math.min(1f,y+0.025f);m.color=selectedColor;m.note="";m.noteOnly=true;
         showMemoEditor("새 메모 포스트잇",m,"저장",note->{if(note.isEmpty())return;m.note=note;store.marks.add(m);store.save();pageView.invalidate();toast("메모 포스트잇을 저장했습니다");},null,null,null,null);}
     @Override public void onMarkTapped(AnnotationStore.Mark mark){editMark(mark);}
-    @Override public void onZoomGestureStarted(){if(highlightMode||memoMode||outlineMode){highlightMode=memoMode=outlineMode=false;pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);updateToolStates();}}
+    @Override public void onZoomGestureStarted(){stopInlinePlayer();if(highlightMode||memoMode||outlineMode){highlightMode=memoMode=outlineMode=false;pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);updateToolStates();}}
     @Override public void onPageSwipe(int direction){animatePage(direction);}
     private float carryScale=-1f,carryPanX,carryPanY;
     /** Remembers the zoom of the page being left so the next page opens at the same zoom and position. */
@@ -1093,8 +1102,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         String kind=element.kind;
         List<AnchoredMenu.Row> rows=new ArrayList<>();
         if(kind.equals("link"))rows.add(new AnchoredMenu.Row("링크 열기",R.drawable.ic_link,()->{if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}}).tint(0xFF5856D6));
-        if(kind.equals("video"))rows.add(new AnchoredMenu.Row("재생",R.drawable.ic_video,()->showVideoPlayer(element)).tint(0xFFFF3B30));
-        if(kind.equals("youtube"))rows.add(new AnchoredMenu.Row("유튜브에서 열기",R.drawable.ic_youtube,()->openYoutube(element.text)).tint(0xFFFF0000));
+        if(kind.equals("video")){rows.add(new AnchoredMenu.Row("여기서 재생",R.drawable.ic_video,()->playInline(element)).tint(0xFFFF3B30));rows.add(new AnchoredMenu.Row("크게 보기",R.drawable.ic_fullscreen,()->showVideoPlayer(element)).tint(0xFF8E8E93));}
+        if(kind.equals("youtube")){rows.add(new AnchoredMenu.Row("여기서 재생",R.drawable.ic_youtube,()->playInline(element)).tint(0xFFFF0000));rows.add(new AnchoredMenu.Row("유튜브 앱에서 열기",R.drawable.ic_link,()->openYoutube(element.text)).tint(0xFF8E8E93));}
         if(kind.equals("shape"))rows.add(new AnchoredMenu.Row("색·선 굵기",R.drawable.ic_palette,()->showShapeDialog(element)).tint(0xFFAF52DE));
         if(kind.equals("table")){rows.add(new AnchoredMenu.Row("셀 내용 편집",R.drawable.ic_table,()->editTableCells(element)).tint(0xFF30B0C7));rows.add(new AnchoredMenu.Row("행·열·색상",R.drawable.ic_sliders,()->showTableDialog(element)).tint(0xFFAF52DE));}
         if(kind.equals("link")||!(kind.equals("youtube")||kind.equals("shape")||kind.equals("table")||kind.equals("image")||kind.equals("sticker")||kind.equals("video")))rows.add(new AnchoredMenu.Row("수정",R.drawable.ic_compose,()->editPageElement(element,false)).tint(0xFF007AFF));
@@ -1175,17 +1184,84 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         final DocumentSession session=activeSession;toast("동영상을 가져오는 중…");
         new Thread(()->{try{
             File folder=new File(getFilesDir(),"videos");folder.mkdirs();String name=UUID.randomUUID()+".mp4";File target=new File(folder,name);long copied=0;
-            try(InputStream in=getContentResolver().openInputStream(source);OutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[1<<16];int n;while((n=in.read(buffer))>0){out.write(buffer,0,n);copied+=n;if(copied>600L*1024*1024)throw new IOException("600MB 이하의 동영상만 넣을 수 있습니다");}}
-            catch(IOException error){target.delete();throw error;}
+            // cloud providers (Google Drive...) hand out a stream that may need the network and may be big: copy with a progress toast, allow up to 2GB, and check free space first
+            long expected=-1;try(android.database.Cursor c=getContentResolver().query(source,new String[]{OpenableColumns.SIZE},null,null,null)){if(c!=null&&c.moveToFirst()&&!c.isNull(0))expected=c.getLong(0);}catch(Exception ignored){}
+            if(expected>2048L*1024*1024)throw new IOException("2GB 이하의 동영상만 넣을 수 있습니다");
+            if(expected>0&&folder.getUsableSpace()<expected+(64L<<20))throw new IOException("기기 저장 공간이 부족합니다");
+            long lastToast=0;
+            try(InputStream in=getContentResolver().openInputStream(source)){
+                if(in==null)throw new IOException("파일을 열 수 없습니다 (드라이브 앱에서 '오프라인 사용'을 켜거나 먼저 내려받아 주세요)");
+                try(OutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[1<<16];int n;while((n=in.read(buffer))!=-1){out.write(buffer,0,n);copied+=n;if(copied>2048L*1024*1024)throw new IOException("2GB 이하의 동영상만 넣을 수 있습니다");
+                    long now=System.currentTimeMillis();if(expected>0&&now-lastToast>1500){lastToast=now;final int percent=(int)(copied*100/expected);runOnUiThread(()->toast("동영상을 가져오는 중… "+percent+"%"));}}}
+            }catch(IOException|SecurityException error){target.delete();throw new IOException(error.getMessage()==null?"파일을 읽는 중 오류 ("+error.getClass().getSimpleName()+")":error.getMessage());}
+            if(copied<=0){target.delete();throw new IOException("빈 파일입니다. 드라이브 파일이 아직 내려받아지지 않았을 수 있습니다");}
             Bitmap frame=null;android.media.MediaMetadataRetriever retriever=new android.media.MediaMetadataRetriever();
-            try{retriever.setDataSource(target.getPath());frame=retriever.getFrameAtTime(500000,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);}catch(RuntimeException ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
-            if(frame==null){target.delete();throw new IOException("동영상을 읽을 수 없습니다");}
+            try{retriever.setDataSource(target.getPath());
+                long[] at={500000L,0L,2000000L};for(long t:at){if(frame!=null)break;try{frame=retriever.getFrameAtTime(t,android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);}catch(RuntimeException ignored){}if(frame==null)try{frame=retriever.getFrameAtTime(t,android.media.MediaMetadataRetriever.OPTION_CLOSEST);}catch(RuntimeException ignored){}}
+                if(frame==null)try{frame=retriever.getFrameAtTime();}catch(RuntimeException ignored){}
+            }catch(RuntimeException ignored){}finally{try{retriever.release();}catch(Exception ignored){}}
+            // no preview frame (unusual codec): keep the video anyway with a plain dark card, it still plays
+            if(frame==null){frame=Bitmap.createBitmap(640,360,Bitmap.Config.ARGB_8888);frame.eraseColor(0xFF2C2C2E);}
             float shrink=Math.min(1f,900f/Math.max(frame.getWidth(),frame.getHeight()));if(shrink<1f){Bitmap small=Bitmap.createScaledBitmap(frame,Math.max(1,Math.round(frame.getWidth()*shrink)),Math.max(1,Math.round(frame.getHeight()*shrink)),true);frame.recycle();frame=small;}
             File images=new File(getFilesDir(),"images");images.mkdirs();String thumb=UUID.randomUUID()+".png";
             try(OutputStream out=new FileOutputStream(new File(images,thumb))){if(!frame.compress(Bitmap.CompressFormat.PNG,100,out))throw new IOException("미리보기 저장 실패");}finally{frame.recycle();}
             runOnUiThread(()->{if(session!=null&&sessions.contains(session)){switchDocument(session);placementText=name;placeOrDrop("video",thumb);}});
         }catch(Exception error){runOnUiThread(()->toast("동영상 가져오기 실패: "+error.getMessage()));}},"video-import").start();
     }
+    // ---- in-document playback: the player opens right on the element's rectangle; page changes, zoom and closing stop it
+    private FrameLayout inlinePlayer;private Runnable inlineStopper;private View customWebView;private WebChromeClient.CustomViewCallback customCallback;
+    private void stopInlinePlayer(){
+        if(inlineStopper!=null){try{inlineStopper.run();}catch(RuntimeException ignored){}inlineStopper=null;}
+        if(inlinePlayer!=null&&viewportLayer!=null)viewportLayer.removeView(inlinePlayer);inlinePlayer=null;
+    }
+    private Rect inlineBoxFor(AnnotationStore.PageElement element){
+        PdfPageView view=firstPageView!=null&&firstPageView.getPageNumber()==element.page?firstPageView:secondPageView;View papers=viewportLayer.getChildAt(0);if(view==null||papers==null)return null;
+        RectF r=view.pageRect();if(r.isEmpty())return null;
+        float l=papers.getLeft()+view.getLeft()+r.left+element.left*r.width(),t=papers.getTop()+view.getTop()+r.top+element.top*r.height(),rr=papers.getLeft()+view.getLeft()+r.left+element.right*r.width(),b=papers.getTop()+view.getTop()+r.top+element.bottom*r.height();
+        int minW=dp(220),minH=dp(124),w=Math.max(minW,Math.round(rr-l)),h=Math.max(minH,Math.round(b-t));
+        int cx=Math.round((l+rr)/2),cy=Math.round((t+b)/2),left=Math.max(0,Math.min(viewportLayer.getWidth()-w,cx-w/2)),top=Math.max(0,Math.min(viewportLayer.getHeight()-h,cy-h/2));
+        return new Rect(left,top,left+Math.min(w,viewportLayer.getWidth()),top+Math.min(h,viewportLayer.getHeight()));
+    }
+    private FrameLayout openInlineFrame(AnnotationStore.PageElement element){
+        stopInlinePlayer();Rect box=inlineBoxFor(element);if(box==null){toast("재생할 위치를 찾을 수 없습니다");return null;}
+        FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);frame.setElevation(dp(8));frame.setTag("inline_player");
+        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(box.width(),box.height(),Gravity.TOP|Gravity.START);lp.leftMargin=box.left;lp.topMargin=box.top;
+        viewportLayer.addView(frame,lp);inlinePlayer=frame;return frame;
+    }
+    private void addInlineClose(FrameLayout frame){
+        ImageButton close=icon(R.drawable.ic_close,"재생 닫기",Color.WHITE,v->stopInlinePlayer());close.setBackground(round(0x99000000,16));close.setPadding(dp(6),dp(6),dp(6),dp(6));
+        FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(dp(32),dp(32),Gravity.TOP|Gravity.END);cp.setMargins(0,dp(4),dp(4),0);frame.addView(close,cp);
+    }
+    private void playInline(AnnotationStore.PageElement element){
+        if(element.kind.equals("youtube")){playYoutubeInline(element.text);return;}
+        File file=new File(new File(getFilesDir(),"videos"),element.text);if(!file.isFile()){toast("동영상 파일을 찾을 수 없습니다");return;}
+        FrameLayout frame=openInlineFrame(element);if(frame==null)return;
+        VideoView video=new VideoView(this);MediaController controller=new MediaController(this);controller.setAnchorView(frame);video.setMediaController(controller);video.setVideoURI(Uri.fromFile(file));
+        frame.addView(video,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        addInlineClose(frame);
+        FrameLayout.LayoutParams fp=new FrameLayout.LayoutParams(dp(32),dp(32),Gravity.TOP|Gravity.START);fp.setMargins(dp(4),dp(4),0,0);
+        ImageButton big=icon(R.drawable.ic_fullscreen,"크게 보기",Color.WHITE,v->{stopInlinePlayer();showVideoPlayer(element);});big.setBackground(round(0x99000000,16));big.setPadding(dp(6),dp(6),dp(6),dp(6));frame.addView(big,fp);
+        video.setOnPreparedListener(m->{video.start();controller.show(2500);});video.setOnErrorListener((m,what,extra)->{toast("이 동영상은 재생할 수 없습니다");return true;});
+        inlineStopper=()->{controller.hide();video.stopPlayback();};
+    }
+    @android.annotation.SuppressLint("SetJavaScriptEnabled")
+    private void playYoutubeInline(String id){
+        AnnotationStore.PageElement target=null;for(AnnotationStore.PageElement e:store.elements)if(e.kind.equals("youtube")&&id.equals(e.text)&&e.page==currentPageForInline()){target=e;break;}
+        if(target==null){for(AnnotationStore.PageElement e:store.elements)if(e.kind.equals("youtube")&&id.equals(e.text)){target=e;break;}}
+        if(target==null)return;FrameLayout frame=openInlineFrame(target);if(frame==null)return;
+        WebView web=new WebView(this);WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setMediaPlaybackRequiresUserGesture(false);web.setBackgroundColor(Color.BLACK);
+        web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,android.webkit.WebResourceRequest r){return false;}});
+        web.setWebChromeClient(new WebChromeClient(){
+            @Override public void onShowCustomView(View view,CustomViewCallback callback){customWebView=view;customCallback=callback;addContentView(view,new FrameLayout.LayoutParams(-1,-1));}
+            @Override public void onHideCustomView(){if(customWebView!=null){((ViewGroup)customWebView.getParent()).removeView(customWebView);customWebView=null;}if(customCallback!=null){customCallback.onCustomViewHidden();customCallback=null;}}
+        });
+        frame.addView(web,new FrameLayout.LayoutParams(-1,-1));
+        addInlineClose(frame);
+        String html="<html><body style='margin:0;background:#000'><iframe width='100%' height='100%' style='position:absolute;inset:0;border:0' src='https://www.youtube.com/embed/"+id+"?autoplay=1&playsinline=1&rel=0&modestbranding=1' allow='autoplay; encrypted-media; picture-in-picture; fullscreen' allowfullscreen></iframe></body></html>";
+        web.loadDataWithBaseURL("https://www.youtube.com",html,"text/html","utf-8",null);
+        inlineStopper=()->{if(customWebView!=null&&customCallback!=null){customCallback.onCustomViewHidden();}web.loadUrl("about:blank");web.stopLoading();web.destroy();};
+    }
+    private int currentPageForInline(){return pageView==null?0:pageView.getPageNumber();}
     private void showVideoPlayer(AnnotationStore.PageElement element){
         File file=new File(new File(getFilesDir(),"videos"),element.text);if(!file.isFile()){toast("동영상 파일을 찾을 수 없습니다");return;}
         final Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);FrameLayout frame=new FrameLayout(this);frame.setBackgroundColor(Color.BLACK);
@@ -1716,15 +1792,15 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         e.font=recentPrefs.getString("text_font","sans");if(!AnnotationStore.PageElement.FONTS.contains(e.font))e.font="sans";
         e.bold=recentPrefs.getBoolean("text_bold",false);e.italic=recentPrefs.getBoolean("text_italic",false);
         e.color=recentPrefs.getInt("text_color",AnnotationStore.PageElement.DEFAULT_TEXT_COLOR);
-        float size=recentPrefs.getFloat("text_size",AnnotationStore.PageElement.DEFAULT_TEXT_SIZE);e.textSize=size<.004f||size>.3f?AnnotationStore.PageElement.DEFAULT_TEXT_SIZE:size;
+        float size=recentPrefs.getFloat("text_size",AnnotationStore.PageElement.DEFAULT_TEXT_SIZE);e.textSize=size<.004f||size>.3f?AnnotationStore.PageElement.DEFAULT_TEXT_SIZE:size;e.lineSpacing=recentPrefs.getFloat("text_line",0f);if(e.lineSpacing<.8f||e.lineSpacing>4f)e.lineSpacing=0f;
     }
     private void saveTextStyle(AnnotationStore.PageElement e){
-        recentPrefs.edit().putString("text_font",e.font).putBoolean("text_bold",e.bold).putBoolean("text_italic",e.italic).putInt("text_color",e.color).putFloat("text_size",e.textSize).apply();
+        recentPrefs.edit().putString("text_font",e.font).putBoolean("text_bold",e.bold).putBoolean("text_italic",e.italic).putInt("text_color",e.color).putFloat("text_size",e.textSize).putFloat("text_line",e.lineSpacing).apply();
     }
     /** Resizes the box height so the whole text is visible with the element's own width, size and typeface. */
     private void fitTextElement(AnnotationStore.PageElement e){
         PdfPageView view=viewForPage(e.page);float aspect=view!=null?view.pageAspect():1.414f;
-        float height=AnnotationPainter.fitHeight(e.text,e.right-e.left,e.textSize,aspect,AnnotationPainter.typeface(e.font,e.bold,e.italic));
+        float height=AnnotationPainter.fitHeight(e.text,e.right-e.left,e.textSize,aspect,AnnotationPainter.typeface(e.font,e.bold,e.italic),e.line());
         height=Math.min(.98f,height);if(e.top+height>.99f)e.top=Math.max(0f,.99f-height);e.bottom=e.top+height;
     }
     private int pointsOf(AnnotationStore.PageElement e){return Math.max(8,Math.min(72,Math.round(e.textSize*TEXT_PAGE_POINTS)));}
@@ -1772,7 +1848,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         int[] a=new int[2],b=new int[2];inlineView.getLocationInWindow(a);viewportLayer.getLocationInWindow(b);
         int left=Math.round(a[0]-b[0]+page.left+e.left*page.width()),top=Math.round(a[1]-b[1]+page.top+e.top*page.height()),width=Math.max(dp(80),Math.round((e.right-e.left)*page.width()));
         float px=Math.max(9f,page.width()*e.textSize);
-        if(Math.abs(inlineEdit.getTextSize()-px)>.4f){inlineEdit.setTextSize(TypedValue.COMPLEX_UNIT_PX,px);Paint.FontMetrics fm=inlineEdit.getPaint().getFontMetrics();inlineEdit.setLineSpacing(Math.max(0f,px*1.35f-(fm.descent-fm.ascent)),1f);}
+        if(Math.abs(inlineEdit.getTextSize()-px)>.4f||Math.abs(inlineLineApplied-e.line())>.001f){inlineLineApplied=e.line();inlineEdit.setTextSize(TypedValue.COMPLEX_UNIT_PX,px);Paint.FontMetrics fm=inlineEdit.getPaint().getFontMetrics();inlineEdit.setLineSpacing(Math.max(0f,px*e.line()-(fm.descent-fm.ascent)),1f);}
         FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)inlineEdit.getLayoutParams();
         if(lp.leftMargin!=left||lp.topMargin!=top||lp.width!=width){lp.leftMargin=left;lp.topMargin=top;lp.width=width;inlineEdit.setLayoutParams(lp);}
         int editBottom=top+Math.max(dp(18),inlineEdit.getHeight());
@@ -1804,6 +1880,29 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         inlineEdit.setTypeface(AnnotationPainter.typeface(e.font,e.bold,e.italic));inlineEdit.setTextColor(e.color|0xFF000000);inlineEdit.setGravity(Gravity.TOP|(e.align==1?Gravity.CENTER_HORIZONTAL:e.align==2?Gravity.END:Gravity.START));inlineEdit.setPaintFlags((inlineEdit.getPaintFlags()&~(Paint.UNDERLINE_TEXT_FLAG|Paint.STRIKE_THRU_TEXT_FLAG))|(e.underline?Paint.UNDERLINE_TEXT_FLAG:0)|(e.strike?Paint.STRIKE_THRU_TEXT_FLAG:0));
         if(inlineSize!=null)inlineSize.setText(pointsOf(e)+"pt");positionInlineText();
     }
+    private float inlineLineApplied;private TextView inlineLineLabel;
+    private void changeInlineLine(float delta){
+        if(inlineElement==null)return;float next=Math.round((inlineElement.line()+delta)*20f)/20f;next=Math.max(.8f,Math.min(4f,next));inlineElement.lineSpacing=Math.abs(next-AnnotationStore.PageElement.DEFAULT_LINE)<.001f?0f:next;updateInlineLineLabel();applyInlineStyle();
+    }
+    private void updateInlineLineLabel(){if(inlineLineLabel!=null&&inlineElement!=null)inlineLineLabel.setText(String.format(Locale.US,"%.2f",inlineElement.line()));}
+    /** Picks a ruled paper and sets the line spacing to its rule pitch, then moves the box so the first line sits on the nearest rule. */
+    private void chooseNoteRuler(){
+        if(inlineElement==null)return;final AnnotationStore.PageElement e=inlineElement;
+        List<Integer> kinds=new ArrayList<>();NotebookFiles.Paper own=activeSession!=null&&library.managed(activeSession.uri)?library.paper(new File(activeSession.uri.getPath())):null;
+        int ownKind=NotebookFiles.rulerKind(own);if(ownKind>0)kinds.add(ownKind);
+        for(int k:new int[]{10,11,12,1,4,5,2,3,7})if(!kinds.contains(k))kinds.add(k);
+        CharSequence[] names=new CharSequence[kinds.size()];for(int i=0;i<names.length;i++)names[i]=NotebookFiles.PAPER_NAMES[kinds.get(i)]+(i==0&&ownKind>0?"  (현재 노트)":"");
+        new AlertDialog.Builder(this).setTitle("노트 줄에 맞추기").setItems(names,(d,which)->fitInlineToRuler(e,kinds.get(which))).setNegativeButton("취소",null).show();
+    }
+    private void fitInlineToRuler(AnnotationStore.PageElement e,int kind){
+        float[] r=NotebookFiles.ruler(kind);if(r==null)return;
+        float sizePt=e.textSize*TEXT_PAGE_POINTS,pitch=r[1];int k=1;while(pitch*k/sizePt<1f&&k<6)k++;
+        e.lineSpacing=Math.max(.8f,Math.min(4f,pitch*k/sizePt));
+        PdfPageView view=viewForPage(e.page);float aspect=view!=null?view.pageAspect():1.414f,heightPt=TEXT_PAGE_POINTS*aspect;
+        float baseline=e.top*heightPt+sizePt;int n=Math.max(0,Math.round((baseline+.22f*sizePt-r[0])/pitch));
+        float top=(r[0]+n*pitch-.22f*sizePt-sizePt)/heightPt;float h=e.bottom-e.top;e.top=Math.max(0f,Math.min(.99f-h,top));e.bottom=e.top+h;
+        updateInlineLineLabel();applyInlineStyle();fitTextElement(e);positionInlineText();toast("줄간격 "+String.format(Locale.US,"%.2f",e.line())+" · "+NotebookFiles.PAPER_NAMES[kind]+" 줄에 맞춤");
+    }
     private Runnable inlineFontLabel;private android.widget.PopupWindow fontPopup;
     private void setInlineFont(String id){if(inlineElement==null||!AnnotationStore.PageElement.FONTS.contains(id))return;inlineElement.font=id;if(inlineFontLabel!=null)inlineFontLabel.run();applyInlineStyle();}
     private void changeInlineSize(int delta){
@@ -1819,6 +1918,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         faces.setOnClickListener(v->{List<AnchoredMenu.Row> rows=new ArrayList<>();for(int i=0;i<FONT_IDS.length;i++){final String id=FONT_IDS[i];TextView sample=new TextView(this);sample.setText(FONT_NAMES[i]+"   가나다 ABC abc");sample.setTextSize(16);sample.setTextColor(id.equals(e.font)?ACCENT:NAVY);sample.setTypeface(AnnotationPainter.typeface(id,false,false));sample.setGravity(Gravity.CENTER_VERTICAL);sample.setPadding(dp(16),0,dp(16),0);sample.setMinHeight(dp(44));sample.setOnClickListener(x->{setInlineFont(id);if(fontPopup!=null)fontPopup.dismiss();});rows.add(AnchoredMenu.Row.custom(sample));}fontPopup=AnchoredMenu.show(this,faces,false,rows,null);});
         panel.addView(faces,new LinearLayout.LayoutParams(-1,dp(40)));
         LinearLayout palette=swatches(TEXT_COLORS,()->e.color|0xFF000000,c->{e.color=c|0xFF000000;applyInlineStyle();},26,1);palette.setTag("text_colors");palette.setPadding(0,dp(2),0,dp(2));panel.addView(palette,new LinearLayout.LayoutParams(-1,dp(34)));
+        LinearLayout spacing=new LinearLayout(this);spacing.setGravity(Gravity.CENTER_VERTICAL);spacing.setTag("text_line_row");
+        TextView spLabel=new TextView(this);spLabel.setText("줄간격");spLabel.setTextSize(13);spLabel.setTextColor(NAVY);spLabel.setPadding(dp(6),0,dp(6),0);spacing.addView(spLabel,new LinearLayout.LayoutParams(-2,dp(32)));
+        TextView lm=stepButton("−","줄간격 좁게");lm.setOnClickListener(v->changeInlineLine(-.05f));spacing.addView(lm,new LinearLayout.LayoutParams(dp(30),dp(32)));
+        inlineLineLabel=new TextView(this);inlineLineLabel.setTag("text_line");inlineLineLabel.setTextSize(12);inlineLineLabel.setTextColor(NAVY);inlineLineLabel.setGravity(Gravity.CENTER);inlineLineLabel.setTypeface(Typeface.DEFAULT_BOLD);spacing.addView(inlineLineLabel,new LinearLayout.LayoutParams(dp(40),dp(32)));updateInlineLineLabel();
+        TextView lp2=stepButton("＋","줄간격 넓게");lp2.setOnClickListener(v->changeInlineLine(.05f));spacing.addView(lp2,new LinearLayout.LayoutParams(dp(30),dp(32)));
+        TextView ruler=new TextView(this);ruler.setText("노트 줄에 맞추기");ruler.setTag("text_fit_ruler");ruler.setTextSize(13);ruler.setTextColor(ACCENT);ruler.setGravity(Gravity.CENTER);ruler.setTypeface(Typeface.DEFAULT_BOLD);ruler.setPadding(dp(10),0,dp(10),0);ruler.setBackground(round(0xFFE8F1FF,16));ruler.setContentDescription("노트 줄에 맞추기");ruler.setOnClickListener(v->chooseNoteRuler());
+        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-2,dp(32));rp.setMargins(dp(8),0,0,0);spacing.addView(ruler,rp);
+        panel.addView(spacing,new LinearLayout.LayoutParams(-1,dp(38)));
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
         final boolean[] bold={e.bold},italic={e.italic};
         TextView style=stepButton("Aa","글꼴·색 펼치기");style.setTextSize(14);style.setTypeface(Typeface.DEFAULT_BOLD);style.setTag("text_style_toggle");
@@ -1897,7 +2004,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         for(View v:new View[]{inlineEdit,inlineMove,inlineResize,inlineDelete,inlineBar})if(v!=null)viewportLayer.removeView(v);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         if(inlineEdit!=null){InputMethodManager keyboard=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keyboard!=null)keyboard.hideSoftInputFromWindow(inlineEdit.getWindowToken(),0);}
-        inlineEdit=null;inlineMove=inlineResize=inlineDelete=null;inlineBar=null;inlineSize=null;inlineElement=null;inlineStore=null;inlineView=null;
+        inlineEdit=null;inlineMove=inlineResize=inlineDelete=null;inlineBar=null;inlineSize=null;inlineLineLabel=null;inlineElement=null;inlineStore=null;inlineView=null;
     }
     /** Saves the text being typed (an empty new box is dropped; emptying an old box deletes it). */
     private void commitInlineText(){
@@ -2348,7 +2455,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             TextView empty=new TextView(this);empty.setTag("thumb_empty");empty.setText("즐겨찾기한 페이지가 없습니다.\n\n아래쪽 ★를 누르면\n이곳에 미리보기가 나타납니다.");empty.setTextSize(12);empty.setTextColor(0xFF8E8E93);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(4),dp(18),dp(4),dp(8));
             thumbnailList.addView(empty,new LinearLayout.LayoutParams(-1,-2));return;
         }
-        for(int i=0;i<pages.size();i++){final int page=pages.get(i);LinearLayout item=new LinearLayout(this);item.setTag(page);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(dp(4),dp(5),dp(4),dp(7));ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setAdjustViewBounds(true);preview.setBackgroundColor(Color.WHITE);preview.setElevation(dp(1));item.addView(preview,new LinearLayout.LayoutParams(sidePanelWidth()-dp(36),Math.round((sidePanelWidth()-dp(36))*thumbnailAspect())));TextView number=new TextView(this);number.setText(String.valueOf(page+1));number.setGravity(Gravity.CENTER);number.setTextSize(12);number.setTextColor(0xFF8E8E93);LinearLayout numberRow=new LinearLayout(this);numberRow.setGravity(Gravity.CENTER_VERTICAL);numberRow.addView(number,new LinearLayout.LayoutParams(0,dp(24),1));TextView pageMore=new TextView(this);pageMore.setText("⋮");pageMore.setTextSize(15);pageMore.setTextColor(0xFF8E8E93);pageMore.setGravity(Gravity.CENTER);pageMore.setContentDescription("페이지 "+(page+1)+" 메뉴");pageMore.setOnClickListener(v->showPageMenu(page,v));numberRow.addView(pageMore,new LinearLayout.LayoutParams(dp(28),dp(24)));item.addView(numberRow,new LinearLayout.LayoutParams(-1,dp(24)));item.setOnClickListener(v->showPage(page));item.setOnLongClickListener(v->{showPageMenu(page,v);return true;});thumbnailList.addView(item,new LinearLayout.LayoutParams(-1,-2));}
+        for(int i=0;i<pages.size();i++){final int page=pages.get(i);LinearLayout item=new LinearLayout(this);item.setTag(page);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(dp(6),dp(8),dp(6),dp(10));ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setAdjustViewBounds(true);preview.setBackgroundColor(Color.WHITE);preview.setElevation(dp(1));item.addView(preview,new LinearLayout.LayoutParams(sidePanelWidth()-dp(60),Math.round((sidePanelWidth()-dp(60))*thumbnailAspect())));TextView number=new TextView(this);number.setText(String.valueOf(page+1));number.setGravity(Gravity.CENTER);number.setTextSize(12);number.setTextColor(0xFF8E8E93);LinearLayout numberRow=new LinearLayout(this);numberRow.setGravity(Gravity.CENTER_VERTICAL);numberRow.addView(number,new LinearLayout.LayoutParams(0,dp(24),1));TextView pageMore=new TextView(this);pageMore.setText("⋮");pageMore.setTextSize(15);pageMore.setTextColor(0xFF8E8E93);pageMore.setGravity(Gravity.CENTER);pageMore.setContentDescription("페이지 "+(page+1)+" 메뉴");pageMore.setOnClickListener(v->showPageMenu(page,v));numberRow.addView(pageMore,new LinearLayout.LayoutParams(dp(28),dp(24)));item.addView(numberRow,new LinearLayout.LayoutParams(-1,dp(24)));item.setOnClickListener(v->showPage(page));item.setOnLongClickListener(v->{showPageMenu(page,v);return true;});thumbnailList.addView(item,new LinearLayout.LayoutParams(-1,-2));}
         updateThumbnailSelection();renderThumbnail(pages,0,generation,activeSession);
     }
     /** Height/width of the document's first page, used to size thumbnail placeholders so the whole page always fits. */
@@ -2423,6 +2530,55 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         {"13. 문서 변환 · 내보내기",
          "Office·한글 문서|HWP · HWPX · DOC · DOCX · PPT · PPTX · XLS · XLSX는 PDF로 변환해 문서함에 가져와 엽니다. 서식은 변환 엔진과 글꼴에 따라 달라질 수 있고, HWP·DOC의 본문 미리보기는 글자만 표시합니다.",
          "내보내기·백업|더보기 메뉴에서 기록이 포함된 PDF를 내보내거나, ‘원본 파일 내보내기’로 기록 없는 원본만 저장하거나, 기록을 파일로 백업·복원합니다. ‘인쇄’는 필기와 글상자까지 함께 시스템 인쇄 화면으로 보내며, 거기서 PDF로 저장할 수도 있습니다."}};
+    // ---- whole-library backup / restore and app info / update check
+    private static final int EXPORT_BACKUP=35,IMPORT_BACKUP=36;
+    private static final String AUTHOR_LINE="만든이 : 이현덕(with Claude), hdlee73@gmail.com";
+    private File[] backupAssetDirs(){File img=new File(getFilesDir(),"images");img.mkdirs();File vid=new File(getFilesDir(),"videos");vid.mkdirs();return new File[]{img,recordingsDir(),vid};}
+    private void startLibraryBackup(){
+        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/zip");
+        i.putExtra(Intent.EXTRA_TITLE,"Everynote-백업-"+new java.text.SimpleDateFormat("yyyyMMdd-HHmm",Locale.US).format(new Date())+".zip");startActivityForResult(i,EXPORT_BACKUP);
+    }
+    private void receiveBackupExport(int result,Intent data){
+        if(result!=RESULT_OK||data==null||data.getData()==null)return;final Uri target=data.getData();commitInlineText();toast("전체 문서를 백업하는 중… 잠시 기다려 주세요");
+        new Thread(()->{try(OutputStream out=getContentResolver().openOutputStream(target)){if(out==null)throw new IOException("저장할 수 없습니다");int n=LibraryBackup.write(this,library,backupAssetDirs(),out,null);runOnUiThread(()->toast("전체 백업 완료 · 문서 "+n+"개 (필기·사진·녹음·동영상 포함)"));}catch(Exception error){runOnUiThread(()->toast("백업 실패: "+(error.getMessage()==null?error.getClass().getSimpleName():error.getMessage())));}},"library-backup").start();
+    }
+    private void startLibraryRestore(){startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),IMPORT_BACKUP);}
+    private void receiveBackupImport(int result,Intent data){
+        if(result!=RESULT_OK||data==null||data.getData()==null)return;final Uri source=data.getData();
+        new AlertDialog.Builder(this).setTitle("백업에서 복원").setMessage("백업의 문서·필기·사진·녹음·동영상을 문서함으로 복원합니다.\n\n• 추가 복원: 기존 문서는 그대로 두고, 같은 이름은 사본 (1)로 추가\n• 덮어쓰기: 같은 위치·이름의 문서를 백업 내용으로 교체 (열려 있는 문서는 건너뜀)")
+            .setPositiveButton("추가 복원",(d,w)->runRestore(source,false)).setNeutralButton("덮어쓰기",(d,w)->runRestore(source,true)).setNegativeButton("취소",null).show();
+    }
+    private boolean sessionHolds(File f){for(DocumentSession s:sessions)if(s.uri!=null&&"file".equals(s.uri.getScheme())&&f.getPath().equals(s.uri.getPath()))return true;return false;}
+    private void runRestore(Uri source,boolean overwrite){
+        toast("복원하는 중… 잠시 기다려 주세요");
+        new Thread(()->{try(InputStream in=getContentResolver().openInputStream(source)){if(in==null)throw new IOException("파일을 읽을 수 없습니다");
+            final LibraryBackup.Result r=LibraryBackup.restore(this,library,backupAssetDirs(),in,overwrite,f->{try{return onUi(()->sessionHolds(f));}catch(Exception e){return true;}},null);
+            runOnUiThread(()->{if(isFinishing()||isDestroyed())return;new AlertDialog.Builder(this).setTitle("복원 완료").setMessage("문서 "+r.documents+"개 · 필기 "+r.notes+"개 · 첨부 "+r.assets+"개 · 폴더 "+r.folders+"개"+(r.skipped>0?"\n열려 있어 건너뜀 "+r.skipped+"개":"")+(r.failed>0?"\n실패 "+r.failed+"개":"")).setPositiveButton("확인",null).show();});
+        }catch(Exception error){runOnUiThread(()->toast("복원 실패: "+(error.getMessage()==null?error.getClass().getSimpleName():error.getMessage())));}},"library-restore").start();
+    }
+    private void showAbout(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(22),dp(8),dp(22),0);
+        TextView info=new TextView(this);info.setText("Everynote\n버전 "+appVersion()+"\n\n"+AUTHOR_LINE);info.setTextSize(15);info.setTextColor(NAVY);info.setTag("about_info");info.setTextIsSelectable(true);box.addView(info);
+        final TextView status=new TextView(this);status.setTextSize(14);status.setTextColor(0xFF8E8E93);status.setPadding(0,dp(14),0,dp(6));status.setTag("update_status");box.addView(status);
+        android.widget.CheckBox auto=new android.widget.CheckBox(this);auto.setText("앱을 열 때 새 버전 자동 확인");auto.setTextSize(14);auto.setChecked(recentPrefs.getBoolean("auto_update_check",true));auto.setOnCheckedChangeListener((b,on)->recentPrefs.edit().putBoolean("auto_update_check",on).apply());auto.setTag("auto_update");box.addView(auto);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("앱 정보").setView(box).setPositiveButton("업데이트 확인",null).setNegativeButton("닫기",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->checkForUpdate(true,status)));dialog.show();
+    }
+    private void checkForUpdate(final boolean manual,final TextView status){
+        if(status!=null)status.setText("확인 중…");
+        new Thread(()->{try{final UpdateChecker.Release r=UpdateChecker.latest();final boolean newer=UpdateChecker.compare(r.version,appVersion())>0;
+            runOnUiThread(()->{if(isFinishing()||isDestroyed())return;
+                if(!newer){if(status!=null)status.setText("최신 버전입니다 (v"+appVersion()+")");else if(manual)toast("최신 버전입니다");return;}
+                if(status!=null)status.setText("새 버전 v"+r.version+" 이(가) 있습니다");
+                String notes=r.notes==null?"":r.notes.trim();if(notes.length()>500)notes=notes.substring(0,500)+"…";
+                new AlertDialog.Builder(this).setTitle("새 버전 v"+r.version).setMessage("현재 v"+appVersion()+(notes.isEmpty()?"":"\n\n"+notes)+"\n\n업데이트를 누르면 설치 파일을 내려받습니다. 내려받은 뒤 알림을 눌러 설치하세요. 문서와 필기는 그대로 유지됩니다.").setPositiveButton("업데이트",(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(r.url!=null?r.url:r.page)));}catch(Exception e){toast("브라우저를 열 수 없습니다");}}).setNegativeButton("나중에",null).show();});
+        }catch(Exception error){runOnUiThread(()->{String m="업데이트를 확인하지 못했습니다 (인터넷 연결 확인)";if(status!=null)status.setText(m);else if(manual)toast(m);});}},"update-check").start();
+    }
+    private void autoCheckForUpdate(){
+        if(!recentPrefs.getBoolean("auto_update_check",true))return;long now=System.currentTimeMillis();if(now-recentPrefs.getLong("update_checked",0)<20L*3600*1000)return;
+        recentPrefs.edit().putLong("update_checked",now).apply();checkForUpdate(false,null);
+    }
+    private boolean updateChecked;
     private void showHelp(){
         final Dialog dialog=new Dialog(this,R.style.SheetDialog);
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setBackground(round(Color.WHITE,20));card.setPadding(dp(22),dp(20),dp(22),dp(6));
@@ -2446,6 +2602,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private String appVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception error){return "";}}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
     private void closeAllDocuments(){closeSearch();for(DocumentSession s:new ArrayList<>(sessions)){if(s.renderer!=null)s.renderer.close();if(s.descriptor!=null)try{s.descriptor.close();}catch(IOException ignored){}if(s.officePreview!=null)s.officePreview.delete();}sessions.clear();renderer=null;descriptor=null;}
-    @Override protected void onStop(){commitInlineText();onSelectionAdjustStarted();saveSessionState();super.onStop();}
+    @Override protected void onStop(){stopInlinePlayer();commitInlineText();onSelectionAdjustStarted();saveSessionState();super.onStop();}
     @Override protected void onDestroy(){stopRecording(true);if(libraryDialog!=null)libraryDialog.dismiss();if(searchCanceled!=null)searchCanceled.set(true);if(hwpConversion!=null)hwpConversion.cancel();saveSessionState();++ocrGeneration;if(speech!=null){speech.stop();speech.shutdown();speech=null;}if(latinRecognizer!=null)latinRecognizer.close();if(koreanRecognizer!=null)koreanRecognizer.close();closeAllDocuments();super.onDestroy();}
 }

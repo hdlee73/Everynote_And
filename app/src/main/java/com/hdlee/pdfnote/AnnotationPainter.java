@@ -33,13 +33,15 @@ final class AnnotationPainter {
     static void text(Canvas canvas,String text,RectF box,float size,int color){text(canvas,text,box,size,color,Typeface.DEFAULT);}
     static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face){text(canvas,text,box,size,color,face,0,false,false);}
     /** align: 0 left, 1 centre, 2 right. */
-    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face,int align,boolean underline,boolean strike){
+    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face,int align,boolean underline,boolean strike){text(canvas,text,box,size,color,face,align,underline,strike,1.35f);}
+    /** line: distance between baselines as a multiple of size. */
+    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face,int align,boolean underline,boolean strike,float step){
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setTextSize(size);p.setTypeface(face);p.setUnderlineText(underline);p.setStrikeThruText(strike);
         int save=canvas.save();canvas.clipRect(box);float y=box.top+size;
         for(String paragraph:text.split("\n",-1)){
             String remaining=paragraph;
-            while(!remaining.isEmpty()){int n=Math.max(1,p.breakText(remaining,true,box.width(),null));String line=remaining.substring(0,n);float x=box.left;if(align!=0){String shown=line.replaceAll("\\s+$","");float room=box.width()-p.measureText(shown);x=box.left+(align==1?room/2f:room);}canvas.drawText(line,x,y,p);y+=size*1.35f;remaining=remaining.substring(n);}
-            if(paragraph.isEmpty())y+=size*1.35f;
+            while(!remaining.isEmpty()){int n=Math.max(1,p.breakText(remaining,true,box.width(),null));String line=remaining.substring(0,n);float x=box.left;if(align!=0){String shown=line.replaceAll("\\s+$","");float room=box.width()-p.measureText(shown);x=box.left+(align==1?room/2f:room);}canvas.drawText(line,x,y,p);y+=size*step;remaining=remaining.substring(n);}
+            if(paragraph.isEmpty())y+=size*step;
         }
         canvas.restoreToCount(save);
     }
@@ -48,7 +50,8 @@ final class AnnotationPainter {
      * Height (as a fraction of the page height) a typing box needs so that none of its text is clipped.
      * Uses the same wrapping rules as {@link #text}. {@code pageAspect} is page height divided by page width.
      */
-    static float fitHeight(String text,float widthFraction,float sizeFraction,float pageAspect,Typeface face){
+    static float fitHeight(String text,float widthFraction,float sizeFraction,float pageAspect,Typeface face){return fitHeight(text,widthFraction,sizeFraction,pageAspect,face,1.35f);}
+    static float fitHeight(String text,float widthFraction,float sizeFraction,float pageAspect,Typeface face,float line){
         final float pageWidth=1000f;
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);float size=Math.max(1f,sizeFraction*pageWidth);p.setTextSize(size);p.setTypeface(face);
         float boxWidth=Math.max(size,widthFraction*pageWidth);int lines=0;
@@ -57,7 +60,7 @@ final class AnnotationPainter {
             if(remaining.isEmpty()){lines++;continue;}
             while(!remaining.isEmpty()){int n=Math.max(1,p.breakText(remaining,true,boxWidth,null));lines++;remaining=remaining.substring(n);}
         }
-        float heightPx=size*(1.35f*Math.max(1,lines)+.15f);
+        float heightPx=size*(line*Math.max(1,lines)+.15f);
         return heightPx/(pageWidth*Math.max(.1f,pageAspect));
     }
 
@@ -114,7 +117,7 @@ final class AnnotationPainter {
             }else if(e.kind.equals("link")){
                 text(c,"↗ "+e.text,b,Math.max(9,d.width()*.027f),0xFF007AFF);
             }else{
-                text(c,e.text,b,Math.max(9,d.width()*e.textSize),adj(e.color),typeface(e.font,e.bold,e.italic),e.align,e.underline,e.strike);
+                text(c,e.text,b,Math.max(9,d.width()*e.textSize),adj(e.color),typeface(e.font,e.bold,e.italic),e.align,e.underline,e.strike,e.line());
             }
             c.restoreToCount(rotSave);
         }

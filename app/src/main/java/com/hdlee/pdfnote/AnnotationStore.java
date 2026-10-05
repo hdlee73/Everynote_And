@@ -171,12 +171,18 @@ final class AnnotationStore {
         float rot;
         /** Opacity of pictures, stickers, shapes and tables (1 = solid). */
         float alpha = 1f;
+        /** Text: line step as a multiple of the font size; 0 keeps the default {@link #DEFAULT_LINE}. */
+        float lineSpacing;
+        static final float DEFAULT_LINE = 1.35f;
+        float line() { return lineSpacing >= .8f && lineSpacing <= 4f ? lineSpacing : DEFAULT_LINE; }
 
         JSONObject toJson() throws JSONException {
-            return new JSONObject().put("rot", rot).put("page", page).put("kind", kind).put("text", text).put("asset", asset)
+            JSONObject o = new JSONObject().put("rot", rot).put("page", page).put("kind", kind).put("text", text).put("asset", asset)
                     .put("left", left).put("top", top).put("right", right).put("bottom", bottom)
                     .put("textSize", textSize).put("color", color).put("font", font)
                     .put("bold", bold).put("italic", italic).put("align", align).put("underline", underline).put("strike", strike).put("stretch", stretch).put("alpha", alpha);
+            if (lineSpacing > 0) o.put("lineSpacing", lineSpacing);
+            return o;
         }
 
         static PageElement fromJson(JSONObject o) throws JSONException {
@@ -200,6 +206,8 @@ final class AnnotationStore {
             e.underline = o.optBoolean("underline", false);
             e.strike = o.optBoolean("strike", false);
             e.stretch = o.optBoolean("stretch", false);
+            e.lineSpacing = (float) o.optDouble("lineSpacing", 0);
+            if (!Float.isFinite(e.lineSpacing) || e.lineSpacing < .8f || e.lineSpacing > 4f) e.lineSpacing = 0f;
             e.alpha = (float) o.optDouble("alpha", 1);
             if (!Float.isFinite(e.alpha) || e.alpha > 1f) e.alpha = 1f;
             if (e.alpha < .05f) e.alpha = .05f;
