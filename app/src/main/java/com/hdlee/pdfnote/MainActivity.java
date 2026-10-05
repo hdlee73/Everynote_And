@@ -486,7 +486,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         commitInlineText();onSelectionAdjustStarted();if(renderer==null||index<0||index>=renderer.getPageCount())return;++ocrGeneration;resetPageTransforms();
         int first=twoPage?(index/2)*2:index;firstPageView.showPage(renderPage(renderer,first),first,store.marks,store.strokes,store.translations);firstPageView.setAnnotationStore(store);
         if(twoPage&&first+1<renderer.getPageCount()){secondPageView.setVisibility(View.VISIBLE);secondPageView.showPage(renderPage(renderer,first+1),first+1,store.marks,store.strokes,store.translations);secondPageView.setAnnotationStore(store);}else{secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);}
-        pageView=twoPage&&index!=first?secondPageView:firstPageView;currentPage=index;activeSession.page=index;syncOtherTools();
+        if(carryScale>0f){firstPageView.restoreView(carryScale,carryPanX,carryPanY);if(secondPageView.getVisibility()==View.VISIBLE)secondPageView.restoreView(carryScale,carryPanX,carryPanY);}carryScale=-1f;
+        pageView=twoPage&&index!=first?secondPageView:firstPageView;currentPage=index;activeSession.page=index;updateZoomLabel(pageView.zoom());syncOtherTools();
         previousOverlay.setVisibility(first>0?View.VISIBLE:View.GONE);nextOverlay.setVisibility(first+(twoPage?2:1)<renderer.getPageCount()||isNotebook(activeSession)?View.VISIBLE:View.GONE);nextOverlay.setContentDescription(first+(twoPage?2:1)>=renderer.getPageCount()&&isNotebook(activeSession)?"새 페이지 추가":"다음 페이지");
         pageLabel.setText(twoPage?(first+1)+"–"+Math.min(first+2,renderer.getPageCount())+" / "+renderer.getPageCount():(index+1)+" / "+renderer.getPageCount());
         applyCrop();updateBookmarkButton();updateThumbnailSelection();refreshStudyPanel();saveSessionState();applySearchHighlights();
@@ -534,10 +535,13 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     @Override public void onMarkTapped(AnnotationStore.Mark mark){editMark(mark);}
     @Override public void onZoomGestureStarted(){if(highlightMode||memoMode||outlineMode){highlightMode=memoMode=outlineMode=false;pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);updateToolStates();}}
     @Override public void onPageSwipe(int direction){animatePage(direction);}
+    private float carryScale=-1f,carryPanX,carryPanY;
+    /** Remembers the zoom of the page being left so the next page opens at the same zoom and position. */
+    private void carryZoom(){if(pageView!=null&&Math.abs(pageView.zoom()-1f)>.001f){carryScale=pageView.zoom();carryPanX=pageView.panOffsetX();carryPanY=pageView.panOffsetY();}else carryScale=-1f;}
     private void resetPageTransforms(){for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView})if(v!=null){v.animate().cancel();v.setAlpha(1f);v.setTranslationX(0);v.setTranslationY(0);v.setRotationY(0);}}
     private void animatePage(int direction){
         if(pageAnimating||renderer==null)return;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0)return;if(target>=renderer.getPageCount()){if(direction>0&&isNotebook(activeSession))appendPage(activeSession,library.paper(new File(activeSession.uri.getPath())));return;}
-        pageAnimating=true;
+        pageAnimating=true;carryZoom();
         if(pageAnimStyle()==2){showPage(target);resetPageTransforms();pageAnimating=false;return;}
         if(pageAnimStyle()==0&&!verticalPageSwipe&&curlPage(direction,target))return;
         float offset=dp(26)*direction;
@@ -563,8 +567,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private final PdfPageView.PageDrag pageDragHandler=new PdfPageView.PageDrag(){
         @Override public boolean start(int direction){
             if(pageAnimating||renderer==null||verticalPageSwipe||pageAnimStyle()!=0)return false;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0||target>=renderer.getPageCount())return false;
-            pageAnimating=true;PageCurlView curl=beginCurl(direction,target);if(curl==null){pageAnimating=curlConsumed;return false;}
-            dragCurl=curl;dragSpan=Math.max(dp(120),curl.getLayoutParams().width*(twoPage?.5f:1f)*1.1f);return true;
+            pageAnimating=true;carryZoom();PageCurlView curl=beginCurl(direction,target);if(curl==null){pageAnimating=curlConsumed;return false;}
+            dragCurl=curl;dragSpan=Math.max(dp(120),curl.contentWidth()*(twoPage?.5f:1f)*1.1f);return true;
         }
         @Override public void touchAt(float fraction){if(dragCurl!=null)dragCurl.setTouch(fraction);}
         @Override public void move(float distance){if(dragCurl!=null)dragCurl.setProgress(distance/dragSpan);}
@@ -592,12 +596,13 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             else curl.setup(PageCurlView.mirror(oldSecond),PageCurlView.mirror(newFirst),PageCurlView.mirror(oldFirst),PageCurlView.paperBack(newSecond),true,.5f);
         }
         oldFull.recycle();newFull.recycle();
-        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(w,h,Gravity.TOP|Gravity.START);lp.leftMargin=rl+papers.getLeft();lp.topMargin=rt+papers.getTop();viewportLayer.addView(curl,1,lp);return curl;
+        // the overlay spans the whole reading area so the lifted corner can swing out past the page edges, not be cut at them
+        curl.setOrigin(rl+papers.getLeft(),rt+papers.getTop(),w,h);viewportLayer.addView(curl,1,new FrameLayout.LayoutParams(-1,-1));return curl;
     }
     private void finishCurl(PageCurlView curl,float from,float to){
         android.animation.ValueAnimator animator=android.animation.ValueAnimator.ofFloat(from,to);animator.setDuration(Math.max(200,Math.round(1000*Math.abs(to-from))));animator.setInterpolator(from==0f?new android.view.animation.AccelerateDecelerateInterpolator():new android.view.animation.DecelerateInterpolator());
         animator.addUpdateListener(a->curl.setProgress((Float)a.getAnimatedValue()));
-        animator.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator a){if(to<.5f)showPage(curlOrigin);viewportLayer.removeView(curl);curl.release();resetPageTransforms();pageAnimating=false;}});
+        animator.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator a){if(to<.5f){carryZoom();showPage(curlOrigin);}viewportLayer.removeView(curl);curl.release();resetPageTransforms();pageAnimating=false;}});
         animator.start();
     }
     /** Turns the page like paper: a curling leaf with a visible back side and shadows (single page and two-page spread). Returns false when it cannot animate. */
@@ -1919,7 +1924,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void buildSidePanel(){
         sidePanel=new LinearLayout(this);sidePanel.setTag("side_panel");sidePanel.setOrientation(LinearLayout.VERTICAL);sidePanel.setBackgroundColor(0xFFF8F8F8);sidePanel.setVisibility(View.GONE);
         LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(dp(12),0,dp(0),0);
-        sideTitle=new TextView(this);sideTitle.setTag("side_title");sideTitle.setTextSize(15);sideTitle.setTextColor(NAVY);sideTitle.setTypeface(Typeface.DEFAULT_BOLD);sideTitle.setSingleLine();sideTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);sideTitle.setAutoSizeTextTypeUniformWithConfiguration(10,15,1,android.util.TypedValue.COMPLEX_UNIT_SP);head.addView(sideTitle,new LinearLayout.LayoutParams(0,dp(48),1));
+        sideTitle=new TextView(this);sideTitle.setTag("side_title");sideTitle.setTextSize(15);sideTitle.setTextColor(NAVY);sideTitle.setTypeface(Typeface.DEFAULT_BOLD);sideTitle.setSingleLine();sideTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);sideTitle.setGravity(Gravity.CENTER_VERTICAL);head.addView(sideTitle,new LinearLayout.LayoutParams(0,dp(48),1));
         sideMore=icon(R.drawable.ic_more_vert,"미리보기 메뉴",NAVY,v->showThumbnailMenu(v));sideMore.setTag("side_more");sideMore.setPadding(dp(7),dp(12),dp(7),dp(12));head.addView(sideMore,new LinearLayout.LayoutParams(dp(36),dp(48)));
         ImageButton closePanel=icon(R.drawable.ic_close,"패널 닫기",NAVY,v->closeSidePanel());closePanelButton=closePanel;closePanel.setPadding(dp(9),dp(12),dp(9),dp(12));head.addView(closePanel,new LinearLayout.LayoutParams(dp(38),dp(48)));
         sidePanel.addView(head,new LinearLayout.LayoutParams(-1,dp(48)));sidePanel.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l>0)fitSideHeader(r-l);});
@@ -1934,14 +1939,21 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Same icon as the matching menu entry (star while only favourites are shown) + the word. */
     private void setSideTitle(int tab){
         boolean star=tab==1&&!showAllThumbnails;android.graphics.drawable.Drawable d=getResources().getDrawable(star?R.drawable.ic_star:SIDE_ICONS[tab],getTheme()).mutate();
-        d.setTint(star?0xFFF5A623:SIDE_TINTS[tab]);d.setBounds(0,0,dp(20),dp(20));sideTitle.setText(SIDE_TITLES[tab]);sideTitle.setCompoundDrawables(d,null,null,null);sideTitle.setCompoundDrawablePadding(dp(6));
+        d.setTint(star?0xFFF5A623:SIDE_TINTS[tab]);d.setBounds(0,0,dp(20),dp(20));sideTitle.setText(SIDE_TITLES[tab]);sideTitle.setCompoundDrawables(d,null,null,null);sideTitle.setCompoundDrawablePadding(dp(6));sideTitle.post(this::fitSideTitleText);
+    }
+    /** Shrinks the title (15sp down to 8sp) until icon and word fit; auto-size ignores the icon, so it is measured here. */
+    private void fitSideTitleText(){
+        if(sideTitle==null||sideTitle.getWidth()<=0)return;float room=sideTitle.getWidth()-sideTitle.getCompoundPaddingLeft()-sideTitle.getCompoundPaddingRight();
+        android.graphics.Paint paint=new android.graphics.Paint(sideTitle.getPaint());float density=getResources().getDisplayMetrics().scaledDensity,size=15f;
+        for(;size>8f;size-=.5f){paint.setTextSize(size*density);if(paint.measureText(sideTitle.getText().toString())<=room)break;}
+        if(Math.abs(sideTitle.getTextSize()/density-size)>.1f)sideTitle.setTextSize(size);
     }
     /** The header never loses its title: narrow panels get smaller buttons and padding. */
     private void fitSideHeader(int width){
         boolean narrow=width<dp(190);int button=narrow?dp(28):dp(36),close=narrow?dp(30):dp(38);
         LinearLayout.LayoutParams m=(LinearLayout.LayoutParams)sideMore.getLayoutParams();LinearLayout.LayoutParams c=(LinearLayout.LayoutParams)closePanelButton.getLayoutParams();
         if(m.width!=button||c.width!=close){m.width=button;c.width=close;sideMore.setPadding(narrow?dp(3):dp(7),dp(12),narrow?dp(3):dp(7),dp(12));closePanelButton.setPadding(narrow?dp(5):dp(9),dp(12),narrow?dp(5):dp(9),dp(12));sideMore.setLayoutParams(m);closePanelButton.setLayoutParams(c);}
-        sideTitle.setAutoSizeTextTypeUniformWithConfiguration(8,15,1,android.util.TypedValue.COMPLEX_UNIT_SP);((LinearLayout)sideTitle.getParent()).setPadding(narrow?dp(8):dp(12),0,0,0);
+        ((LinearLayout)sideTitle.getParent()).setPadding(narrow?dp(8):dp(12),0,0,0);sideTitle.post(this::fitSideTitleText);
     }
     private ImageButton closePanelButton;
     private void selectPanelTab(int tab){

@@ -336,6 +336,10 @@ final class PdfPageView extends View {
     /** Smallest zoom: the page may be shrunk to 40% and is then centred on the grey background. */
     static final float MIN_ZOOM = 0.4f;
     float zoom() { return scale; }
+    float panOffsetX() { return panX; }
+    float panOffsetY() { return panY; }
+    /** Re-applies a zoom and position carried over from the previous page (clamped to this page). */
+    void restoreView(float value, float px, float py) { scale = Math.max(MIN_ZOOM, Math.min(4f, value)); panX = px; panY = py; clampPan(); invalidate(); listener.onZoomChanged(scale); }
     /** Sets the zoom (1 = whole page, up to 4) around the centre of the view; the pan is kept inside the page. */
     void setZoom(float value) {
         if (bitmap == null || getWidth() == 0) return;
