@@ -8,12 +8,24 @@ final class AnnotationPainter {
     private static Bitmap image(File file){Bitmap b=images.get(file.getPath());if(b==null){b=BitmapFactory.decodeFile(file.getPath());if(b!=null)images.put(file.getPath(),b);}return b;}
 
     /** Maps a stored font id (sans, serif, mono, hand) plus style flags to a platform typeface. */
+    /** The picture file of an attached element; the bundled masking tapes are copied out of the assets on first use. */
+    static File builtinAsset(Context context,String asset){
+        File file=new File(new File(context.getFilesDir(),"images"),asset);
+        if(!file.isFile()&&asset.matches("tape-\\d{2}\\.png")){file.getParentFile().mkdirs();try(java.io.InputStream in=context.getAssets().open("stickers/"+asset);java.io.OutputStream out=new java.io.FileOutputStream(file)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}catch(java.io.IOException ignored){file.delete();}}
+        return file;
+    }
     static Typeface typeface(String font,boolean bold,boolean italic){
         int style=(bold?Typeface.BOLD:0)|(italic?Typeface.ITALIC:0);
         Typeface base;
         if("serif".equals(font))base=Typeface.SERIF;
         else if("mono".equals(font))base=Typeface.MONOSPACE;
         else if("hand".equals(font))base=Typeface.create("cursive",Typeface.NORMAL);
+        else if("casual".equals(font))base=Typeface.create("casual",Typeface.NORMAL);
+        else if("typewriter".equals(font))base=Typeface.create("serif-monospace",Typeface.NORMAL);
+        else if("medium".equals(font))base=Typeface.create("sans-serif-medium",Typeface.NORMAL);
+        else if("light".equals(font))base=Typeface.create("sans-serif-light",Typeface.NORMAL);
+        else if("black".equals(font))base=Typeface.create("sans-serif-black",Typeface.NORMAL);
+        else if("condensed".equals(font))base=Typeface.create("sans-serif-condensed",Typeface.NORMAL);
         else base=Typeface.SANS_SERIF;
         return Typeface.create(base,style);
     }
@@ -70,8 +82,9 @@ final class AnnotationPainter {
         for(AnnotationStore.PageElement e:store.elements){
             if(e.page!=page||e==skip)continue;RectF b=box(d,e);
             int rotSave=c.save();if(e.rot!=0f&&rotates(e))c.rotate(e.rot,b.centerX(),b.centerY());
+            if(e.alpha<.999f&&rotates(e))c.saveLayerAlpha(new RectF(d.left-d.width(),d.top-d.height(),d.right+d.width(),d.bottom+d.height()),Math.round(e.alpha*255));
             if(e.kind.equals("image")){
-                File file=new File(new File(context.getFilesDir(),"images"),e.asset);Bitmap image=image(file);
+                File file=builtinAsset(context,e.asset);Bitmap image=image(file);
                 if(image!=null){
                     float scale=Math.min(b.width()/image.getWidth(),b.height()/image.getHeight());
                     RectF fitted=e.stretch?b:new RectF(b.centerX()-image.getWidth()*scale/2,b.centerY()-image.getHeight()*scale/2,b.centerX()+image.getWidth()*scale/2,b.centerY()+image.getHeight()*scale/2);

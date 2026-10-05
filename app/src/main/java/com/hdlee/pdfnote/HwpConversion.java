@@ -68,49 +68,6 @@ final class HwpConversion {
             web.loadUrl("https://pdfnote.local/hwp/convert.html");
         }catch(Exception e){fail(e.getMessage());}
     }
-    /** True when the converted PDF looks like printed two-page spreads: wide landscape pages, or landscape pages whose text sits in two halves with an empty gutter down the middle. */
-    static boolean looksLikeSpread(Activity activity,File pdf){
-        try{com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(activity.getApplicationContext());
-            try(com.tom_roush.pdfbox.pdmodel.PDDocument doc=com.tom_roush.pdfbox.pdmodel.PDDocument.load(pdf,com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly())){
-                int n=Math.min(6,doc.getNumberOfPages());if(n==0)return false;
-                int wide=0,landscape=0,judged=0,gutter=0;
-                for(int i=0;i<n;i++){com.tom_roush.pdfbox.pdmodel.PDPage page=doc.getPage(i);com.tom_roush.pdfbox.pdmodel.common.PDRectangle box=page.getCropBox();int rot=((page.getRotation()%360)+360)%360;float w=rot%180==0?box.getWidth():box.getHeight(),h=rot%180==0?box.getHeight():box.getWidth();
-                    if(w<=h*1.2f)continue;landscape++;if(w>=1000f&&w>h*1.25f)wide++;
-                    int[] c=centersShare(doc,i+1,rot%180==0);if(c==null)continue;judged++;if(c[0]>=250&&c[1]>=250&&c[2]<=15)gutter++;}
-                if(landscape==0)return false;
-                if(wide==landscape)return true;
-                return judged>0&&gutter*10>=judged*7;}
-        }catch(Throwable e){return false;}
-    }
-    /** Share of characters (in tenths of a percent) in the left half, the right half and the 45–55% centre band of a page; null when the page has too little text. */
-    private static int[] centersShare(com.tom_roush.pdfbox.pdmodel.PDDocument doc,int pageNumber,boolean upright){
-        try{final int[] count=new int[3];final int[] total={0};
-            com.tom_roush.pdfbox.text.PDFTextStripper stripper=new com.tom_roush.pdfbox.text.PDFTextStripper(){
-                @Override protected void writeString(String text,java.util.List<com.tom_roush.pdfbox.text.TextPosition> positions){
-                    for(com.tom_roush.pdfbox.text.TextPosition t:positions){if(t.getUnicode()==null||t.getUnicode().trim().isEmpty())continue;float pw=getCurrentPage().getCropBox().getWidth();float x=(t.getXDirAdj()+t.getWidthDirAdj()/2f)/pw;total[0]++;if(x>=.45f&&x<=.55f)count[2]++;else if(x<.5f)count[0]++;else count[1]++;}
-                }};
-            stripper.setStartPage(pageNumber);stripper.setEndPage(pageNumber);stripper.getText(doc);
-            if(!upright||total[0]<30)return null;
-            return new int[]{count[0]*1000/total[0],count[1]*1000/total[0],count[2]*1000/total[0]};
-        }catch(Throwable e){return null;}
-    }
-    /** Cuts every page in the middle into a left and a right page (same content, two crop boxes) and writes the result to {@code out}. */
-    static void splitSpreads(Activity activity,File pdf,File out) throws IOException{
-        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(activity.getApplicationContext());
-        try(com.tom_roush.pdfbox.pdmodel.PDDocument doc=com.tom_roush.pdfbox.pdmodel.PDDocument.load(pdf,com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly())){
-            java.util.List<com.tom_roush.pdfbox.pdmodel.PDPage> pages=new java.util.ArrayList<>();for(com.tom_roush.pdfbox.pdmodel.PDPage page:doc.getPages())pages.add(page);
-            for(com.tom_roush.pdfbox.pdmodel.PDPage page:pages){
-                com.tom_roush.pdfbox.pdmodel.common.PDRectangle box=page.getCropBox();if(page.getRotation()%180!=0||box.getWidth()<=box.getHeight())continue;
-                float mid=box.getLowerLeftX()+box.getWidth()/2f;
-                com.tom_roush.pdfbox.pdmodel.PDPage right=new com.tom_roush.pdfbox.pdmodel.PDPage(new com.tom_roush.pdfbox.cos.COSDictionary(page.getCOSObject()));
-                com.tom_roush.pdfbox.pdmodel.common.PDRectangle l=new com.tom_roush.pdfbox.pdmodel.common.PDRectangle(box.getLowerLeftX(),box.getLowerLeftY(),mid-box.getLowerLeftX(),box.getHeight());
-                com.tom_roush.pdfbox.pdmodel.common.PDRectangle r=new com.tom_roush.pdfbox.pdmodel.common.PDRectangle(mid,box.getLowerLeftY(),box.getUpperRightX()-mid,box.getHeight());
-                page.setMediaBox(l);page.setCropBox(l);right.setMediaBox(r);right.setCropBox(r);
-                doc.getPages().insertAfter(right,page);
-            }
-            doc.save(out);
-        }
-    }
     private static WebResourceResponse response(String mime,InputStream in){return new WebResourceResponse(mime,"UTF-8",in);}
     private static WebResourceResponse missing(){return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
     private void dispose(){ui.removeCallbacks(timeout);if(web!=null){parent.removeView(web);web.removeJavascriptInterface("NativePdf");web.stopLoading();web.destroy();web=null;}if(input!=null)input.delete();}

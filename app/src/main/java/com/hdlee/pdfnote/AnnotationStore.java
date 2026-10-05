@@ -153,7 +153,7 @@ final class AnnotationStore {
         static final float DEFAULT_TEXT_SIZE = .027f;
         static final int DEFAULT_TEXT_COLOR = 0xFF1C1C1E;
         /** sans=고딕, serif=명조, mono=고정폭, hand=손글씨체 */
-        static final List<String> FONTS = java.util.Arrays.asList("sans", "serif", "mono", "hand");
+        static final List<String> FONTS = java.util.Arrays.asList("sans", "medium", "light", "black", "condensed", "serif", "mono", "typewriter", "hand", "casual");
         int page;
         String kind = "text", text = "", asset = "";
         float left = .1f, top = .1f, right = .8f, bottom = .3f;
@@ -169,12 +169,14 @@ final class AnnotationStore {
         boolean stretch;
         /** Clockwise rotation in degrees around the box centre (pictures, stickers, shapes and tables). */
         float rot;
+        /** Opacity of pictures, stickers, shapes and tables (1 = solid). */
+        float alpha = 1f;
 
         JSONObject toJson() throws JSONException {
             return new JSONObject().put("rot", rot).put("page", page).put("kind", kind).put("text", text).put("asset", asset)
                     .put("left", left).put("top", top).put("right", right).put("bottom", bottom)
                     .put("textSize", textSize).put("color", color).put("font", font)
-                    .put("bold", bold).put("italic", italic).put("align", align).put("underline", underline).put("strike", strike).put("stretch", stretch);
+                    .put("bold", bold).put("italic", italic).put("align", align).put("underline", underline).put("strike", strike).put("stretch", stretch).put("alpha", alpha);
         }
 
         static PageElement fromJson(JSONObject o) throws JSONException {
@@ -198,10 +200,13 @@ final class AnnotationStore {
             e.underline = o.optBoolean("underline", false);
             e.strike = o.optBoolean("strike", false);
             e.stretch = o.optBoolean("stretch", false);
+            e.alpha = (float) o.optDouble("alpha", 1);
+            if (!Float.isFinite(e.alpha) || e.alpha > 1f) e.alpha = 1f;
+            if (e.alpha < .05f) e.alpha = .05f;
             if (e.page < 0 || !Float.isFinite(e.left) || !Float.isFinite(e.top) || !Float.isFinite(e.right) || !Float.isFinite(e.bottom)
                     || e.left < 0 || e.top < 0 || e.right > 1 || e.bottom > 1 || e.left >= e.right || e.top >= e.bottom
                     || !java.util.Arrays.asList("text", "image", "link", "audio", "sticker", "video", "hyperlink", "shape", "table", "youtube").contains(e.kind)
-                    || (!e.asset.isEmpty() && !e.asset.matches("[a-f0-9-]{36}\\.(png|m4a)"))
+                    || (!e.asset.isEmpty() && !e.asset.matches("[a-f0-9-]{36}\\.(png|m4a)|tape-\\d{2}\\.png"))
                     || (e.kind.equals("video") && !e.text.matches("[a-f0-9-]{36}\\.mp4"))
                     || (e.kind.equals("sticker") && (e.text.isEmpty() || e.text.length() > 16))
                     || (e.kind.equals("youtube") && !e.text.matches("[A-Za-z0-9_-]{11}"))

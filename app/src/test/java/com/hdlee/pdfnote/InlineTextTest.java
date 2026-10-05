@@ -51,7 +51,7 @@ public class InlineTextTest {
         int before=Math.round(AnnotationStore.PageElement.DEFAULT_TEXT_SIZE*595);
         byTag("text_bold").performClick();byTag("text_italic").performClick();
         View bigger=byDescription(root,"글자 크게");bigger.performClick();bigger.performClick();bigger.performClick();
-        ViewGroup fonts=(ViewGroup)byTag("text_fonts");fonts.getChildAt(1).performClick();
+        assertTrue(byTag("text_fonts") instanceof TextView);java.lang.reflect.Method pick=activity.getClass().getDeclaredMethod("setInlineFont",String.class);pick.setAccessible(true);pick.invoke(activity,"serif");
         View color=byDescription(root,"색상 6");color.performClick();
         assertEquals((before+3)+"pt",((TextView)byTag("text_size")).getText().toString());
         byTag("text_done").performClick();
@@ -77,9 +77,9 @@ public class InlineTextTest {
     }
     @Test public void sidePanelHostsSearchPagesOutlineAndRecordings()throws Exception{
         View side=byTag("side_panel");assertEquals(View.GONE,side.getVisibility());
-        byDescription(root,"페이지 목록").performClick();assertEquals(View.VISIBLE,side.getVisibility());assertEquals("즐겨찾기 페이지",((TextView)byTag("side_title")).getText().toString());assertEquals(View.VISIBLE,byTag("side_more").getVisibility());
-        byTag("side_tab:2").performClick();assertNotNull(byTag("outline_add"));assertEquals(View.GONE,byTag("side_more").getVisibility());assertEquals("개요",((TextView)byTag("side_title")).getText().toString());
-        byTag("side_tab:3").performClick();assertNotNull(byTag("record_button"));assertEquals("음성 녹음",((TextView)byTag("side_title")).getText().toString());
+        byDescription(root,"페이지 목록").performClick();assertEquals(View.VISIBLE,side.getVisibility());assertTrue(((TextView)byTag("side_title")).getText().toString().endsWith("미리보기"));assertEquals(View.VISIBLE,byTag("side_more").getVisibility());
+        byTag("side_tab:2").performClick();assertNotNull(byTag("outline_add"));assertEquals(View.GONE,byTag("side_more").getVisibility());assertTrue(((TextView)byTag("side_title")).getText().toString().endsWith("개요"));
+        byTag("side_tab:3").performClick();assertNotNull(byTag("record_button"));assertTrue(((TextView)byTag("side_title")).getText().toString().endsWith("음성 녹음"));
         byTag("side_tab:0").performClick();assertEquals(View.VISIBLE,byTag("search_panel").getVisibility());assertNotNull(byTag("search_input"));
         byDescription(root,"검색 닫기").performClick();assertEquals(View.GONE,byTag("search_panel").getVisibility());assertEquals("검색을 닫아도 패널은 남습니다",View.VISIBLE,side.getVisibility());
         byDescription(root,"패널 닫기").performClick();assertEquals(View.GONE,side.getVisibility());
@@ -88,7 +88,7 @@ public class InlineTextTest {
         AnnotationStore.PageElement clip=new AnnotationStore.PageElement();clip.page=0;clip.kind="audio";clip.asset=UUID.randomUUID()+".m4a";clip.text="0:12";clip.left=.04f;clip.top=.03f;clip.right=.42f;clip.bottom=.075f;store.elements.add(clip);
         activity.onElementTapped(clip);AlertDialog player=(AlertDialog)org.robolectric.shadows.ShadowDialog.getLatestDialog();assertNotNull(player);assertEquals("녹음 파일이 없으면 안내 대화상자가 열립니다","녹음",player.getTitleText().toString());player.dismiss();
         byDescription(root,"페이지 목록").performClick();byTag("side_tab:3").performClick();assertNotNull("첨부한 녹음이 목록에 보입니다",byTag("recording_item"));
-        byDescription(root,"녹음 삭제").performClick();assertTrue(store.elements.isEmpty());assertNull(byTag("recording_item"));
+        byDescription(root,"녹음 관리").performClick();java.lang.reflect.Method del=activity.getClass().getDeclaredMethod("deleteRecording",AnnotationStore.PageElement.class);del.setAccessible(true);del.invoke(activity,clip);assertTrue(store.elements.isEmpty());assertNull(byTag("recording_item"));
     }
     @Test public void headerTitleRenamesAndLassoIsOnTheMainToolbar()throws Exception{
         View title=byTag("document_title");assertNotNull(title);assertTrue(title.hasOnClickListeners());

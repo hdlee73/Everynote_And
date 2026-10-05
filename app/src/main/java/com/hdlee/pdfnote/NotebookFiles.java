@@ -10,7 +10,10 @@ import java.nio.file.*;
 import java.util.Locale;
 
 final class NotebookFiles {
-    static final String[] PAPER_NAMES={"백지","줄노트 (보통)","모눈종이","리걸노트","줄노트 (좁게)","줄노트 (넓게)","점 격자","코넬 노트","오선지","내 PDF·이미지 서식"};
+    static final String[] PAPER_NAMES={"백지","줄노트 (보통)","모눈종이","법률 노트 (빨간 여백선)","줄노트 (좁게)","줄노트 (넓게)","점 격자","코넬 노트","오선지","내 PDF·이미지 서식","금감원노트","금감원노트_칸나누기","리갈노트"};
+    /** Order shown in the paper list: the bundled form templates first, then the plain papers. Kinds 10-12 are PDFs shipped in assets/templates. */
+    static final int[] PAPER_ORDER={10,11,12,0,1,2,3,4,5,6,7,8,9};
+    static final String[] BUILTIN_TEMPLATES={"note_lines.pdf","note_two_column.pdf","note_legal.pdf"};
     static final int CUSTOM=9;
     static final int[] COLORS={Color.WHITE,0xFFFFF9E8,0xFFFFF6B0,0xFFEFF6FF,0xFFF0F8EE,0xFFFFF0F4,0xFFEDEFF2,0xFFF3ECFF,0xFF1C1C1E};
     static final String[] COLOR_NAMES={"흰색","크림","리갈 옐로","하늘","연두","분홍","회색","연보라","검정"};

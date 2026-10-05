@@ -353,6 +353,7 @@ final class PdfPageView extends View {
         panY = getHeight() / 2f - (baseTop(size) + y * size[1]);
         clampPan();
         invalidate();
+        listener.onZoomChanged(scale);
     }
 
     void setDirectTextSelection(boolean enabled){directTextSelection=enabled;clearTextSelectionOverlay();}
