@@ -49,6 +49,19 @@ final class NotebookFiles {
             default:return null;
         }
     }
+    /** Key into {@link #ruler}: 1-8 for plain papers, 10-12 for the bundled form templates (stored as CUSTOM papers named builtin-*.pdf), -1 without ruled lines. */
+    static int rulerKind(Paper p){
+        if(p==null)return -1;if(p.kind!=CUSTOM)return ruler(p.kind)!=null?p.kind:-1;
+        if(p.template!=null){String n=p.template.getName();for(int i=0;i<BUILTIN_TEMPLATES.length;i++)if(n.equals("builtin-"+BUILTIN_TEMPLATES[i]))return 10+i;}
+        return -1;
+    }
+    /** The copy of a bundled form template kept in the app's files (created from the assets on first use). */
+    static File builtinTemplate(Context c,String name)throws IOException{
+        boolean known=false;for(String t:BUILTIN_TEMPLATES)if(t.equals(name))known=true;if(!known)throw new IOException("서식 이름");
+        File dir=new File(c.getFilesDir(),"templates");dir.mkdirs();File out=new File(dir,"builtin-"+name);
+        if(!out.isFile()||out.length()==0){try(java.io.InputStream in=c.getAssets().open("templates/"+name);java.io.OutputStream o=new java.io.FileOutputStream(out)){byte[] b=new byte[16384];int n;while((n=in.read(b))!=-1)o.write(b,0,n);}}
+        return out;
+    }
     static int[] ruleColor(int style){switch(style){case 1:return new int[]{232,140,140};case 2:return new int[]{120,130,140};case 3:return new int[]{150,160,170};default:return new int[]{185,195,205};}}
     static File root(Context c){File root=new File(c.getFilesDir(),"documents");root.mkdirs();return root;}
     static String name(String text)throws IOException{String n=text.trim();if(n.isEmpty()||n.equals(".")||n.equals("..")||n.length()>100||java.util.regex.Pattern.compile("[\\\\/:*?\"<>|\\p{Cntrl}]").matcher(n).find())throw new IOException("파일 이름에 사용할 수 없는 문자가 있습니다");return n;}

@@ -1889,9 +1889,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void chooseNoteRuler(){
         if(inlineElement==null)return;final AnnotationStore.PageElement e=inlineElement;
         List<Integer> kinds=new ArrayList<>();NotebookFiles.Paper own=activeSession!=null&&library.managed(activeSession.uri)?library.paper(new File(activeSession.uri.getPath())):null;
-        if(own!=null&&NotebookFiles.ruler(own.kind)!=null)kinds.add(own.kind);
+        int ownKind=NotebookFiles.rulerKind(own);if(ownKind>0)kinds.add(ownKind);
         for(int k:new int[]{10,11,12,1,4,5,2,3,7})if(!kinds.contains(k))kinds.add(k);
-        CharSequence[] names=new CharSequence[kinds.size()];for(int i=0;i<names.length;i++)names[i]=NotebookFiles.PAPER_NAMES[kinds.get(i)]+(i==0&&own!=null&&NotebookFiles.ruler(own.kind)!=null?"  (현재 노트)":"");
+        CharSequence[] names=new CharSequence[kinds.size()];for(int i=0;i<names.length;i++)names[i]=NotebookFiles.PAPER_NAMES[kinds.get(i)]+(i==0&&ownKind>0?"  (현재 노트)":"");
         new AlertDialog.Builder(this).setTitle("노트 줄에 맞추기").setItems(names,(d,which)->fitInlineToRuler(e,kinds.get(which))).setNegativeButton("취소",null).show();
     }
     private void fitInlineToRuler(AnnotationStore.PageElement e,int kind){

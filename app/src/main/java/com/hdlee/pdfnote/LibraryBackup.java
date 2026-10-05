@@ -43,6 +43,7 @@ final class LibraryBackup {
     /** assetDirs: images, recordings, videos (in that order). Returns the number of documents written. */
     static int write(Context c, LibraryRepository lib, File[] assetDirs, OutputStream out, Progress p) throws Exception {
         List<String> docs = new ArrayList<>(), folders = new ArrayList<>(); collect(lib, lib.root, "", docs, folders);
+        Map<Integer, File> templates = new HashMap<>();
         List<File> assets = new ArrayList<>();
         for (File d : assetDirs) { File[] l = d.listFiles(); if (l != null) for (File f : l) if (f.isFile() && DeviceSync.ASSET.matcher(f.getName()).matches()) assets.add(f); }
         JSONObject m = new JSONObject().put("format", FORMAT).put("created", System.currentTimeMillis()).put("app", "android");
@@ -51,7 +52,11 @@ final class LibraryBackup {
             File f = new File(lib.root, docs.get(i));
             JSONObject o = new JSONObject().put("i", i).put("path", docs.get(i)).put("favorite", lib.favorite(f));
             NotebookFiles.Paper paper = lib.paper(f);
-            if (paper != null && paper.kind != NotebookFiles.CUSTOM) o.put("paper", paper.kind + ":" + paper.color);
+            if (paper != null) {
+                if (paper.kind != NotebookFiles.CUSTOM) o.put("paper", paper.kind + ":" + paper.color);
+                else if (paper.template != null && paper.template.getName().startsWith("builtin-")) o.put("paper", "builtin:" + paper.template.getName().substring(8) + ":" + paper.color);
+                else if (paper.template != null && paper.template.isFile()) { String n = paper.template.getName(), ext = n.contains(".") ? n.substring(n.lastIndexOf('.') + 1).replaceAll("[^A-Za-z0-9]", "") : "pdf"; o.put("paper", "custom:" + paper.color + ":" + ext); templates.put(i, paper.template); }
+            }
             da.put(o);
         }
         for (String rel : folders) fa.put(new JSONObject().put("path", rel).put("color", lib.folderColor(new File(lib.root, rel))));
@@ -62,6 +67,8 @@ final class LibraryBackup {
             z.putNextEntry(new ZipEntry(MANIFEST)); z.write(m.toString(2).getBytes("UTF-8")); z.closeEntry();
             for (int i = 0; i < docs.size(); i++) {
                 File f = new File(lib.root, docs.get(i)); if (p != null) p.update("백업 중… " + (i + 1) + "/" + docs.size());
+                File template = templates.get(i);
+                if (template != null) { String n = template.getName(); z.putNextEntry(new ZipEntry("templates/" + i + "." + (n.contains(".") ? n.substring(n.lastIndexOf('.') + 1).replaceAll("[^A-Za-z0-9]", "") : "pdf"))); try (InputStream in = new FileInputStream(template)) { copy(in, z); } z.closeEntry(); }
                 z.putNextEntry(new ZipEntry("docs/" + i + ".pdf")); try (InputStream in = new FileInputStream(f)) { copy(in, z); } z.closeEntry();
                 AnnotationStore st = new AnnotationStore(c); Uri uri = Uri.fromFile(f); st.open(uri);
                 z.putNextEntry(new ZipEntry("notes/" + i + ".json")); z.write(st.exportJson(uri, f.getName()).getBytes("UTF-8")); z.closeEntry();
@@ -85,7 +92,7 @@ final class LibraryBackup {
                 if (!safeRel(rel, false)) continue; File d = new File(lib.root, rel);
                 boolean fresh = !d.exists(); if (!d.isDirectory() && !d.mkdirs()) continue; if (fresh) { lib.folderColor(d, o.optInt("color", LibraryRepository.FOLDER_COLORS[0])); r.folders++; }
             }
-            Map<Integer, JSONObject> meta = new HashMap<>(); Map<Integer, File> targets = new HashMap<>();
+            Map<Integer, JSONObject> meta = new HashMap<>(); Map<Integer, File> targets = new HashMap<>(), restoredTemplates = new HashMap<>();
             if (da != null) for (int i = 0; i < da.length(); i++) { JSONObject o = da.getJSONObject(i); meta.put(o.optInt("i", -1), o); }
             int total = meta.size();
             while ((e = z.getNextEntry()) != null) {
@@ -103,12 +110,22 @@ final class LibraryBackup {
                         if (!temp.renameTo(target)) { temp.delete(); r.failed++; continue; }
                         targets.put(i, target); r.documents++; if (p != null) p.update("복원 중… " + r.documents + "/" + total);
                         if (o.optBoolean("favorite")) lib.favorite(target, true);
-                        String paper = o.optString("paper", ""); if (!paper.isEmpty()) try { lib.restorePaper(target, NotebookFiles.Paper.parse(paper)); } catch (RuntimeException ignored) { }
+                        String paper = o.optString("paper", "");
+                        if (!paper.isEmpty()) try {
+                            if (paper.startsWith("builtin:")) { String[] q = paper.split(":"); lib.restorePaper(target, new NotebookFiles.Paper(NotebookFiles.CUSTOM, Integer.parseInt(q[2]), NotebookFiles.builtinTemplate(c, q[1]))); }
+                            else if (paper.startsWith("custom:")) { File t = restoredTemplates.get(i); String[] q = paper.split(":"); if (t != null) lib.restorePaper(target, new NotebookFiles.Paper(NotebookFiles.CUSTOM, Integer.parseInt(q[1]), t)); }
+                            else lib.restorePaper(target, NotebookFiles.Paper.parse(paper));
+                        } catch (RuntimeException | IOException ignored) { }
                     } else if (n.startsWith("notes/") && n.endsWith(".json")) {
                         int i = Integer.parseInt(n.substring(6, n.length() - 5)); File t = targets.get(i); if (t == null) continue;
                         String json = readText(z, 64 * 1024 * 1024);
                         AnnotationStore st = new AnnotationStore(c); Uri uri = Uri.fromFile(t); st.open(uri);
                         try { st.importJson(json, Integer.MAX_VALUE); r.notes++; } catch (JSONException bad) { r.failed++; }
+                    } else if (n.startsWith("templates/")) {
+                        String rest = n.substring(10); int dot = rest.indexOf('.'); if (dot < 1) continue;
+                        int i = Integer.parseInt(rest.substring(0, dot)); String ext = rest.substring(dot + 1).replaceAll("[^A-Za-z0-9]", ""); if (ext.isEmpty()) ext = "pdf";
+                        File dir = new File(c.getFilesDir(), "templates"); dir.mkdirs(); File t = new File(dir, "restored-" + System.currentTimeMillis() + "-" + i + "." + ext);
+                        try (OutputStream out = new FileOutputStream(t)) { copy(z, out); } restoredTemplates.put(i, t);
                     } else if (n.startsWith("assets/")) {
                         String name = n.substring(7); if (!DeviceSync.ASSET.matcher(name).matches()) continue;
                         File dir = name.endsWith(".png") ? assetDirs[0] : name.endsWith(".m4a") ? assetDirs[1] : assetDirs[2]; dir.mkdirs();

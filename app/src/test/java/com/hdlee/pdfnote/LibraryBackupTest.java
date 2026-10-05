@@ -22,7 +22,7 @@ public class LibraryBackupTest {
     }
     @Test public void wholeLibraryBackupRestoresDocumentsNotesAssetsAndFlags()throws Exception{
         File folder=library.createFolder(library.root,"과목");library.folderColor(folder,LibraryRepository.FOLDER_COLORS[2]);
-        File note=library.createNote(folder,"필기",new NotebookFiles.Paper(10,NotebookFiles.COLORS[0]));library.favorite(note,true);
+        File note=library.createNote(folder,"필기",new NotebookFiles.Paper(NotebookFiles.CUSTOM,NotebookFiles.COLORS[0],NotebookFiles.builtinTemplate(RuntimeEnvironment.getApplication(),"note_lines.pdf")));library.favorite(note,true);
         AnnotationStore store=new AnnotationStore(RuntimeEnvironment.getApplication());store.open(Uri.fromFile(note));
         AnnotationStore.PageElement text=new AnnotationStore.PageElement();text.text="백업 확인";text.lineSpacing=2.1f;store.elements.add(text);store.save();
         String image="0123456789abcdef0123456789abcdef0123.png";Files.write(new File(assets[0],image).toPath(),new byte[]{1,2,3});
@@ -30,7 +30,7 @@ public class LibraryBackupTest {
         // everything lost
         assertTrue(note.delete());assertTrue(new File(assets[0],image).delete());library.favorite(note,false);
         LibraryBackup.Result r=LibraryBackup.restore(RuntimeEnvironment.getApplication(),library,assets,new ByteArrayInputStream(out.toByteArray()),true,f->false,null);
-        assertEquals(1,r.documents);assertEquals(1,r.notes);assertEquals(1,r.assets);assertTrue(note.isFile());assertTrue(library.favorite(note));assertNotNull(library.paper(note));assertEquals(10,library.paper(note).kind);
+        assertEquals(1,r.documents);assertEquals(1,r.notes);assertEquals(1,r.assets);assertTrue(note.isFile());assertTrue(library.favorite(note));assertNotNull(library.paper(note));assertEquals(10,NotebookFiles.rulerKind(library.paper(note)));
         AnnotationStore back=new AnnotationStore(RuntimeEnvironment.getApplication());back.open(Uri.fromFile(note));assertEquals("백업 확인",back.elements.get(0).text);assertEquals(2.1f,back.elements.get(0).lineSpacing,.001f);
         assertTrue(new File(assets[0],image).isFile());
         // restoring again without overwrite adds a copy and keeps the original
