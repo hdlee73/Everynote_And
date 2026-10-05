@@ -251,7 +251,13 @@ final class LibraryDialog extends Dialog {
     private void toggleSelected(File file){if(!selected.remove(file))selected.add(file);refreshGrid();}
 
     // ---------------------------------------------------------------- menus and actions
-    private void newMenu(View anchor){PopupMenu menu=new PopupMenu(activity,anchor);menu.getMenu().add("새 노트");menu.getMenu().add("폴더 만들기");menu.getMenu().add("파일 가져오기");menu.setOnMenuItemClickListener(item->{String title=item.getTitle().toString();File target=mode==FOLDER?folder:repository.root;if(title.equals("새 노트"))actions.newNote(target,this::refresh);else if(title.equals("폴더 만들기"))createFolder(target,()->{tree.reload();refresh();});else{dismiss();actions.importFiles(target);}return true;});menu.show();}
+    private void newMenu(View anchor){
+        final File target=mode==FOLDER?folder:repository.root;
+        AnchoredMenu.showCentered(activity,anchor,"문서 추가",AnchoredMenu.rows(
+            new AnchoredMenu.Row("파일 가져오기",R.drawable.ic_import,()->{dismiss();actions.importFiles(target);}).tint(0xFF007AFF),
+            new AnchoredMenu.Row("새 노트 만들기",R.drawable.ic_compose,()->actions.newNote(target,this::refresh)).tint(0xFF34C759),
+            new AnchoredMenu.Row("폴더 만들기",R.drawable.ic_folder_open,()->createFolder(target,()->{tree.reload();refresh();})).tint(0xFFF5A623)));
+    }
     private void libraryMenu(View anchor){
         PopupMenu menu=new PopupMenu(activity,anchor);menu.getMenu().add(0,1,0,"선택");menu.getMenu().add(0,2,1,"보기 방법");menu.getMenu().add(0,3,2,"정렬");menu.getMenu().add(0,4,3,(repository.pinFavorites()?"✓  ":"")+"즐겨찾기 맨 위 고정");
         if(mode==FOLDER)menu.getMenu().add(0,5,4,"폴더 색상");menu.getMenu().add(0,6,5,"휴지통");
