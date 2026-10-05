@@ -51,7 +51,10 @@ final class AnchoredMenu {
     /** @param avoid screen rectangle the card must not cover (e.g. the selected text); the card goes below, above, beside it, whichever fits. */
     static PopupWindow show(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid) { return build(context, anchor, above, rows, shortcuts, avoid, 0, true); }
 
-    private static PopupWindow build(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid, int mode, boolean focusable) {
+    private static PopupWindow build(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid, int mode, boolean focusable) { return build(context, anchor, above, rows, shortcuts, avoid, mode, focusable, null); }
+
+    /** @param tapped for a submenu: the tapped row on screen; the new card opens right beside it, level with it. */
+    private static PopupWindow build(Context context, View anchor, boolean above, List<Row> rows, List<Shortcut> shortcuts, android.graphics.Rect avoid, int mode, boolean focusable, android.graphics.Rect tapped) {
         final boolean beside = mode == 1;
         final float density = context.getResources().getDisplayMetrics().density;
         final int screenW = context.getResources().getDisplayMetrics().widthPixels, screenH = context.getResources().getDisplayMetrics().heightPixels;
@@ -77,7 +80,8 @@ final class AnchoredMenu {
                     android.graphics.Rect box = new android.graphics.Rect(loc[0], loc[1], loc[0] + cardRef[0].getWidth(), loc[1] + cardRef[0].getHeight());
                     List<Row> inner = new ArrayList<>();
                     for (final Row child : row.children) inner.add(child.custom != null || child.divider ? child : child.copy(() -> { if (holder[0] != null) holder[0].dismiss(); if (child.action != null) child.action.run(); }));
-                    childWin[0] = build(context, anchor, above, inner, null, box, 1, false);
+                    int[] rl = new int[2]; v.getLocationOnScreen(rl);
+                    childWin[0] = build(context, anchor, above, inner, null, box, 1, false, new android.graphics.Rect(rl[0], rl[1], rl[0] + v.getWidth(), rl[1] + v.getHeight()));
                     return;
                 }
                 if (holder[0] != null) holder[0].dismiss(); if (row.action != null) row.action.run(); });
@@ -95,7 +99,15 @@ final class AnchoredMenu {
             }
             card.addView(icons, new LinearLayout.LayoutParams(-1, Math.round(44 * density)));
         }
-        card.measure(View.MeasureSpec.makeMeasureSpec(Math.round(Math.min(screenW - 24 * density, (wide ? 268 : 240) * density)), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(screenH, View.MeasureSpec.AT_MOST));
+        float natural = Math.min(screenW - 24 * density, (wide ? 268 : 240) * density);
+        boolean sideRight = true;
+        if (beside && avoid != null) {
+            // a submenu opens right next to its parent: on whichever side has room, narrowed (rows ellipsize) when the screen is tight
+            float roomRight = screenW - avoid.right - 14 * density, roomLeft = avoid.left - 14 * density;
+            if (roomRight >= natural) sideRight = true; else if (roomLeft >= natural) sideRight = false;
+            else { sideRight = roomRight >= roomLeft; natural = Math.max(Math.min(natural, 150 * density), Math.max(roomRight, roomLeft)); natural = Math.min(natural, screenW - 24 * density); }
+        }
+        card.measure(View.MeasureSpec.makeMeasureSpec(Math.round(natural), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(screenH, View.MeasureSpec.AT_MOST));
         int w = card.getMeasuredWidth(), h = card.getMeasuredHeight();
         PopupWindow window = new PopupWindow(card, w, h, focusable); holder[0] = window;
         window.setOnDismissListener(() -> { if (childWin[0] != null) childWin[0].dismiss(); });
@@ -106,7 +118,13 @@ final class AnchoredMenu {
         x = Math.max(margin, Math.min(screenW - w - margin, x));
         int y = above ? at[1] - h - gap : at[1] + anchor.getHeight() + gap;
         y = Math.max(margin, Math.min(screenH - h - margin, y));
-        if (avoid != null && mode != 3) {
+        if (beside && avoid != null) {
+            int sideGap = Math.round(4 * density);
+            x = sideRight ? avoid.right + sideGap : avoid.left - w - sideGap;
+            if (x < margin || x + w > screenW - margin) x = Math.max(margin, Math.min(screenW - w - margin, x));   // tight screen: overlap the parent a little rather than leave the screen
+            int rowTop = tapped != null ? tapped.top - Math.round(6 * density) : avoid.top;   // first child row sits level with the tapped row
+            y = Math.max(margin, Math.min(screenH - h - margin, rowTop));
+        } else if (avoid != null && mode != 3) {
             int topLimit = Math.round(24 * density);
             int[][] tries = beside ? new int[][]{
                 {avoid.left - w - gap, avoid.top}, {avoid.right + gap, avoid.top},

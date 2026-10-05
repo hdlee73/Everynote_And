@@ -111,8 +111,9 @@ final class LibraryRepository {
     private void cloneAnnotations(Uri source,Uri target,int count)throws JSONException{
         AnnotationStore original=new AnnotationStore(context);original.open(source);AnnotationStore clone=new AnnotationStore(context);clone.open(target);clone.importJson(original.exportJson(source,"PDF"),count);
     }
-    synchronized int insertPage(File file,NotebookFiles.Paper requested,int afterIndex)throws IOException{
-        if(!managed(file)||!file.isFile())throw new IOException("저장된 PDF가 아닙니다");return NotebookFiles.insert(context,file,requested,afterIndex);
+    synchronized int insertPage(File file,NotebookFiles.Paper requested,int afterIndex)throws IOException{return insertPage(file,requested,afterIndex,0);}
+    synchronized int insertPage(File file,NotebookFiles.Paper requested,int afterIndex,int sizeMode)throws IOException{
+        if(!managed(file)||!file.isFile())throw new IOException("저장된 PDF가 아닙니다");return NotebookFiles.insert(context,file,requested,afterIndex,sizeMode);
     }
     synchronized int deletePage(File file,int index)throws IOException{
         if(!managed(file)||!file.isFile())throw new IOException("저장된 PDF가 아닙니다");return NotebookFiles.delete(context,file,index);
