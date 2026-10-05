@@ -1538,6 +1538,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("필기 백업 파일 저장",R.drawable.ic_backup,this::exportAnnotations));
                 t.add(new Tile("필기 백업 파일 불러오기",R.drawable.ic_import,this::importSidecar));
                 t.add(new Tile("원본 파일 내보내기",R.drawable.ic_original,this::exportOriginal));
+                t.add(new Tile("다른 기기와 동기화",R.drawable.ic_sync,this::showDeviceSync));
                 break;
         }
         return t;
@@ -1976,6 +1977,50 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     // ================================================================== voice recording attached to a page
     private MediaRecorder recorder;private File recordingFile;private long recordingStarted;private int recordingPage;private AnnotationStore recordingStore;private LinearLayout recorderBar;private TextView recorderTime;private static final int REQUEST_RECORD=31;
     private static String clock(long seconds){seconds=Math.max(0,seconds);return (seconds/60)+":"+(seconds%60<10?"0":"")+(seconds%60);}
+    // ---- same-Wi-Fi device sync (user triggered; this phone is the server while the card is open)
+    private DeviceSync deviceSync;
+    private final Map<String,String> sessionHashes=new HashMap<>();
+    private <T> T onUi(java.util.concurrent.Callable<T> job)throws Exception{
+        if(Looper.myLooper()==Looper.getMainLooper())return job.call();
+        final Object[] box=new Object[2];final java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);
+        runOnUiThread(()->{try{box[0]=job.call();}catch(Exception e){box[1]=e;}latch.countDown();});
+        if(!latch.await(30,java.util.concurrent.TimeUnit.SECONDS))throw new IOException("앱이 응답하지 않습니다");
+        if(box[1]!=null)throw (Exception)box[1];@SuppressWarnings("unchecked")T result=(T)box[0];return result;
+    }
+    private String hashOf(DocumentSession session)throws Exception{
+        String key=String.valueOf(session.uri);String cached=sessionHashes.get(key);if(cached!=null)return cached;
+        java.security.MessageDigest md=java.security.MessageDigest.getInstance("SHA-256");
+        try(InputStream in=getContentResolver().openInputStream(session.uri)){if(in==null)throw new IOException("문서를 읽을 수 없습니다");byte[] buf=new byte[65536];int n;while((n=in.read(buf))>0)md.update(buf,0,n);}
+        StringBuilder sb=new StringBuilder();for(byte b:md.digest())sb.append(String.format("%02x",b));sessionHashes.put(key,sb.toString());return sb.toString();
+    }
+    private DocumentSession sessionByHash(String id)throws Exception{for(DocumentSession s:onUi(()->new ArrayList<>(sessions)))if(id.equals(hashOf(s)))return s;return null;}
+    private final DeviceSync.Host syncHost=new DeviceSync.Host(){
+        @Override public String listDocuments()throws Exception{
+            List<DocumentSession> copy=onUi(()->new ArrayList<>(sessions));org.json.JSONArray out=new org.json.JSONArray();
+            for(DocumentSession s:copy){org.json.JSONObject o=new org.json.JSONObject();o.put("id",hashOf(s));o.put("title",s.title);o.put("pages",s.renderer==null?0:s.renderer.getPageCount());out.put(o);}
+            return out.toString();}
+        @Override public String exportDocument(String id)throws Exception{
+            final DocumentSession s=sessionByHash(id);if(s==null)return null;return onUi(()->s.store.exportJson(s.uri,s.title));}
+        @Override public boolean importDocument(String id,String json)throws Exception{
+            final DocumentSession s=sessionByHash(id);if(s==null)return false;
+            onUi(()->{if(!sessions.contains(s))return null;s.store.importJson(json,s.renderer.getPageCount());s.redoStrokes.clear();switchDocument(s);toast("다른 기기에서 보낸 노트를 받았습니다");return null;});return true;}
+        @Override public File assetFile(String name){
+            if(name==null)return null;if(name.endsWith(".png")){File d=new File(getFilesDir(),"images");d.mkdirs();return new File(d,name);}
+            if(name.endsWith(".m4a"))return new File(recordingsDir(),name);
+            if(name.endsWith(".mp4")){File d=new File(getFilesDir(),"videos");d.mkdirs();return new File(d,name);}return null;}
+        @Override public void onActivity(String message){runOnUiThread(()->toast(message));}
+    };
+    private void showDeviceSync(){
+        if(deviceSync!=null)return;
+        final DeviceSync sync=new DeviceSync(syncHost);final String address=DeviceSync.localAddress();
+        try{sync.start();}catch(IOException error){toast("동기화를 시작할 수 없습니다: "+error.getMessage());return;}
+        deviceSync=sync;getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        String where=address==null?"(Wi-Fi에 연결되어 있지 않습니다)":address+":"+sync.port();
+        new AlertDialog.Builder(this).setTitle("다른 기기와 동기화")
+            .setMessage("같은 Wi-Fi에 연결된 PC 앱(Everynote for Windows)의 ‘기기 동기화’에서 아래 주소와 코드를 입력하세요.\n\n주소  "+where+"\n코드  "+sync.code()+"\n\n· 동기화할 문서를 이 앱과 PC 앱에서 모두 열어 두세요.\n· 이 창을 닫으면 동기화가 끝납니다.\n· 자동 동기화는 하지 않습니다.")
+            .setPositiveButton("닫기",null)
+            .setOnDismissListener(d->{sync.stop();if(deviceSync==sync)deviceSync=null;getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}).show();
+    }
     private File recordingsDir(){File dir=new File(getFilesDir(),"recordings");dir.mkdirs();return dir;}
     private void startRecording(){
         if(renderer==null||store==null){toast("문서를 먼저 여세요");return;}
