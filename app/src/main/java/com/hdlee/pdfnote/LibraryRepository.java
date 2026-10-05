@@ -73,6 +73,7 @@ final class LibraryRepository {
     synchronized File createFolder(File parent,String title)throws IOException{folder(parent);File result=new File(parent,NotebookFiles.name(title));if(result.exists()||!result.mkdir())throw new IOException("같은 이름의 폴더가 있습니다");return result;}
     synchronized File createNote(File parent,String title,NotebookFiles.Paper paper)throws IOException{folder(parent);File file=NotebookFiles.create(parent,title,1,paper);putPaper(file,paper);return file;}
     NotebookFiles.Paper paper(File file){String value=preferences.getString("paper:"+file.getAbsolutePath(),null);if(value==null)return null;try{return NotebookFiles.Paper.parse(value);}catch(RuntimeException error){return null;}}
+    void restorePaper(File file,NotebookFiles.Paper paper){putPaper(file,paper);}
     private void putPaper(File file,NotebookFiles.Paper paper){preferences.edit().putString("paper:"+file.getAbsolutePath(),paper.spec()).commit();}
     File imported(Uri uri){String path=preferences.getString("source:"+uri.toString(),null);File file=path==null?null:new File(path);return file!=null&&managed(file)&&!inTrash(file)&&file.isFile()?file:null;}
     synchronized File importPdf(Uri source,String title,File destination)throws IOException,JSONException{

@@ -40,6 +40,15 @@ final class NotebookFiles {
         }
         return out;
     }
+    /** First rule (distance from page top, pt) and the rule pitch (pt) of a paper, for fitting typed text to its lines; null when it has no ruled lines. */
+    static float[] ruler(int kind){
+        switch(kind){
+            case 1:return new float[]{54,25};case 4:return new float[]{54,18};case 5:return new float[]{54,32};case 2:return new float[]{54,18};
+            case 3:return new float[]{96,22};case 7:return new float[]{84,24};
+            case 10:return new float[]{69.88f,32.6f};case 11:return new float[]{116.9f,26.95f};case 12:return new float[]{29.49f,26.97f};
+            default:return null;
+        }
+    }
     static int[] ruleColor(int style){switch(style){case 1:return new int[]{232,140,140};case 2:return new int[]{120,130,140};case 3:return new int[]{150,160,170};default:return new int[]{185,195,205};}}
     static File root(Context c){File root=new File(c.getFilesDir(),"documents");root.mkdirs();return root;}
     static String name(String text)throws IOException{String n=text.trim();if(n.isEmpty()||n.equals(".")||n.equals("..")||n.length()>100||java.util.regex.Pattern.compile("[\\\\/:*?\"<>|\\p{Cntrl}]").matcher(n).find())throw new IOException("파일 이름에 사용할 수 없는 문자가 있습니다");return n;}
