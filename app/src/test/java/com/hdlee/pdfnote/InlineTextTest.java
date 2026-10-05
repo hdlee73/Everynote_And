@@ -77,9 +77,9 @@ public class InlineTextTest {
     }
     @Test public void sidePanelHostsSearchPagesOutlineAndRecordings()throws Exception{
         View side=byTag("side_panel");assertEquals(View.GONE,side.getVisibility());
-        byDescription(root,"페이지 목록").performClick();assertEquals(View.VISIBLE,side.getVisibility());assertEquals("미리보기",((TextView)byTag("side_title")).getText().toString());assertEquals(View.VISIBLE,byTag("side_more").getVisibility());
-        byTag("side_tab:2").performClick();assertNotNull(byTag("outline_add"));assertEquals(View.GONE,byTag("side_more").getVisibility());assertEquals("개요",((TextView)byTag("side_title")).getText().toString());
-        byTag("side_tab:3").performClick();assertNotNull(byTag("record_button"));assertEquals("음성 녹음",((TextView)byTag("side_title")).getText().toString());
+        byDescription(root,"페이지 목록").performClick();assertEquals(View.VISIBLE,side.getVisibility());assertTrue(((TextView)byTag("side_title")).getText().toString().endsWith("미리보기"));assertEquals(View.VISIBLE,byTag("side_more").getVisibility());
+        byTag("side_tab:2").performClick();assertNotNull(byTag("outline_add"));assertEquals(View.GONE,byTag("side_more").getVisibility());assertTrue(((TextView)byTag("side_title")).getText().toString().endsWith("개요"));
+        byTag("side_tab:3").performClick();assertNotNull(byTag("record_button"));assertTrue(((TextView)byTag("side_title")).getText().toString().endsWith("음성 녹음"));
         byTag("side_tab:0").performClick();assertEquals(View.VISIBLE,byTag("search_panel").getVisibility());assertNotNull(byTag("search_input"));
         byDescription(root,"검색 닫기").performClick();assertEquals(View.GONE,byTag("search_panel").getVisibility());assertEquals("검색을 닫아도 패널은 남습니다",View.VISIBLE,side.getVisibility());
         byDescription(root,"패널 닫기").performClick();assertEquals(View.GONE,side.getVisibility());

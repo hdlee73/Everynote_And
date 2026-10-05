@@ -121,6 +121,32 @@ final class AlertDialog extends Dialog {
         }
 
         /** List dialog in the same look as the anchored menu card: left-aligned 44dp rows, accent check on the chosen row, red danger rows, hairline dividers. */
+        /** A leading icon for list rows so plain lists look like the app's other menu cards. */
+        private int iconFor(CharSequence text) {
+            String t = text == null ? "" : text.toString();
+            if (t.contains("삭제") || t.contains("비우기")) return R.drawable.ic_delete;
+            if (t.contains("복원") || t.contains("불러오기") || t.contains("가져오기") || t.contains("열기") && !t.contains("저장")) return R.drawable.ic_import;
+            if (t.contains("이름")) return R.drawable.ic_rename;
+            if (t.contains("내보내") || t.contains("공유") || t.contains("저장")) return R.drawable.ic_export;
+            if (t.contains("PDF")) return R.drawable.ic_pdf;
+            if (t.contains("Word") || t.contains("docx")) return R.drawable.ic_word;
+            if (t.contains("Excel") || t.contains("CSV") || t.contains("Markdown")) return R.drawable.ic_table;
+            if (t.contains("폴더")) return R.drawable.ic_folder_open;
+            if (t.contains("색")) return R.drawable.ic_palette;
+            if (t.contains("이동") || t.contains("페이지")) return R.drawable.ic_page;
+            if (t.contains("닫기") || t.contains("취소")) return 0;
+            return R.drawable.ic_page;
+        }
+        private int tintFor(CharSequence text) {
+            String t = text == null ? "" : text.toString();
+            if (t.contains("삭제") || t.contains("비우기")) return 0xFFFF3B30;
+            if (t.contains("복원") || t.contains("불러오기") || t.contains("가져오기")) return 0xFF34C759;
+            if (t.contains("내보내") || t.contains("공유") || t.contains("저장") || t.contains("PDF")) return 0xFF34C759;
+            if (t.contains("Word")) return 0xFF007AFF;
+            if (t.contains("Excel") || t.contains("CSV") || t.contains("Markdown")) return 0xFF30B0C7;
+            if (t.contains("색")) return 0xFFAF52DE;
+            return 0xFF8E8E93;
+        }
         private View sheet(AlertDialog dialog) {
             FrameLayout root = new FrameLayout(context); root.setTag("action_sheet");
             LinearLayout card = new LinearLayout(context); card.setOrientation(LinearLayout.VERTICAL); card.setTag("anchored_menu");
@@ -133,6 +159,7 @@ final class AlertDialog extends Dialog {
             for (int i = 0; i < items.length; i++) {
                 final int index = i;
                 LinearLayout line = new LinearLayout(context); line.setGravity(Gravity.CENTER_VERTICAL); line.setPadding(dp(12), 0, dp(12), 0); line.setContentDescription(items[i]);
+                if (!choice) { int icon = iconFor(items[i]); if (icon != 0) { ImageView glyph = new ImageView(context); glyph.setImageResource(icon); glyph.setColorFilter(tintFor(items[i])); LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(dp(20), dp(20)); gp.rightMargin = dp(12); line.addView(glyph, gp); } }
                 TextView text = new TextView(context); text.setText(items[i]); text.setTextSize(15); text.setSingleLine(); text.setEllipsize(android.text.TextUtils.TruncateAt.END); text.setTextColor(INK); line.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
                 ImageView mark = new ImageView(context); mark.setImageResource(R.drawable.ic_check_bold); mark.setColorFilter(ACCENT); mark.setVisibility(View.GONE); line.addView(mark, new LinearLayout.LayoutParams(dp(18), dp(18)));
                 line.setOnClickListener(v -> { if (choice) { current[0] = index; refresh.run(); } if (itemListener != null) itemListener.onClick(dialog, index); if (!choice) dialog.dismiss(); });
@@ -147,6 +174,8 @@ final class AlertDialog extends Dialog {
                 TextView b = dialog.buttons[slot]; b.setGravity(Gravity.CENTER_VERTICAL); b.setTextSize(15); b.setPadding(dp(12), 0, dp(12), 0);
                 String label = labels[slot].toString(); boolean danger = label.contains("삭제") || label.contains("비우기");
                 b.setTextColor(danger ? 0xFFFF3B30 : slot == 1 ? GRAY : ACCENT); b.setTypeface(Typeface.DEFAULT);
+                int icon = danger ? R.drawable.ic_delete : slot == 1 ? R.drawable.ic_close : iconFor(label);
+                if (icon != 0) { android.graphics.drawable.Drawable d = context.getResources().getDrawable(icon, null).mutate(); d.setTint(danger ? 0xFFFF3B30 : slot == 1 ? GRAY : tintFor(label)); d.setBounds(0, 0, dp(20), dp(20)); b.setCompoundDrawablesRelative(d, null, null, null); b.setCompoundDrawablePadding(dp(12)); }
                 card.addView(b, new LinearLayout.LayoutParams(-1, dp(44)));
             }
             root.addView(card, new FrameLayout.LayoutParams(-1, -2));

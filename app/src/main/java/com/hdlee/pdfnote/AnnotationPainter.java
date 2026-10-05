@@ -82,6 +82,7 @@ final class AnnotationPainter {
         for(AnnotationStore.PageElement e:store.elements){
             if(e.page!=page||e==skip)continue;RectF b=box(d,e);
             int rotSave=c.save();if(e.rot!=0f&&rotates(e))c.rotate(e.rot,b.centerX(),b.centerY());
+            if(e.alpha<.999f&&rotates(e))c.saveLayerAlpha(new RectF(d.left-d.width(),d.top-d.height(),d.right+d.width(),d.bottom+d.height()),Math.round(e.alpha*255));
             if(e.kind.equals("image")){
                 File file=builtinAsset(context,e.asset);Bitmap image=image(file);
                 if(image!=null){

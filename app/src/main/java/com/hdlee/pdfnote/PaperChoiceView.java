@@ -13,11 +13,19 @@ final class PaperChoiceView extends LinearLayout {
     private final LinearLayout colors;
     PaperChoiceView(Context context){
         super(context);setOrientation(VERTICAL);setPadding(dp(18),dp(8),dp(18),dp(8));
-        Spinner papers=new Spinner(context);papers.setContentDescription("종이 형식");String[] names=new String[NotebookFiles.PAPER_ORDER.length];for(int i=0;i<names.length;i++)names[i]=NotebookFiles.PAPER_NAMES[NotebookFiles.PAPER_ORDER[i]];papers.setAdapter(new ArrayAdapter<>(context,android.R.layout.simple_spinner_dropdown_item,names));addView(papers,new LayoutParams(-1,dp(48)));
+        picker=new TextView(context);picker.setTag("paper_picker");picker.setContentDescription("종이 형식");picker.setTextSize(15);picker.setTextColor(0xFF1C1C1E);picker.setGravity(Gravity.CENTER_VERTICAL);picker.setPadding(dp(16),0,dp(14),0);
+        GradientDrawable pickerBg=new GradientDrawable();pickerBg.setColor(0xFFF2F2F7);pickerBg.setCornerRadius(dp(14));picker.setBackground(pickerBg);picker.setCompoundDrawablePadding(dp(10));
+        picker.setOnClickListener(v->{java.util.List<AnchoredMenu.Row> rows=new java.util.ArrayList<>();for(int i=0;i<NotebookFiles.PAPER_ORDER.length;i++){final int position=i;int k=NotebookFiles.PAPER_ORDER[i];rows.add(new AnchoredMenu.Row(NotebookFiles.PAPER_NAMES[k],k>=10?R.drawable.ic_page:k==NotebookFiles.CUSTOM?R.drawable.ic_import:R.drawable.ic_note_add,()->selectPosition(position)).tint(k>=10?0xFF007AFF:k==NotebookFiles.CUSTOM?0xFF34C759:0xFF8E8E93).selected(position==selected));}AnchoredMenu.show(getContext(),picker,false,rows,null);});
+        addView(picker,new LayoutParams(-1,dp(48)));
         templateButton=new TextView(context);templateButton.setText("PDF·이미지 서식 고르기");templateButton.setTextSize(14);templateButton.setGravity(Gravity.CENTER);templateButton.setTextColor(0xFF007AFF);templateButton.setBackground(chipBackground());templateButton.setVisibility(GONE);templateButton.setOnClickListener(v->{if(templateRequest!=null)templateRequest.run();});LayoutParams tp=new LayoutParams(-1,dp(44));tp.topMargin=dp(6);addView(templateButton,tp);
-        preview=new Preview(context);addView(preview,new LayoutParams(-1,dp(158)));papers.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View view,int position,long id){kind=NotebookFiles.PAPER_ORDER[position];builtin=kind>=10?builtinFile(kind):null;templateButton.setVisibility(kind==NotebookFiles.CUSTOM?VISIBLE:GONE);preview.invalidate();}public void onNothingSelected(AdapterView<?> p){}});
-        HorizontalScrollView scroll=new HorizontalScrollView(context);scroll.setHorizontalScrollBarEnabled(false);colors=new LinearLayout(context);colors.setGravity(Gravity.CENTER_VERTICAL);scroll.addView(colors,new HorizontalScrollView.LayoutParams(-2,dp(58)));addView(scroll,new LayoutParams(-1,dp(58)));refreshColors();papers.setSelection(3);
+        preview=new Preview(context);addView(preview,new LayoutParams(-1,dp(158)));selectPosition(0);
+        HorizontalScrollView scroll=new HorizontalScrollView(context);scroll.setHorizontalScrollBarEnabled(false);colors=new LinearLayout(context);colors.setGravity(Gravity.CENTER_VERTICAL);scroll.addView(colors,new HorizontalScrollView.LayoutParams(-2,dp(58)));addView(scroll,new LayoutParams(-1,dp(58)));refreshColors();
     }
+    private final TextView picker;private int selected=-1;
+    /** Chooses a paper by its row in the list (the bundled form templates come first). */
+    void selectPosition(int position){selected=position;kind=NotebookFiles.PAPER_ORDER[position];builtin=kind>=10?builtinFile(kind):null;picker.setText(NotebookFiles.PAPER_NAMES[kind]+"  ▾");templateButton.setVisibility(kind==NotebookFiles.CUSTOM?VISIBLE:GONE);if(preview!=null)preview.invalidate();}
+    /** Chooses a paper by its kind (see {@link NotebookFiles#PAPER_NAMES}). */
+    void selectKind(int paperKind){for(int i=0;i<NotebookFiles.PAPER_ORDER.length;i++)if(NotebookFiles.PAPER_ORDER[i]==paperKind){selectPosition(i);return;}}
     private java.io.File builtin;private final java.util.Map<String,Bitmap> previews=new java.util.HashMap<>();
     /** Copies a bundled form PDF out of the assets once so it can be used like a user-chosen template. */
     private java.io.File builtinFile(int k){

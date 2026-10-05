@@ -157,6 +157,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(4),0,dp(4),0);header.setBackgroundColor(0xFFF9F9F9);
         ImageButton libraryButton=icon(R.drawable.ic_folder_open,"문서함",NAVY,v->showLibrary());libraryButton.setColorFilter(null);libraryButton.setImageDrawable(new FolderIconDrawable(LibraryRepository.FOLDER_COLORS[1],dp(30)));libraryButton.setBackground(round(Color.WHITE,16));libraryButton.setPadding(dp(5),dp(5),dp(5),dp(5));LinearLayout.LayoutParams libraryParams=new LinearLayout.LayoutParams(dp(42),dp(42));libraryParams.setMargins(dp(8),0,dp(2),0);header.addView(libraryButton,libraryParams);
         titleView=new TextView(this);titleView.setTextColor(NAVY);titleView.setTextSize(15);titleView.setTypeface(Typeface.DEFAULT_BOLD);titleView.setTag("document_title");titleView.setOnClickListener(v->{if(activeSession!=null)renameDocument(activeSession);else showLibrary();});titleView.setSingleLine();titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);titleView.setTextDirection(View.TEXT_DIRECTION_LTR);titleView.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);titleView.setPadding(dp(8),0,dp(8),0);titleView.setBackground(round(Color.WHITE,18));titleView.setMaxWidth(Math.round(getResources().getDisplayMetrics().widthPixels*.46f));titleView.setPadding(dp(14),0,dp(14),0);LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-2,dp(36));titleParams.setMargins(dp(6),0,dp(6),0);header.addView(titleView,titleParams);header.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
+        header.addOnLayoutChangeListener((v,l,t,rr,b,ol,ot,or,ob)->{int w=rr-l;if(w<=0)return;int max=Math.max(dp(60),Math.min(Math.round(w*.46f),w-dp(256)));if(titleView.getMaxWidth()!=max)titleView.setMaxWidth(max);});
         header.addView(icon(R.drawable.ic_sidebar,"페이지 목록",0xFF007AFF,v->toggleSidebar()),new LinearLayout.LayoutParams(dp(44),dp(52)));
         header.addView(icon(R.drawable.ic_search,"문서·필기 검색",0xFF30B0C7,v->searchDocument()),new LinearLayout.LayoutParams(dp(44),dp(52)));
         header.addView(icon(R.drawable.ic_fullscreen,"전체 화면",0xFFAF52DE,v->toggleFullscreen()),new LinearLayout.LayoutParams(dp(44),dp(52)));
@@ -994,17 +995,28 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if("text".equals(element.kind)){beginInlineText(element,false);return;}
         if("hyperlink".equals(element.kind)){showHyperlinkMenu(element);return;}
         String kind=element.kind;
-        String[] labels=kind.equals("youtube")?new String[]{"유튜브에서 열기","위치·크기","삭제"}:kind.equals("shape")?new String[]{"색·선 굵기","위치·크기","삭제"}:kind.equals("table")?new String[]{"셀 내용 편집","행·열·색상","위치·크기","삭제"}:kind.equals("image")||kind.equals("sticker")?new String[]{"위치·크기","삭제"}:kind.equals("video")?new String[]{"재생","위치·크기","삭제"}:kind.equals("link")?new String[]{"링크 열기","수정","위치·크기","삭제"}:new String[]{"수정","위치·크기","삭제"};
-        new AlertDialog.Builder(this).setTitle("페이지 "+(element.page+1)).setItems(labels,(d,index)->{String action=labels[index];
-            if(action.equals("링크 열기")){if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}}
-            else if(action.equals("재생"))showVideoPlayer(element);
-            else if(action.equals("유튜브에서 열기"))openYoutube(element.text);
-            else if(action.equals("색·선 굵기"))showShapeDialog(element);
-            else if(action.equals("셀 내용 편집"))editTableCells(element);
-            else if(action.equals("행·열·색상"))showTableDialog(element);
-            else if(action.equals("수정"))editPageElement(element,false);
-            else if(action.equals("위치·크기"))editElementGeometry(element);
-            else deleteElement(element);}).show();
+        List<AnchoredMenu.Row> rows=new ArrayList<>();
+        if(kind.equals("link"))rows.add(new AnchoredMenu.Row("링크 열기",R.drawable.ic_link,()->{if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}}).tint(0xFF5856D6));
+        if(kind.equals("video"))rows.add(new AnchoredMenu.Row("재생",R.drawable.ic_video,()->showVideoPlayer(element)).tint(0xFFFF3B30));
+        if(kind.equals("youtube"))rows.add(new AnchoredMenu.Row("유튜브에서 열기",R.drawable.ic_youtube,()->openYoutube(element.text)).tint(0xFFFF0000));
+        if(kind.equals("shape"))rows.add(new AnchoredMenu.Row("색·선 굵기",R.drawable.ic_palette,()->showShapeDialog(element)).tint(0xFFAF52DE));
+        if(kind.equals("table")){rows.add(new AnchoredMenu.Row("셀 내용 편집",R.drawable.ic_table,()->editTableCells(element)).tint(0xFF30B0C7));rows.add(new AnchoredMenu.Row("행·열·색상",R.drawable.ic_sliders,()->showTableDialog(element)).tint(0xFFAF52DE));}
+        if(kind.equals("link")||!(kind.equals("youtube")||kind.equals("shape")||kind.equals("table")||kind.equals("image")||kind.equals("sticker")||kind.equals("video")))rows.add(new AnchoredMenu.Row("수정",R.drawable.ic_compose,()->editPageElement(element,false)).tint(0xFF007AFF));
+        rows.add(new AnchoredMenu.Row("위치·크기",R.drawable.ic_fullscreen,()->editElementGeometry(element)).tint(0xFF34C759));
+        if(PdfPageView.selectable(element)&&AnnotationPainter.rotates(element))rows.add(AnchoredMenu.Row.custom(opacityRow(element)));
+        rows.add(new AnchoredMenu.Row("삭제",R.drawable.ic_delete,()->deleteElement(element)).danger());
+        AnchoredMenu.showCentered(this,root,"페이지 "+(element.page+1),rows);
+    }
+    /** An inline slider inside the element menu: drag to fade a picture, sticker or shape (10–100 %); the page repaints live. */
+    private View opacityRow(AnnotationStore.PageElement element){
+        final AnnotationStore target=store;LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(14),dp(8),dp(14),dp(6));box.setTag("opacity_row");
+        final TextView label=new TextView(this);label.setTextSize(13);label.setTextColor(0xFF636366);label.setText("투명도  "+Math.round(element.alpha*100)+"%");box.addView(label);
+        final android.widget.SeekBar bar=new android.widget.SeekBar(this);bar.setMax(90);bar.setProgress(Math.max(0,Math.min(90,Math.round(element.alpha*100)-10)));bar.setTag("opacity_bar");bar.setContentDescription("투명도 조절");bar.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));bar.setThumbTintList(android.content.res.ColorStateList.valueOf(ACCENT));
+        bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            @Override public void onProgressChanged(android.widget.SeekBar b,int value,boolean user){element.alpha=(value+10)/100f;label.setText("투명도  "+(value+10)+"%");if(pageView!=null)pageView.invalidate();redrawPages();}
+            @Override public void onStartTrackingTouch(android.widget.SeekBar b){}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar b){if(target!=null)target.save();}});
+        box.addView(bar,new LinearLayout.LayoutParams(-1,dp(36)));return box;
     }
     private void deleteElement(AnnotationStore.PageElement element){
         if(store==null)return;
@@ -1014,8 +1026,19 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         store.save();pageView.selectElement(null);redrawPages();
     }
     // ---- pictures, stickers, videos
-    /** One "사진·이미지" entry: uses an image waiting on the clipboard, otherwise opens the picker. */
-    private void insertImage(){if(renderer==null){toast("문서를 먼저 여세요");return;}try{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData data=clipboard==null?null:clipboard.getPrimaryClip();Uri uri=data!=null&&data.getItemCount()>0?data.getItemAt(0).getUri():null;if(uri!=null&&"content".equals(uri.getScheme())&&data.getDescription()!=null&&data.getDescription().hasMimeType("image/*")){importImage(uri);return;}}catch(RuntimeException ignored){}pickImage();}
+    /** "사진·이미지": a small menu card first, so the person can back out (tap outside) before any system file picker opens. */
+    private void insertImage(){
+        if(renderer==null){toast("문서를 먼저 여세요");return;}
+        boolean clip=false;try{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData data=clipboard==null?null:clipboard.getPrimaryClip();Uri uri=data!=null&&data.getItemCount()>0?data.getItemAt(0).getUri():null;clip=uri!=null&&"content".equals(uri.getScheme())&&data.getDescription()!=null&&data.getDescription().hasMimeType("image/*");}catch(RuntimeException ignored){}
+        final Uri clipUri;{Uri u=null;try{ClipData d=((ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).getPrimaryClip();if(clip&&d!=null)u=d.getItemAt(0).getUri();}catch(RuntimeException ignored){}clipUri=u;}
+        List<AnchoredMenu.Row> rows=new ArrayList<>();
+        rows.add(new AnchoredMenu.Row("사진 보관함에서 선택",R.drawable.ic_image,this::pickPhoto).tint(0xFF007AFF));
+        rows.add(new AnchoredMenu.Row("파일·드라이브에서 선택",R.drawable.ic_folder_open,this::pickImage).tint(0xFFFF9500));
+        if(clipUri!=null)rows.add(new AnchoredMenu.Row("복사한 이미지 붙여넣기",R.drawable.ic_paste,()->importImage(clipUri)).tint(0xFF34C759));
+        AnchoredMenu.showCentered(this,root,"사진·이미지 넣기",rows);
+    }
+    /** The system photo picker (Android 13+, has its own close button); older versions use the gallery. */
+    private void pickPhoto(){if(renderer==null)return;try{Intent pick=Build.VERSION.SDK_INT>=33?new Intent(android.provider.MediaStore.ACTION_PICK_IMAGES):new Intent(Intent.ACTION_PICK,android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI).setType("image/*");startActivityForResult(pick,IMPORT_IMAGE);}catch(RuntimeException error){pickImage();}}
     private void pickImage(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*"),IMPORT_IMAGE);}
     private void pickVideo(){if(renderer==null){toast("문서를 먼저 여세요");return;}startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("video/*"),IMPORT_VIDEO);}
     private static final String[][] STICKER_GROUPS={
@@ -1455,6 +1478,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         chip.setTextSize(17);Runnable paint=()->{chip.setBackground(round(flag[0]?ACCENT:0xFFF2F2F7,18));chip.setTextColor(flag[0]?Color.WHITE:NAVY);};
         chip.setOnClickListener(v->{flag[0]=!flag[0];paint.run();changed.run();});paint.run();return chip;
     }
+    /** Same on/off chip as {@link #toggleChip} but showing a drawn icon (a slanted "I" with its top and bottom bars for italic). */
+    private ImageView toggleIcon(int drawable,boolean[] flag,Runnable changed){
+        ImageView chip=new ImageView(this);chip.setImageResource(drawable);chip.setScaleType(ImageView.ScaleType.FIT_CENTER);chip.setPadding(dp(8),dp(7),dp(8),dp(7));
+        Runnable paint=()->{chip.setBackground(round(flag[0]?ACCENT:0xFFF2F2F7,18));chip.setColorFilter(flag[0]?Color.WHITE:NAVY);};
+        chip.setOnClickListener(v->{flag[0]=!flag[0];paint.run();changed.run();});paint.run();return chip;
+    }
     private Section sectionOf(int category,boolean titled){
         Section section=new Section(titled?CATEGORY_TITLES[category]:null);
         for(Tile tile:categoryTiles(category))section.add(tile);return section;
@@ -1694,7 +1723,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         TextView style=stepButton("Aa","글꼴·색 펼치기");style.setTextSize(14);style.setTypeface(Typeface.DEFAULT_BOLD);style.setTag("text_style_toggle");
         style.setOnClickListener(v->{boolean open=panel.getVisibility()!=View.VISIBLE;panel.setVisibility(open?View.VISIBLE:View.GONE);style.setBackground(round(open?0xFFD6E6FF:0xFFF2F2F7,18));});
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(38),dp(32));sp.setMargins(dp(2),0,dp(6),0);row.addView(style,sp);
-        TextView boldChip=toggleChip("B",Typeface.BOLD,bold,()->{e.bold=bold[0];applyInlineStyle();});boldChip.setTag("text_bold");TextView italicChip=toggleChip("I",Typeface.ITALIC,italic,()->{e.italic=italic[0];applyInlineStyle();});italicChip.setTag("text_italic");
+        TextView boldChip=toggleChip("B",Typeface.BOLD,bold,()->{e.bold=bold[0];applyInlineStyle();});boldChip.setTag("text_bold");View italicChip=toggleIcon(R.drawable.ic_italic,italic,()->{e.italic=italic[0];applyInlineStyle();});italicChip.setTag("text_italic");
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(34),dp(32));cp.setMargins(dp(2),0,dp(2),0);row.addView(boldChip,cp);LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(dp(34),dp(32));ip.setMargins(dp(2),0,dp(6),0);row.addView(italicChip,ip);
         TextView minus=stepButton("−","글자 작게");minus.setOnClickListener(v->changeInlineSize(-1));row.addView(minus,new LinearLayout.LayoutParams(dp(30),dp(32)));
         inlineSize=new TextView(this);inlineSize.setTag("text_size");inlineSize.setTextSize(12);inlineSize.setTextColor(NAVY);inlineSize.setGravity(Gravity.CENTER);inlineSize.setTypeface(Typeface.DEFAULT_BOLD);row.addView(inlineSize,new LinearLayout.LayoutParams(dp(40),dp(32)));
@@ -1825,7 +1854,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     // ================================================================== side panel: search / page previews / outline / recordings
     private LinearLayout sidePanel,outlineList,recordingList;private FrameLayout sideContent;private TextView sideTitle;private ImageButton sideMore;private ScrollView outlineScroll,recordingScroll;
     private final ImageButton[] sideTabs=new ImageButton[4];private int panelTab=1;
-    private static final String[] SIDE_TITLES={"검색","미리보기","개요","음성 녹음"};
+    private static final String[] SIDE_TITLES={"🔍 검색","🖼️ 미리보기","🔖 개요","🎙️ 음성 녹음"};
     private static final int[] SIDE_ICONS={R.drawable.ic_search,R.drawable.ic_thumbnails,R.drawable.ic_outline,R.drawable.ic_mic};
     private void buildSidePanel(){
         sidePanel=new LinearLayout(this);sidePanel.setTag("side_panel");sidePanel.setOrientation(LinearLayout.VERTICAL);sidePanel.setBackgroundColor(0xFFF8F8F8);sidePanel.setVisibility(View.GONE);
@@ -2206,7 +2235,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
          "개요 추가|개요 패널의 ‘＋ 개요 추가’를 누르고 문서의 원하는 위치를 탭한 뒤 제목을 입력합니다. 목록에는 ‘제목 (p19)’ 형식으로 표시되고 탭하면 그 위치로 이동합니다.",
          "관리|목록을 옆으로 밀면 삭제되고, ⋮ 버튼으로 이름 변경·삭제를 할 수 있습니다. 즐겨찾기(별)는 현재 페이지를 표시합니다."},
         {"11. 새 노트와 서식",
-         "새 노트|문서함에서 새 노트를 만들면 종이 서식을 고릅니다. 백지 · 줄노트(보통·좁게·넓게) · 모눈종이 · 리걸노트 · 점 격자 · 코넬 노트 · 오선지가 있고, 종이 색도 고를 수 있습니다.",
+         "새 노트|문서함에서 새 노트를 만들면 종이 서식을 고릅니다. 맨 위에 금감원노트·금감원노트_칸나누기·리갈노트 서식이 있고 기본값은 금감원노트입니다. 백지 · 줄노트(보통·좁게·넓게) · 모눈종이 · 리걸노트 · 점 격자 · 코넬 노트 · 오선지가 있고, 종이 색도 고를 수 있습니다.",
          "내 서식|‘내 PDF·이미지 서식’을 고르면 가지고 있는 PDF의 첫 페이지나 이미지를 모든 페이지의 배경으로 씁니다.",
          "페이지 추가|노트의 마지막 장에서 다음으로 넘기면 같은 서식의 새 페이지가 붙습니다."},
         {"12. 음성 녹음 · 검색 · 번역",
