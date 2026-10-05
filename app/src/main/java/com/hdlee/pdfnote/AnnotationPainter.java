@@ -35,13 +35,13 @@ final class AnnotationPainter {
     /** align: 0 left, 1 centre, 2 right. */
     static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face,int align,boolean underline,boolean strike){text(canvas,text,box,size,color,face,align,underline,strike,1.35f);}
     /** line: distance between baselines as a multiple of size. */
-    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face,int align,boolean underline,boolean strike,float line){
+    static void text(Canvas canvas,String text,RectF box,float size,int color,Typeface face,int align,boolean underline,boolean strike,float step){
         Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(color);p.setTextSize(size);p.setTypeface(face);p.setUnderlineText(underline);p.setStrikeThruText(strike);
         int save=canvas.save();canvas.clipRect(box);float y=box.top+size;
         for(String paragraph:text.split("\n",-1)){
             String remaining=paragraph;
-            while(!remaining.isEmpty()){int n=Math.max(1,p.breakText(remaining,true,box.width(),null));String line=remaining.substring(0,n);float x=box.left;if(align!=0){String shown=line.replaceAll("\\s+$","");float room=box.width()-p.measureText(shown);x=box.left+(align==1?room/2f:room);}canvas.drawText(line,x,y,p);y+=size*line;remaining=remaining.substring(n);}
-            if(paragraph.isEmpty())y+=size*line;
+            while(!remaining.isEmpty()){int n=Math.max(1,p.breakText(remaining,true,box.width(),null));String line=remaining.substring(0,n);float x=box.left;if(align!=0){String shown=line.replaceAll("\\s+$","");float room=box.width()-p.measureText(shown);x=box.left+(align==1?room/2f:room);}canvas.drawText(line,x,y,p);y+=size*step;remaining=remaining.substring(n);}
+            if(paragraph.isEmpty())y+=size*step;
         }
         canvas.restoreToCount(save);
     }
