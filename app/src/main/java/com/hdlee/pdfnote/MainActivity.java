@@ -2730,6 +2730,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
          "내보내기·백업|더보기 메뉴에서 기록이 포함된 PDF를 내보내거나, ‘원본 파일 내보내기’로 기록 없는 원본만 저장하거나, 기록을 파일로 백업·복원합니다. ‘인쇄’는 필기와 글상자까지 함께 시스템 인쇄 화면으로 보내며, 거기서 PDF로 저장할 수도 있습니다."}};
     // ---- whole-library backup / restore and app info / update check
     private static final int EXPORT_BACKUP=35,IMPORT_BACKUP=36;
+    private static final String RELEASES_URL="https://github.com/hdlee73/Everynote_And/releases";
     private static final String AUTHOR_LINE="만든이 : 이현덕(with Claude), hdlee73@gmail.com";
     private File[] backupAssetDirs(){File img=new File(getFilesDir(),"images");img.mkdirs();File vid=new File(getFilesDir(),"videos");vid.mkdirs();return new File[]{img,recordingsDir(),vid};}
     private void startLibraryBackup(){
@@ -2757,6 +2758,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void showAbout(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(22),dp(8),dp(22),0);
         TextView info=new TextView(this);info.setText("Everynote\n버전 "+appVersion()+"\n\n"+AUTHOR_LINE);info.setTextSize(15);info.setTextColor(NAVY);info.setTag("about_info");info.setTextIsSelectable(true);box.addView(info);
+        TextView releases=new TextView(this);releases.setText("업데이트 정보 (GitHub 릴리스 페이지)");releases.setTextSize(14);releases.setTextColor(ACCENT);releases.setPaintFlags(releases.getPaintFlags()|Paint.UNDERLINE_TEXT_FLAG);releases.setPadding(0,dp(12),0,dp(2));releases.setTag("about_releases");
+        releases.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)));}catch(Exception e){toast("브라우저를 열 수 없습니다");}});box.addView(releases);
         final TextView status=new TextView(this);status.setTextSize(14);status.setTextColor(0xFF8E8E93);status.setPadding(0,dp(14),0,dp(6));status.setTag("update_status");box.addView(status);
         android.widget.CheckBox auto=new android.widget.CheckBox(this);auto.setText("앱을 열 때 새 버전 자동 확인");auto.setTextSize(14);auto.setChecked(recentPrefs.getBoolean("auto_update_check",true));auto.setOnCheckedChangeListener((b,on)->recentPrefs.edit().putBoolean("auto_update_check",on).apply());auto.setTag("auto_update");box.addView(auto);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("앱 정보").setView(box).setPositiveButton("업데이트 확인",null).setNegativeButton("닫기",null).create();
