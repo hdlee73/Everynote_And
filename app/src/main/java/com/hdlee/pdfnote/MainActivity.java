@@ -550,11 +550,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         int first=twoPage?(index/2)*2:index;firstPageView.showPage(renderPage(renderer,first),first,store.marks,store.strokes,store.translations);firstPageView.setAnnotationStore(store);
         if(twoPage&&first+1<renderer.getPageCount()){secondPageView.setVisibility(View.VISIBLE);secondPageView.showPage(renderPage(renderer,first+1),first+1,store.marks,store.strokes,store.translations);secondPageView.setAnnotationStore(store);}else{secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);}
         boolean spread=twoPage&&secondPageView.getVisibility()==View.VISIBLE;firstPageView.setSpread(-1,spread?secondPageView:null);secondPageView.setSpread(1,spread?firstPageView:null);
-        if(carryScale>0f){firstPageView.restoreView(carryScale,carryPanX,carryPanY);if(secondPageView.getVisibility()==View.VISIBLE)secondPageView.restoreView(carryScale,carryPanX,carryPanY);}carryScale=-1f;
         pageView=twoPage&&index!=first?secondPageView:firstPageView;currentPage=index;activeSession.page=index;updateZoomLabel(pageView.zoom());syncOtherTools();
         previousOverlay.setVisibility(first>0?View.VISIBLE:View.GONE);nextOverlay.setVisibility(first+(twoPage?2:1)<renderer.getPageCount()||isNotebook(activeSession)?View.VISIBLE:View.GONE);nextOverlay.setContentDescription(first+(twoPage?2:1)>=renderer.getPageCount()&&isNotebook(activeSession)?"새 페이지 추가":"다음 페이지");
         pageLabel.setText(twoPage?(first+1)+"–"+Math.min(first+2,renderer.getPageCount())+" / "+renderer.getPageCount():(index+1)+" / "+renderer.getPageCount());
-        applyCrop();updateBookmarkButton();updateThumbnailSelection();refreshStudyPanel();saveSessionState();applySearchHighlights();
+        applyCrop();   // setCrop resets the pan, so the carried zoom is restored only after it
+        if(carryScale>0f){firstPageView.restoreView(carryScale,carryPanX,carryPanY);if(secondPageView.getVisibility()==View.VISIBLE)secondPageView.restoreView(carryScale,carryPanX,carryPanY);updateZoomLabel(pageView.zoom());}carryScale=-1f;
+        updateBookmarkButton();updateThumbnailSelection();refreshStudyPanel();saveSessionState();applySearchHighlights();
         loadViewText(firstPageView);if(twoPage&&secondPageView.getVisibility()==View.VISIBLE)loadViewText(secondPageView);
     }
     private void loadViewText(PdfPageView view){List<PdfPageView.TextRegion> cached=activeSession.textRegions.get(view.getPageNumber());if(cached!=null)view.setTextRegions(cached,false);else view.post(()->recognizeViewText(view,false));}
@@ -630,7 +631,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private RectF curlRegion(View papers,boolean two){
         RectF union=null;PdfPageView[] views=two?new PdfPageView[]{firstPageView,secondPageView}:new PdfPageView[]{firstPageView};
         for(PdfPageView v:views){RectF r=v.pageRect();if(r.isEmpty())r=new RectF(0,0,v.getWidth(),v.getHeight());if(!r.intersect(0,0,v.getWidth(),v.getHeight()))r=new RectF(0,0,v.getWidth(),v.getHeight());r.offset(v.getLeft(),v.getTop());if(union==null)union=new RectF(r);else union.union(r);}
-        if(two){union.left=0;union.right=papers.getWidth();}
+        if(two){int spine=secondPageView.getLeft();float half=Math.min(spine-union.left,union.right-spine);if(half>0){union.left=spine-half;union.right=spine+half;}}   // symmetric about the seam, but only as wide as the paper
         return union;
     }
     private PageCurlView dragCurl;private int curlOrigin;private float dragSpan;private boolean curlConsumed;
@@ -660,7 +661,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             if(forward)curl.setup(null,newPage,oldPage,PageCurlView.paperBack(PageCurlView.mirror(oldPage)),false,0f);
             else curl.setup(null,PageCurlView.mirror(newPage),PageCurlView.mirror(oldPage),PageCurlView.paperBack(oldPage),true,0f);
         }else{
-            int spine=secondPageView.getLeft(),half=Math.min(spine,papers.getWidth()-spine);rl=spine-half;w=half*2;
+            int spine=secondPageView.getLeft(),half=w/2;rl=spine-half;w=half*2;
             Bitmap oldFirst=slice(oldFull,spine-half,rt,half,h),oldSecond=slice(oldFull,spine,rt,half,h),newFirst=slice(newFull,spine-half,rt,half,h),newSecond=slice(newFull,spine,rt,half,h);
             if(forward)curl.setup(oldFirst,newSecond,oldSecond,PageCurlView.paperBack(PageCurlView.mirror(newFirst)),false,.5f);
             else curl.setup(PageCurlView.mirror(oldSecond),PageCurlView.mirror(newFirst),PageCurlView.mirror(oldFirst),PageCurlView.paperBack(newSecond),true,.5f);
@@ -1390,8 +1391,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             new AnchoredMenu.Row("도형",R.drawable.ic_rect,()->showShapeDialog(null)).tint(0xFFAF52DE),
             new AnchoredMenu.Row("표",R.drawable.ic_table,()->showTableDialog(null)).tint(0xFF30B0C7),
             new AnchoredMenu.Row("동영상",R.drawable.ic_video,this::pickVideo).tint(0xFFFF3B30),
-            new AnchoredMenu.Row("유튜브 링크",R.drawable.ic_youtube,this::askYoutube).tint(0xFFFF0000),
-            new AnchoredMenu.Row("하이퍼링크",R.drawable.ic_link,this::startHyperlink).tint(0xFF5856D6));
+            new AnchoredMenu.Row("유튜브 링크",R.drawable.ic_youtube,this::askYoutube).tint(0xFFFF0000));
     }
     private void showInsertMenu(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
@@ -1843,7 +1843,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("사진·이미지",R.drawable.ic_image,this::insertImage));
                 t.add(new Tile("스티커",R.drawable.ic_sticker,this::showStickerPicker));
                 t.add(new Tile("동영상",R.drawable.ic_video,this::pickVideo));
-                t.add(new Tile("하이퍼링크",R.drawable.ic_link,this::startHyperlink));
                 t.add(new Tile("유튜브 링크",R.drawable.ic_youtube,this::askYoutube));
                 t.add(new Tile("음성 녹음",R.drawable.ic_mic,this::startRecording));
                 t.add(new Tile("메모 추가",R.drawable.ic_memo,this::toggleMemoMode));
