@@ -160,7 +160,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
 
     @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",false);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);selectedColor=(Math.max(26,Math.min(255,recentPrefs.getInt("highlight_alpha",Color.alpha(selectedColor))))<<24)|(selectedColor&0xFFFFFF);firstPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));secondPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
     private void applyKeepAwake(){if(recentPrefs.getBoolean("keep_awake",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
-    @Override protected void onResume(){super.onResume();enforceChrome();applyKeepAwake();if(!updateChecked){updateChecked=true;root.postDelayed(this::autoCheckForUpdate,4000);}if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
+    @Override protected void onResume(){super.onResume();enforceChrome();applyKeepAwake();root.postDelayed(this::autoCheckForUpdate,4000);if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
         .setMessage("문서 앱에서 PDF로 내보냈다면 파일을 가져와 필기와 주석을 이어갈 수 있습니다.")
         .setPositiveButton("PDF 가져오기",(d,w)->chooseConvertedPdf()).setNegativeButton("나중에",null).show());}}
     private LinearLayout contentColumn;private View barGrip,dockGrip;private int insetBottom;private GradientDrawable barSurface;private EditText titleEdit;
@@ -377,7 +377,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         rows.add(new AnchoredMenu.Row("전체 화면 메뉴 계속 표시",R.drawable.ic_float,this::toggleDockPinned).tint(0xFF8E8E93).selected(dockPinned()));
         rows.add(AnchoredMenu.Row.divider());
         rows.add(new AnchoredMenu.Row("사용법",R.drawable.ic_outline,this::showHelp).tint(0xFF8E8E93));
-        rows.add(new AnchoredMenu.Row("앱 정보·업데이트",R.drawable.ic_more_vert,this::showAbout).tint(0xFF8E8E93));
+        String pendingUpdate=pendingUpdateVersion();rows.add(new AnchoredMenu.Row(pendingUpdate==null?"앱 정보·업데이트":"앱 정보·업데이트 (새 버전 v"+pendingUpdate+")",R.drawable.ic_more_vert,this::showAbout).tint(pendingUpdate==null?0xFF8E8E93:ACCENT));
         List<AnchoredMenu.Shortcut> shortcuts=new ArrayList<>();
         shortcuts.add(new AnchoredMenu.Shortcut("문서함",R.drawable.ic_folder_open,false,this::showLibrary));
         shortcuts.add(new AnchoredMenu.Shortcut("문서·필기 검색",R.drawable.ic_search,false,this::searchDocument));
@@ -2761,6 +2761,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         TextView releases=new TextView(this);releases.setText("업데이트 정보 (GitHub 릴리스 페이지)");releases.setTextSize(14);releases.setTextColor(ACCENT);releases.setPaintFlags(releases.getPaintFlags()|Paint.UNDERLINE_TEXT_FLAG);releases.setPadding(0,dp(12),0,dp(2));releases.setTag("about_releases");
         releases.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(RELEASES_URL)));}catch(Exception e){toast("브라우저를 열 수 없습니다");}});box.addView(releases);
         final TextView status=new TextView(this);status.setTextSize(14);status.setTextColor(0xFF8E8E93);status.setPadding(0,dp(14),0,dp(6));status.setTag("update_status");box.addView(status);
+        String waiting=pendingUpdateVersion();if(waiting!=null){status.setText("새 버전 v"+waiting+" 이(가) 있습니다. 아래 ‘업데이트 확인’을 누르세요");status.setTextColor(ACCENT);}
         android.widget.CheckBox auto=new android.widget.CheckBox(this);auto.setText("앱을 열 때 새 버전 자동 확인");auto.setTextSize(14);auto.setChecked(recentPrefs.getBoolean("auto_update_check",true));auto.setOnCheckedChangeListener((b,on)->recentPrefs.edit().putBoolean("auto_update_check",on).apply());auto.setTag("auto_update");box.addView(auto);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("앱 정보").setView(box).setPositiveButton("업데이트 확인",null).setNegativeButton("닫기",null).create();
         dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->checkForUpdate(true,status)));dialog.show();
@@ -2769,17 +2770,35 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(status!=null)status.setText("확인 중…");
         new Thread(()->{try{final UpdateChecker.Release r=UpdateChecker.latest();final boolean newer=UpdateChecker.compare(r.version,appVersion())>0;
             runOnUiThread(()->{if(isFinishing()||isDestroyed())return;
+                recentPrefs.edit().putString("update_version",newer?r.version:"").apply();
                 if(!newer){if(status!=null)status.setText("최신 버전입니다 (v"+appVersion()+")");else if(manual)toast("최신 버전입니다");return;}
-                if(status!=null)status.setText("새 버전 v"+r.version+" 이(가) 있습니다");
+                if(status!=null){status.setText("새 버전 v"+r.version+" 이(가) 있습니다");status.setTextColor(ACCENT);}
+                if(!manual&&status==null){if(r.version.equals(recentPrefs.getString("update_notified","")))return;recentPrefs.edit().putString("update_notified",r.version).apply();notifyUpdate(r);}
                 String notes=r.notes==null?"":r.notes.trim();if(notes.length()>500)notes=notes.substring(0,500)+"…";
                 new AlertDialog.Builder(this).setTitle("새 버전 v"+r.version).setMessage("현재 v"+appVersion()+(notes.isEmpty()?"":"\n\n"+notes)+"\n\n업데이트를 누르면 설치 파일을 내려받습니다. 내려받은 뒤 알림을 눌러 설치하세요. 문서와 필기는 그대로 유지됩니다.").setPositiveButton("업데이트",(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(r.url!=null?r.url:r.page)));}catch(Exception e){toast("브라우저를 열 수 없습니다");}}).setNegativeButton("나중에",null).show();});
         }catch(Exception error){runOnUiThread(()->{String m="업데이트를 확인하지 못했습니다 (인터넷 연결 확인)";if(status!=null)status.setText(m);else if(manual)toast(m);});}},"update-check").start();
     }
     private void autoCheckForUpdate(){
-        if(!recentPrefs.getBoolean("auto_update_check",true))return;long now=System.currentTimeMillis();if(now-recentPrefs.getLong("update_checked",0)<20L*3600*1000)return;
+        if(!recentPrefs.getBoolean("auto_update_check",true))return;long now=System.currentTimeMillis();if(now-recentPrefs.getLong("update_checked",0)<6L*3600*1000)return;
         recentPrefs.edit().putLong("update_checked",now).apply();checkForUpdate(false,null);
     }
-    private boolean updateChecked;
+    /** Newest version found by an earlier check, or null when none is waiting (or it has been installed since). */
+    private String pendingUpdateVersion(){String v=recentPrefs==null?"":recentPrefs.getString("update_version","");return v.isEmpty()||UpdateChecker.compare(v,appVersion())<=0?null:v;}
+    /** Status-bar notification (Android 13+ asks for permission once); tapping it opens the release page. The in-app dialog still shows either way. */
+    private void notifyUpdate(UpdateChecker.Release r){
+        try{
+            if(Build.VERSION.SDK_INT>=33&&checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+                if(!recentPrefs.getBoolean("notify_asked",false)){recentPrefs.edit().putBoolean("notify_asked",true).apply();requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},77);}
+                return;
+            }
+            android.app.NotificationManager nm=(android.app.NotificationManager)getSystemService(NOTIFICATION_SERVICE);if(nm==null)return;
+            if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(new android.app.NotificationChannel("updates","앱 업데이트",android.app.NotificationManager.IMPORTANCE_DEFAULT));
+            android.app.PendingIntent tap=android.app.PendingIntent.getActivity(this,0,new Intent(Intent.ACTION_VIEW,Uri.parse(r.url!=null?r.url:r.page)),android.app.PendingIntent.FLAG_IMMUTABLE|android.app.PendingIntent.FLAG_UPDATE_CURRENT);
+            android.app.Notification.Builder b=Build.VERSION.SDK_INT>=26?new android.app.Notification.Builder(this,"updates"):new android.app.Notification.Builder(this);
+            b.setSmallIcon(getApplicationInfo().icon).setContentTitle("Everynote 새 버전 v"+r.version).setContentText("눌러서 업데이트를 내려받으세요").setContentIntent(tap).setAutoCancel(true);
+            nm.notify(7001,b.build());
+        }catch(Exception ignored){}
+    }
     private void showHelp(){
         final Dialog dialog=new Dialog(this,R.style.SheetDialog);
         LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setBackground(round(Color.WHITE,20));card.setPadding(dp(22),dp(20),dp(22),dp(6));
