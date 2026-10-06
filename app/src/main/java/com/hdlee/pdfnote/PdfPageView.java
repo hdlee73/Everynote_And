@@ -664,6 +664,9 @@ final class PdfPageView extends View {
     }
     private void drawStickyBody(Canvas canvas,RectF box,float anchorX,float anchorY,String text,int accent,int paper,int fontSp,float density){
         paint.setColor(paper);canvas.drawRoundRect(box,10*density,10*density,paint);paint.setColor(accent);canvas.drawCircle(anchorX,anchorY,6*density,paint);
+        canvas.save();canvas.clipRect(box);try{drawStickyText(canvas,box,text,fontSp,density);}finally{canvas.restore();}
+    }
+    private void drawStickyText(Canvas canvas,RectF box,String text,int fontSp,float density){
         paint.setColor(0xFF3F3A2D);paint.setTextSize(fontSp*density);float lineHeight=fontSp*1.4f*density;float x=box.left+10*density,y=box.top+(fontSp+9)*density,max=box.width()-20*density;
         for(String paragraph:(text==null?"":text).split("\\n")){String line="";for(String word:paragraph.split(" ")){String candidate=line.isEmpty()?word:line+" "+word;if(paint.measureText(candidate)>max&&!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=lineHeight;line=word;if(y>box.bottom-12*density)return;}else line=candidate;}if(!line.isEmpty()){canvas.drawText(line,x,y,paint);y+=18*density;if(y>box.bottom-12*density)return;}}
         return;
@@ -718,7 +721,7 @@ final class PdfPageView extends View {
             if(stDrag>=1&&stDrag<=4){
                 double rr=Math.toRadians(-rot);float lx=(float)(dx*Math.cos(rr)-dy*Math.sin(rr))/d,ly=(float)(dx*Math.sin(rr)+dy*Math.cos(rr))/d;
                 boolean left=stDrag==1||stDrag==3,top=stDrag==1||stDrag==2;float maxW=Math.min(560f,dest.width()/d*.92f);
-                float w=Math.max(90f,Math.min(maxW,left?stW0-lx:stW0+lx)),h=Math.max(48f,Math.min(700f,top?stH0-ly:stH0+ly));
+                float w=Math.max(44f,Math.min(maxW,left?stW0-lx:stW0+lx)),h=Math.max(26f,Math.min(700f,top?stH0-ly:stH0+ly));
                 stSetSize(selSticky,w,h);stSetAnchor(selSticky,stAx0+(left?(stW0-w)*d/dest.width():0),stAy0+(top?(stH0-h)*d/dest.height():0));stMoved=true;invalidate();return true;
             }
             return true;

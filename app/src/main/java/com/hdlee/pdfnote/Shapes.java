@@ -92,19 +92,27 @@ final class Shapes {
 
     private static int Color_alpha(int color) { return color >>> 24; }
 
-    /** A table: header line "rows,cols,line,header,fill" then one line per cell. */
+    /** A table: header line "rows,cols,line,header,fill", one line per cell, then an optional "~" line with a per-cell background colour (8 hex digits, empty = none). */
     static final class Table {
         int rows = 3, cols = 3, line = 0xFF3A3A3C, head = 0xFFE5F0FF, fill = 0x00FFFFFF;
         String[] cells = new String[0];
+        /** Per-cell background (AARRGGBB); 0 = the table's own head / fill colour shows. */
+        int[] bg = new int[0];
 
         static Table parse(String text) {
             Table t = new Table();
-            if (!validTable(text)) { t.cells = new String[9]; java.util.Arrays.fill(t.cells, ""); return t; }
+            if (!validTable(text)) { t.cells = new String[9]; java.util.Arrays.fill(t.cells, ""); t.bg = new int[9]; return t; }
             String[] lines = text.split("\n", -1), p = lines[0].split(",");
             t.rows = Integer.parseInt(p[0]); t.cols = Integer.parseInt(p[1]);
             t.line = parseColor(p[2]); t.head = parseColor(p[3]); t.fill = parseColor(p[4]);
             t.cells = new String[t.rows * t.cols];
             for (int i = 0; i < t.cells.length; i++) t.cells[i] = i + 1 < lines.length ? lines[i + 1] : "";
+            t.bg = new int[t.cells.length];
+            int colorLine = t.cells.length + 1;
+            if (colorLine < lines.length && lines[colorLine].startsWith("~")) {
+                String[] parts = lines[colorLine].substring(1).split(",", -1);
+                for (int i = 0; i < t.bg.length && i < parts.length; i++) if (parts[i].matches("[0-9A-F]{8}")) t.bg[i] = parseColor(parts[i]);
+            }
             return t;
         }
 
@@ -113,13 +121,14 @@ final class Shapes {
             t.rows = rows; t.cols = cols; t.line = line; t.head = head; t.fill = fill;
             t.cells = new String[rows * cols];
             java.util.Arrays.fill(t.cells, "");
+            t.bg = new int[rows * cols];
             return t;
         }
 
         /** Keeps existing cell text when the grid size changes. */
         Table resized(int newRows, int newCols) {
             Table t = create(newRows, newCols, line, head, fill);
-            for (int r = 0; r < Math.min(rows, newRows); r++) for (int c = 0; c < Math.min(cols, newCols); c++) t.cells[r * newCols + c] = cells[r * cols + c];
+            for (int r = 0; r < Math.min(rows, newRows); r++) for (int c = 0; c < Math.min(cols, newCols); c++) { t.cells[r * newCols + c] = cells[r * cols + c]; t.bg[r * newCols + c] = bg[r * cols + c]; }
             return t;
         }
 
@@ -127,6 +136,12 @@ final class Shapes {
             StringBuilder s = new StringBuilder();
             s.append(rows).append(',').append(cols).append(',').append(hex(line)).append(',').append(hex(head)).append(',').append(hex(fill));
             for (String cell : cells) s.append('\n').append(cell == null ? "" : cell.replace('\n', ' ').replace('\r', ' '));
+            boolean any = false;
+            for (int color : bg) if ((color >>> 24) != 0) any = true;
+            if (any) {
+                s.append("\n~");
+                for (int i = 0; i < bg.length; i++) { if (i > 0) s.append(','); if ((bg[i] >>> 24) != 0) s.append(hex(bg[i])); }
+            }
             return s.toString();
         }
     }
@@ -137,6 +152,11 @@ final class Shapes {
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         if ((t.fill >>> 24) > 0) { paint.setColor(t.fill); c.drawRect(b, paint); }
         if ((t.head >>> 24) > 0) { paint.setColor(t.head); c.drawRect(b.left, b.top, b.right, b.top + ch, paint); }
+        for (int r = 0; r < t.rows; r++) for (int col = 0; col < t.cols; col++) {
+            int color = t.bg[r * t.cols + col];
+            if ((color >>> 24) == 0) continue;
+            paint.setColor(color); c.drawRect(b.left + col * cw, b.top + r * ch, b.left + (col + 1) * cw, b.top + (r + 1) * ch, paint);
+        }
         float width = Math.max(1f, pageWidth * .0022f);
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(width); paint.setColor(AnnotationPainter.adj(t.line));
         c.drawRect(b, paint);
@@ -153,8 +173,10 @@ final class Shapes {
             float avail = cw - size * .6f;
             if (avail <= 0) continue;
             CharSequence shown = android.text.TextUtils.ellipsize(s, new android.text.TextPaint(tp), avail, android.text.TextUtils.TruncateAt.END);
-            boolean lit = (r == 0 && (t.head >>> 24) > 0) || (r > 0 && (t.fill >>> 24) > 0);
-            tp.setColor(lit ? 0xFF1C1C1E : AnnotationPainter.adj(0xFF1C1C1E));
+            int cellBg = t.bg[r * t.cols + col];
+            boolean lit = (cellBg >>> 24) > 0 || (r == 0 && (t.head >>> 24) > 0) || (r > 0 && (t.fill >>> 24) > 0);
+            boolean dark = (cellBg >>> 24) > 0 && (0.299f * ((cellBg >> 16) & 255) + 0.587f * ((cellBg >> 8) & 255) + 0.114f * (cellBg & 255)) < 110f;
+            tp.setColor(dark ? 0xFFFFFFFF : lit ? 0xFF1C1C1E : AnnotationPainter.adj(0xFF1C1C1E));
             tp.setFakeBoldText(r == 0 && (t.head >>> 24) > 0);
             c.drawText(shown.toString(), b.left + col * cw + size * .3f, b.top + r * ch + ch / 2f - (fm.ascent + fm.descent) / 2f, tp);
         }
