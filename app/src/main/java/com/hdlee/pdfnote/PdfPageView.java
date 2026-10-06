@@ -36,6 +36,8 @@ final class PdfPageView extends View {
         void onElementTapped(AnnotationStore.PageElement element);
         default void onZoomChanged(float scale) {}
         default void onElementDeleteRequested(AnnotationStore.PageElement element) {}
+        /** A tap on a hyperlink follows it at once; a long press (longPress) asks for its menu (open / edit / delete). */
+        default void onHyperlinkTapped(AnnotationStore.PageElement element, boolean longPress) {}
         /** Long press on empty paper: offers to insert something there (page, normalized point, view point). */
         default void onBlankLongPress(int page, float x, float y, float viewX, float viewY) {}
     }
@@ -461,6 +463,25 @@ final class PdfPageView extends View {
      * scale/panX/panY are one shared transform of the whole spread (in the parent's coordinates), mirrored to the partner page. */
     @Override public void invalidate() { super.invalidate(); if (spreadSide != 0 && getParent() instanceof View) ((View) getParent()).invalidate(); }   // a zoomed spread page may draw past its own half
     void setSpread(int side, PdfPageView other) { spreadSide = other == null ? 0 : side; partner = other; applyBackground(); invalidate(); }
+    private AnnotationStore.PageElement linkHit; private boolean linkLongFired;
+    private final Runnable linkLongPress = () -> { if (linkHit != null) { linkLongFired = true; AnnotationStore.PageElement hit = linkHit; performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); listener.onHyperlinkTapped(hit, true); } };
+    private boolean linkTouchAllowed() { return !highlightMode && !memoMode && !outlineMode && !lassoMode && inkMode == 0 && !directTextSelection; }
+    /** The hyperlink under a touch point (the touch is padded a little so a thin line of text is easy to hit). */
+    private AnnotationStore.PageElement hyperlinkAt(float x, float y, RectF dest) {
+        if (annotationStore == null || dest.width() <= 0 || dest.height() <= 0) return null;
+        float pad = 6f * getResources().getDisplayMetrics().density, nx = (x - dest.left) / dest.width(), ny = (y - dest.top) / dest.height(), px = pad / dest.width(), py = pad / dest.height();
+        for (int i = annotationStore.elements.size() - 1; i >= 0; i--) {
+            AnnotationStore.PageElement e = annotationStore.elements.get(i);
+            if (e.page == page && "hyperlink".equals(e.kind) && nx >= e.left - px && nx <= e.right + px && ny >= e.top - py && ny <= e.bottom + py) return e;
+        }
+        return null;
+    }
+    /** In a spread a page turn may only start on the document (either page), not on the grey surround; a single page is unrestricted. */
+    private boolean onSpreadDocument(float x, float y) {
+        if (spreadSide == 0 || partner == null || partner.getVisibility() != VISIBLE) return true;
+        if (contentRect().contains(x, y)) return true;
+        RectF o = partner.contentRect(); o.offset(partner.getLeft() - getLeft(), partner.getTop() - getTop()); return o.contains(x, y);
+    }
     /** This page at zoom 1 in the parent's (spread) coordinates. */
     private RectF spreadBase() {
         if (bitmap == null || getWidth() == 0) return new RectF();
@@ -510,7 +531,7 @@ final class PdfPageView extends View {
         super.onDraw(canvas);
         if (bitmap == null) return;
         RectF dest = contentRect();
-        { float d = getResources().getDisplayMetrics().density; paint.setStyle(Paint.Style.FILL); for (int i = 3; i >= 1; i--) { paint.setColor((darkPage ? 0x22000000 : 0x14000000) | 0); canvas.drawRect(dest.left - i * d, dest.top - i * d * .6f, dest.right + i * d, dest.bottom + i * d * 1.4f, paint); } }
+        { float d = getResources().getDisplayMetrics().density; paint.setStyle(Paint.Style.FILL); for (int i = 3; i >= 1; i--) { paint.setColor((darkPage ? 0x22000000 : 0x14000000) | 0); canvas.drawRect(dest.left - (spreadSide > 0 ? 0 : i * d), dest.top - i * d * .6f, dest.right + (spreadSide < 0 ? 0 : i * d), dest.bottom + i * d * 1.4f, paint); } }
         paint.setColor(Color.WHITE);
         if (darkPage) paint.setColor(Color.BLACK);
         canvas.drawRect(dest, paint);
@@ -774,7 +795,7 @@ final class PdfPageView extends View {
             listener.onSelectionAdjustStarted();
             float edge=72*getResources().getDisplayMetrics().density;
             boolean eligible=pageSwipeEnabled&&!stylus&&!directTextSelection&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk);
-            bodySwipeCandidate=eligible&&scale<=1f;edgeStartTime=e.getEventTime();
+            bodySwipeCandidate=eligible&&scale<=1f&&onSpreadDocument(e.getX(),e.getY());edgeStartTime=e.getEventTime();
             edgeSwipe=eligible&&scale>1f&&
                 (verticalPageSwipe?(e.getY()<edge||e.getY()>getHeight()-edge):(e.getX()<edge||e.getX()>getWidth()-edge));
             if(edgeSwipe){startX=e.getX();startY=e.getY();edgeStartTime=e.getEventTime();selectionHandler.removeCallbacks(beginTextSelection);getParent().requestDisallowInterceptTouchEvent(true);return true;}
@@ -821,14 +842,16 @@ final class PdfPageView extends View {
             }
             startX = currentX = e.getX(); startY = currentY = e.getY();
             lastX = startX; lastY = startY;
-            gestureMoved = false; scalingOccurred = false;bodySwipeCandidate=pageSwipeEnabled&&!stylus&&!directTextSelection&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk)&&scale<=1f;
+            gestureMoved = false; scalingOccurred = false;bodySwipeCandidate=pageSwipeEnabled&&!stylus&&!directTextSelection&&!lassoMode&&!highlightMode&&!memoMode&&!outlineMode&&!(inkMode!=0&&fingerInk)&&scale<=1f&&onSpreadDocument(e.getX(),e.getY());
             drawing = highlightMode && dest.contains(startX, startY);if(drawing&&highlightFree){freePts.clear();freePts.add(new float[]{startX,startY});}
             selectionStartRegion=(!drawing&&!memoMode&&!outlineMode&&inkMode==0)?textRegionAt(startX,startY,dest):null;selectionEndRegion=selectionStartRegion;selectionCandidate=selectionStartRegion!=null;selectingText=false;if(selectionCandidate)selectionHandler.postDelayed(beginTextSelection,420);
             selectionHandler.removeCallbacks(blankPress);if(!selectionCandidate&&!drawing&&!memoMode&&!outlineMode&&inkMode==0&&!lassoMode&&!directTextSelection&&!stylus&&scale<=1.05f&&dest.contains(startX,startY))selectionHandler.postDelayed(blankPress,650);
+            selectionHandler.removeCallbacks(linkLongPress);linkLongFired=false;linkHit=!stylus&&scale<=1.05f&&linkTouchAllowed()?hyperlinkAt(startX,startY,dest):null;if(linkHit!=null){selectionCandidate=false;selectionHandler.removeCallbacks(beginTextSelection);selectionHandler.removeCallbacks(blankPress);selectionHandler.postDelayed(linkLongPress,500);}
             panning = scale > 1f && !outlineMode && !selectionCandidate;
             getParent().requestDisallowInterceptTouchEvent(drawing || panning || selectionCandidate);
             invalidate(); return true;
         }
+        if(linkHit!=null&&(e.getActionMasked()==MotionEvent.ACTION_POINTER_DOWN||e.getActionMasked()==MotionEvent.ACTION_CANCEL||(e.getActionMasked()==MotionEvent.ACTION_MOVE&&Math.hypot(e.getX()-startX,e.getY()-startY)>touchSlop()))){selectionHandler.removeCallbacks(linkLongPress);linkHit=null;}
         if (e.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
             selectionHandler.removeCallbacks(beginTextSelection);selectionCandidate=selectingText=false;selectedTextRegions.clear();
             drawing = false; panning = false; scalingOccurred = true;
@@ -876,6 +899,8 @@ final class PdfPageView extends View {
         }
         if (e.getAction() == MotionEvent.ACTION_UP) {
             selectionHandler.removeCallbacks(beginTextSelection);
+            selectionHandler.removeCallbacks(linkLongPress);
+            if(linkHit!=null){AnnotationStore.PageElement tapped=linkHit;linkHit=null;getParent().requestDisallowInterceptTouchEvent(false);selectionCandidate=false;if(linkLongFired||Math.hypot(e.getX()-startX,e.getY()-startY)>=touchSlop())return true;listener.onHyperlinkTapped(tapped,false);return true;}
             getParent().requestDisallowInterceptTouchEvent(false);
             if(selectingText){updateTextSelection(nearestTextRegion(e.getX(),e.getY(),dest));TextSelection selection=finishTextSelection();selectingText=selectionCandidate=false;if(selection!=null){listener.onTextSelectionFinished(selection,e.getX(),e.getY());return true;}}
             if(selectionCandidate&&selectionStartRegion!=null&&(directTextSelection||stylus)){

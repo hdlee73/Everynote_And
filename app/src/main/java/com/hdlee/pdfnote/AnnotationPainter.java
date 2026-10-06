@@ -103,14 +103,8 @@ final class AnnotationPainter {
             }else if(e.kind.equals("shape")){Shapes.drawShape(c,b,e.text,d.width());
             }else if(e.kind.equals("table")){Shapes.drawTable(c,b,e.text,d.width());
             }else if(e.kind.equals("hyperlink")){
-                Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(0x24007AFF);c.drawRoundRect(b,b.height()*.12f,b.height()*.12f,paint);paint.setColor(0xFF007AFF);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(Math.max(1.5f,d.width()*.0028f));c.drawLine(b.left,b.bottom-paint.getStrokeWidth(),b.right,b.bottom-paint.getStrokeWidth(),paint);
-                if(lastOfGroup(store,e)){
-                    // a small blue badge with an arrow marks the end of every link
-                    float rad=Math.max(d.width()*.011f,Math.min(b.height()*.42f,d.width()*.02f));float cx=Math.min(d.right-rad,b.right+rad*.3f),cy=Math.max(d.top+rad,b.top-rad*.1f);
-                    Paint bp=new Paint(Paint.ANTI_ALIAS_FLAG);bp.setColor(0xFF007AFF);c.drawCircle(cx,cy,rad,bp);
-                    bp.setColor(0xFFFFFFFF);bp.setStyle(Paint.Style.STROKE);bp.setStrokeWidth(Math.max(1f,rad*.26f));bp.setStrokeCap(Paint.Cap.ROUND);bp.setStrokeJoin(Paint.Join.ROUND);float k=rad*.38f;
-                    c.drawLine(cx-k,cy+k,cx+k,cy-k,bp);android.graphics.Path head=new android.graphics.Path();head.moveTo(cx-k*.1f,cy-k);head.lineTo(cx+k,cy-k);head.lineTo(cx+k,cy+k*.1f);c.drawPath(head,bp);
-                }
+                // only a thin underline marks a link: no blue box and no badge over the text
+                Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(0xFF007AFF);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(Math.max(1.2f,d.width()*.0022f));c.drawLine(b.left,b.bottom-paint.getStrokeWidth(),b.right,b.bottom-paint.getStrokeWidth(),paint);
             }else if(e.kind.equals("audio")){
                 Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);float r=b.height()/2;fill.setColor(0xFFE5F0FF);c.drawRoundRect(b,r,r,fill);fill.setStyle(Paint.Style.STROKE);fill.setStrokeWidth(Math.max(1f,d.width()*.002f));fill.setColor(0xFF007AFF);c.drawRoundRect(b,r,r,fill);
                 float size=Math.max(8f,b.height()*.46f);text(c,"▶  녹음 "+e.text,new RectF(b.left+r*.9f,b.top+(b.height()-size*1.35f)/2f,b.right-r*.4f,b.bottom),size,0xFF007AFF);
