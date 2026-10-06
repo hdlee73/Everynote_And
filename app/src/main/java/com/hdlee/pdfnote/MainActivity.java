@@ -1634,7 +1634,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(validWebUrl(element.text))try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(element.text)));}catch(ActivityNotFoundException error){toast("링크를 열 앱이 없습니다");}
     }
     /** A tap follows the link at once; a long press asks what to do with it (the list in the side panel offers the same). */
-    void onHyperlinkTapped(AnnotationStore.PageElement element,boolean longPress){if(longPress)showHyperlinkMenu(element);else openHyperlink(element);}
+    @Override public void onHyperlinkTapped(AnnotationStore.PageElement element,boolean longPress){if(longPress)showHyperlinkMenu(element);else openHyperlink(element);}
     private void showHyperlinkMenu(AnnotationStore.PageElement element){
         String title=describeLink(element.text);String[] labels={"열기","링크 수정","링크 삭제"};
         new AlertDialog.Builder(this).setTitle(title.length()>60?title.substring(0,60)+"…":title).setItems(labels,(d,index)->{
