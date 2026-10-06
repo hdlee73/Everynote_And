@@ -464,7 +464,7 @@ final class PdfPageView extends View {
     @Override public void invalidate() { super.invalidate(); if (spreadSide != 0 && getParent() instanceof View) ((View) getParent()).invalidate(); }   // a zoomed spread page may draw past its own half
     void setSpread(int side, PdfPageView other) { spreadSide = other == null ? 0 : side; partner = other; applyBackground(); invalidate(); }
     private AnnotationStore.PageElement linkHit; private boolean linkLongFired;
-    private final Runnable linkLongPress = () -> { if (linkHit != null) { linkLongFired = true; AnnotationStore.PageElement hit = linkHit; performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); listener.onHyperlinkTapped(hit, true); } };
+    private final Runnable linkLongPress = () -> { if (linkHit != null) { linkLongFired = true; AnnotationStore.PageElement hit = linkHit; performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); PdfPageView.this.listener.onHyperlinkTapped(hit, true); } };
     private boolean linkTouchAllowed() { return !highlightMode && !memoMode && !outlineMode && !lassoMode && inkMode == 0 && !directTextSelection; }
     /** The hyperlink under a touch point (the touch is padded a little so a thin line of text is easy to hit). */
     private AnnotationStore.PageElement hyperlinkAt(float x, float y, RectF dest) {
