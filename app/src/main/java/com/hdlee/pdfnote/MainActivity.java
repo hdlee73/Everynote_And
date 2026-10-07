@@ -391,6 +391,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         rows.add(new AnchoredMenu.Row("화면 켜 둠",R.drawable.ic_clock,()->{recentPrefs.edit().putBoolean("keep_awake",!awake).apply();applyKeepAwake();toast(!awake?"읽는 동안 화면이 꺼지지 않습니다":"화면 자동 꺼짐을 따릅니다");}).tint(0xFF8E8E93).selected(awake));
         rows.add(new AnchoredMenu.Row("전체 화면 메뉴 계속 표시",R.drawable.ic_float,this::toggleDockPinned).tint(0xFF8E8E93).selected(dockPinned()));
         rows.add(AnchoredMenu.Row.divider());
+        rows.add(new AnchoredMenu.Row("설정",R.drawable.ic_settings,this::showSettings).tint(0xFF8E8E93));
         rows.add(new AnchoredMenu.Row("사용법",R.drawable.ic_outline,this::showHelp).tint(0xFF8E8E93));
         String pendingUpdate=pendingUpdateVersion();rows.add(new AnchoredMenu.Row(pendingUpdate==null?"앱 정보·업데이트":"앱 정보·업데이트 (새 버전 v"+pendingUpdate+")",R.drawable.ic_more_vert,this::showAbout).tint(pendingUpdate==null?0xFF8E8E93:ACCENT));
         List<AnchoredMenu.Shortcut> shortcuts=new ArrayList<>();
@@ -999,6 +1000,32 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 .setPositiveButton("복원",(d,w)->{if(!sessions.contains(session))return;try{target.importJson(json,session.renderer.getPageCount());session.redoStrokes.clear();switchDocument(session);toast("주석과 노트를 복원했습니다");}catch(JSONException error){toast("복원 실패: "+error.getMessage());}}).setNegativeButton("취소",null).show();
         }catch(Exception error){toast("백업 읽기 실패: "+error.getMessage());}
     }
+    private SettingsDialog settingsDialog;
+    /** Settings screen: default note style, reading comfort and page-turning options (the same prefs the in-document menus use). */
+    private void showSettings(){
+        if(settingsDialog!=null&&settingsDialog.isShowing())return;
+        settingsDialog=new SettingsDialog(this,new SettingsDialog.Host(){
+            public android.content.SharedPreferences prefs(){return recentPrefs;}
+            public boolean keepAwake(){return recentPrefs.getBoolean("keep_awake",false);}
+            public void setKeepAwake(boolean on){recentPrefs.edit().putBoolean("keep_awake",on).apply();applyKeepAwake();}
+            public boolean dockPinned(){return MainActivity.this.dockPinned();}
+            public void toggleDockPinned(){MainActivity.this.toggleDockPinned();}
+            public boolean cropMargins(){return MainActivity.this.cropMargins();}
+            public void setCropMargins(boolean on){recentPrefs.edit().putBoolean("crop_margins",on).apply();applyCrop();}
+            public boolean darkPage(){return MainActivity.this.darkPage();}
+            public void toggleDarkPage(){MainActivity.this.toggleDarkPage();}
+            public String[] swipeChoices(){return SWIPE_CHOICES;}
+            public int swipeMode(){return MainActivity.this.swipeMode();}
+            public void setSwipeMode(int which){MainActivity.this.setSwipeMode(which);}
+            public String[] animChoices(){return ANIM_CHOICES;}
+            public int pageAnim(){return pageAnimStyle();}
+            public void setPageAnim(int which){MainActivity.this.setPageAnim(which);}
+            public String pendingUpdate(){return pendingUpdateVersion();}
+            public void showAbout(){MainActivity.this.showAbout();}
+            public void showHelp(){MainActivity.this.showHelp();}
+            public void requestTemplate(PaperChoiceView view){MainActivity.this.requestTemplate(view);}
+        });settingsDialog.show();
+    }
     private void showLibrary(){
         onSelectionAdjustStarted();if(store!=null)store.save();if(libraryDialog!=null&&libraryDialog.isShowing())return;
         if(libraryFolder==null||!libraryFolder.isDirectory())libraryFolder=library.root;
@@ -1008,6 +1035,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             public void newNote(File folder,Runnable refresh){createNotebook(folder,refresh);}
             public void changed(File source,File target,boolean moved){if(moved)libraryChanged(source,target);}
             public void selectedFolder(File folder){libraryFolder=folder;}
+            public void settings(){showSettings();}
             public void removed(List<File> files){for(DocumentSession session:new ArrayList<>(sessions))if(files.contains(new File(session.uri.getPath())))closeDocument(session);}
         });libraryDialog.show();
     }
@@ -1029,8 +1057,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void newNotebook(){createNotebook(libraryFolder==null?library.root:libraryFolder,()->{});}
     private void createNotebook(File folder,Runnable refresh){
-        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setSingleLine();name.setHint("노트 이름");name.setText("새 노트");name.setPadding(dp(18),dp(12),dp(18),dp(12));panel.addView(name,new LinearLayout.LayoutParams(-1,dp(56)));PaperChoiceView paper=new PaperChoiceView(this);paper.onTemplateRequest(()->requestTemplate(paper));panel.addView(paper);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("새 노트").setView(panel).setPositiveButton("만들기",null).setNegativeButton("취소",null).create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{String title=NotebookFiles.name(name.getText().toString());NotebookFiles.Paper selected=paper.paper();dialog.getButton(-1).setEnabled(false);new Thread(()->{try{File file=library.createNote(folder,title,selected);runOnUiThread(()->{if(isFinishing()||isDestroyed())return;dialog.dismiss();refresh.run();if(libraryDialog!=null)libraryDialog.dismiss();openPdf(Uri.fromFile(file));toast("마지막 장에서 넘기면 새 페이지가 추가됩니다");});}catch(Exception error){runOnUiThread(()->{dialog.getButton(-1).setEnabled(true);name.setError(error.getMessage());});}},"new-notebook").start();}catch(Exception error){name.setError(error.getMessage());}}));dialog.show();
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setSingleLine();name.setHint("노트 이름");name.setText("새 노트");name.setPadding(dp(18),dp(12),dp(18),dp(12));panel.addView(name,new LinearLayout.LayoutParams(-1,dp(56)));PaperChoiceView.Style style=PaperChoiceView.defaultStyle(recentPrefs);PaperChoiceView paper=new PaperChoiceView(this,style.kind,style.color,style.landscape,true);paper.onTemplateRequest(()->requestTemplate(paper));panel.addView(paper);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("새 노트").setView(panel).setPositiveButton("만들기",null).setNegativeButton("취소",null).setWidth(400).create();dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{String title=NotebookFiles.name(name.getText().toString());NotebookFiles.Paper selected=paper.paper();dialog.getButton(-1).setEnabled(false);new Thread(()->{try{File file=library.createNote(folder,title,selected,paper.landscape());runOnUiThread(()->{if(isFinishing()||isDestroyed())return;dialog.dismiss();refresh.run();if(libraryDialog!=null)libraryDialog.dismiss();openPdf(Uri.fromFile(file));toast("마지막 장에서 넘기면 새 페이지가 추가됩니다");});}catch(Exception error){runOnUiThread(()->{dialog.getButton(-1).setEnabled(true);name.setError(error.getMessage());});}},"new-notebook").start();}catch(Exception error){name.setError(error.getMessage());}}));dialog.show();
     }
     private boolean isNotebook(DocumentSession session){return session!=null&&library.managed(session.uri)&&library.paper(new File(session.uri.getPath()))!=null;}
     private void chooseAddedPage(){choosePageToInsert(renderer==null?0:renderer.getPageCount()-1);}
@@ -2734,7 +2762,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         {"1. 기본 원리",
          "문서 위에 겹쳐 쓰기|필기·하이라이트·메모·도형·사진 같은 모든 기록은 PDF 위에 얹는 별도 ‘주석 층’으로 앱 안에 저장됩니다. 원본 PDF 파일은 바뀌지 않으며, 내보내기를 하면 기록이 합쳐진 새 PDF가 만들어집니다.",
          "자동 저장|기록은 바로 저장되고, 앱을 다시 열면 열어 둔 탭과 마지막 페이지가 복원됩니다.",
-         "문서함|상단 왼쪽 폴더 버튼에서 PDF·노트·Office 문서를 폴더별로 관리합니다. 새 문서는 폴더 버튼 또는 탭 줄의 + 버튼으로 추가합니다.",
+         "문서함|상단 왼쪽 폴더 버튼에서 PDF·노트·Office 문서를 폴더별로 관리합니다. 새 문서는 폴더 버튼 또는 탭 줄의 + 버튼으로 추가합니다. 문서를 길게 누르면 선택 모드가 되어 위쪽 줄에서 이동·공유·삭제·전체 선택을 하고 ⋮에서 이름 변경·복사본 만들기·즐겨찾기를 합니다. 설정은 문서함의 설정 항목(더보기 메뉴 포함)에서 엽니다.",
          "여러 문서|상단 탭으로 문서를 전환하고 × 로 닫습니다. 기록은 문서마다 따로 저장됩니다."},
         {"2. 화면 구성",
          "상단 줄|문서함, 문서 이름, 페이지 미리보기, 검색, 전체 화면, 더보기(⋮) 메뉴가 있습니다.",
@@ -2780,7 +2808,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
          "개요 추가|개요 패널의 ‘＋ 개요 추가’를 누르고 문서의 원하는 위치를 탭한 뒤 제목을 입력합니다. 목록에는 ‘제목 (p19)’ 형식으로 표시되고 탭하면 그 위치로 이동합니다.",
          "관리|목록을 옆으로 밀면 삭제되고, ⋮ 버튼으로 이름 변경·삭제를 할 수 있습니다. 즐겨찾기(별)는 현재 페이지를 표시합니다."},
         {"11. 새 노트와 서식",
-         "새 노트|문서함에서 새 노트를 만들면 종이 서식을 고릅니다. 맨 위에 금감원노트·금감원노트_칸나누기·리갈노트 서식이 있고 기본값은 금감원노트입니다. 백지 · 줄노트(보통·좁게·넓게) · 모눈종이 · 리걸노트 · 점 격자 · 코넬 노트 · 오선지가 있고, 종이 색도 고를 수 있습니다.",
+         "새 노트|문서함에서 새 노트를 만들면 종이 서식을 고릅니다. 맨 위에 금감원노트·금감원노트_칸나누기·리갈노트 서식이 있고 기본값은 금감원노트입니다. 백지 · 줄노트(보통·좁게·넓게) · 모눈종이 · 리걸노트 · 점 격자 · 코넬 노트 · 오선지가 있고, 종이 색도 고를 수 있습니다. 종이는 미리보기 칸에서 바로 고르고, 생성되는 노트는 세로 또는 가로로 만들 수 있습니다. 설정 > 기본 노트 스타일에서 정해 둔 종이·색·방향이 새 노트를 만들 때 가장 먼저 선택되어 있습니다.",
          "내 서식|‘내 PDF·이미지 서식’을 고르면 가지고 있는 PDF의 첫 페이지나 이미지를 모든 페이지의 배경으로 씁니다.",
          "페이지 추가|‘페이지 추가’는 바로 앞 페이지와 같은 크기·방향·서식(백지, 금감원노트 등)의 새 페이지를 붙입니다. 노트의 마지막 장에서 다음으로 넘겨도 같은 페이지가 붙습니다. ‘다른 형식으로 페이지 추가’에서는 다른 종이와 A4 세로·가로 크기를 고를 수 있습니다."},
         {"12. 음성 녹음 · 검색 · 번역",

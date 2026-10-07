@@ -68,13 +68,15 @@ final class NotebookFiles {
     static String pdfName(String title)throws IOException{String valid=name(title);return valid.toLowerCase(Locale.ROOT).endsWith(".pdf")?valid:valid+".pdf";}
     static File unique(File folder,String name)throws IOException{String valid=name(name);File file=new File(folder,valid);int count=1;int dot=valid.lastIndexOf('.');while(file.exists()){String stem=dot>0?valid.substring(0,dot):valid,ext=dot>0?valid.substring(dot):"";file=new File(folder,stem+" ("+(count++)+")"+ext);}return file;}
     static File blank(File folder,String title,int pages)throws IOException{return create(folder,title,pages,new Paper(0,Color.WHITE));}
-    static File create(File folder,String title,int pages,Paper paper)throws IOException{
+    static File create(File folder,String title,int pages,Paper paper)throws IOException{return create(folder,title,pages,paper,false);}
+    /** @param landscape A4 landscape instead of portrait (a form PDF keeps its own page size). */
+    static File create(File folder,String title,int pages,Paper paper,boolean landscape)throws IOException{
         if(pages<1)throw new IOException("페이지 수가 올바르지 않습니다");File target=unique(folder,pdfName(title));File temp=File.createTempFile(".note-",".tmp",folder);
         try(PDDocument pdf=new PDDocument()){
             pdf.getDocumentInformation().setCustomMetadataValue("PDFNoteNotebook","true");
             pdf.getDocumentInformation().setCustomMetadataValue("PDFNotePaper",paper.spec());
             java.util.List<Closeable> open=new java.util.ArrayList<>();
-            try{for(int i=0;i<pages;i++)addPaper(pdf,paper,-1,open);pdf.save(temp);}finally{for(Closeable c:open)try{c.close();}catch(IOException ignored){}}
+            try{for(int i=0;i<pages;i++)addPaper(pdf,paper,-1,open,landscape?new PDRectangle(PDRectangle.A4.getHeight(),PDRectangle.A4.getWidth()):null);pdf.save(temp);}finally{for(Closeable c:open)try{c.close();}catch(IOException ignored){}}
             replace(temp,target);return target;
         }finally{temp.delete();}
     }
