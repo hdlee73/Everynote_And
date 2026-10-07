@@ -90,7 +90,7 @@ jobs:
           if gh release view "$VERSION" >/dev/null 2>&1; then
             gh release upload "$VERSION" "PDF-Note-$VERSION.apk" --clobber
           else
-            gh release create "$VERSION" "PDF-Note-$VERSION.apk" --title "PDF Note $VERSION" --generate-notes --target "$GITHUB_SHA"
+            gh release create "$VERSION" "PDF-Note-$VERSION.apk" --title "PDF Note $VERSION" --notes-file RELEASE_NOTES.md --target "$GITHUB_SHA"
           fi
       - name: Publish test APK (pre-release, signed like the release)
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
