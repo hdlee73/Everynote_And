@@ -45,7 +45,7 @@ public class ReadingToolbarTest {
         page.performClick();screenshot(root,"reading-toolbar.png");
     }
     @Test public void writingToolsFloatAsAStripThatCanBeHidden()throws Exception{
-        View root=field("root");layout(root,360,720);View bar=root.findViewWithTag("reading_toolbar"),read=root.findViewWithTag("read_bar"),write=root.findViewWithTag("writing_toolbar");View strip=(View)write.getParent();
+        View root=field("root");layout(root,360,720);View bar=root.findViewWithTag("reading_toolbar"),read=root.findViewWithTag("read_bar"),write=root.findViewWithTag("writing_toolbar");View strip=write;
         assertEquals(View.VISIBLE,read.getVisibility());assertEquals(View.GONE,strip.getVisibility());assertNull("필기 도구는 하단 막대 밖에 있습니다",description(bar,"펜"));
         description(bar,"필기 모드").performClick();assertEquals("필기 모드에서도 하단 메뉴는 그대로입니다",View.VISIBLE,read.getVisibility());assertEquals(View.VISIBLE,strip.getVisibility());assertEquals("필기 모드에서는 펜이 바로 켜집니다",1,(int)(Integer)field("inkMode"));
         description(root,"펜").performClick();description(root,"형광펜").performClick();assertTrue((Boolean)field("highlightMode"));description(root,"형광펜").performClick();description(root,"지우개").performClick();assertEquals(2,(int)(Integer)field("inkMode"));
