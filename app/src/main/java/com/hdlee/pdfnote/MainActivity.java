@@ -372,7 +372,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             @Override public void onStopTrackingTouch(android.widget.SeekBar b){}});
         row.addView(bar,new LinearLayout.LayoutParams(0,dp(32),1));row.addView(number,new LinearLayout.LayoutParams(dp(42),-2));return row;
     }
-    private TextView sectionLabel(String text){TextView t=new TextView(this);t.setText(text);t.setTextSize(12);t.setTextColor(0xFF8E8E93);t.setPadding(dp(2),dp(10),0,dp(2));return t;}
     /**
      * One tidy panel for the pen and for the highlighter (opened by tapping the tool again): live preview, pen type, thickness,
      * opacity, colours and the on/off options. It replaces the width / colour rows that used to hang under the tool strip.
