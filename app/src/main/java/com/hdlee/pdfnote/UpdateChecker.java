@@ -8,7 +8,7 @@ import org.json.JSONObject;
 
 /** Looks up the newest published release on GitHub (pre-releases such as the PR test builds are ignored by /releases/latest). */
 final class UpdateChecker {
-    static final String API = "https://api.github.com/repos/hdlee73/PDF-Note/releases/latest";
+    static final String API = "https://api.github.com/repos/hdlee73/Everynote_And/releases/latest";
     static final class Release { String version, url, page, notes; }
 
     /** Numeric comparison of dotted versions ("v1.35.0" vs "1.36.0"): >0 when a is newer than b. */
