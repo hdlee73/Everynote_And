@@ -358,14 +358,82 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         previousOverlay.setTranslationX(pane.getLeft());nextOverlay.setTranslationX(pane.getRight()-papers.getWidth());
         float dy=pane.getTop()+pane.getHeight()/2f-papers.getHeight()/2f;previousOverlay.setTranslationY(dy);nextOverlay.setTranslationY(dy);
     }
-    private void showPenMenu(View anchor){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(4),dp(2),0);
-        box.addView(iconSegmented(AnnotationPainter.PEN_NAMES.length,()->inkPen,i->{inkPen=i;pageView.setInkPen(i);recentPrefs.edit().putInt("ink_pen",i).apply();syncOtherTools();},(c,w,h,i)->{
-            AnnotationStore.InkStroke sample=new AnnotationStore.InkStroke();sample.pen=i;sample.color=0xFF1C1C1E;sample.width=i==4?.07f:i==3?.06f:.034f;
-            for(int k=0;k<=12;k++){float x=.18f+.64f*k/12f;sample.points.add(new AnnotationStore.InkPoint(x,.5f+.2f*(float)Math.sin(k/12f*Math.PI*2),k<2||k>10?.5f:.9f));}
-            AnnotationPainter.stroke(c,new RectF(0,0,w,h),sample);}));
-        box.addView(opacityBar(()->Color.alpha(inkColor),a->{inkColor=(a<<24)|(inkColor&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();}));
-        AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box),AnchoredMenu.Row.divider(),new AnchoredMenu.Row("직선",R.drawable.ic_line,()->setInkMode(3)).selected(inkMode==3).tint(inkColor|0xFF000000),new AnchoredMenu.Row("손가락 필기",R.drawable.ic_touch,this::toggleFingerInk).tint(0xFF007AFF).selected(fingerInk)),null);
+    private void showPenMenu(View anchor){showPenPanel(anchor,false);}
+    private void showHighlightMenu(View anchor){showPenPanel(anchor,true);}
+    /** A "name — slider — value" row of the pen panel. */
+    private LinearLayout sliderRow(String name,int min,int max,int value,java.util.function.IntConsumer set,java.util.function.IntFunction<String> text){
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(4),0,0);
+        TextView label=new TextView(this);label.setText(name);label.setTextSize(13);label.setTextColor(0xFF1C1C1E);row.addView(label,new LinearLayout.LayoutParams(dp(48),-2));
+        TextView number=new TextView(this);number.setTextSize(12);number.setTextColor(0xFF636366);number.setGravity(Gravity.END);number.setText(text.apply(value));
+        android.widget.SeekBar bar=new android.widget.SeekBar(this);bar.setMax(max-min);bar.setProgress(value-min);bar.setContentDescription(name);
+        bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            @Override public void onProgressChanged(android.widget.SeekBar b,int progress,boolean user){number.setText(text.apply(progress+min));if(user)set.accept(progress+min);}
+            @Override public void onStartTrackingTouch(android.widget.SeekBar b){}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar b){}});
+        row.addView(bar,new LinearLayout.LayoutParams(0,dp(32),1));row.addView(number,new LinearLayout.LayoutParams(dp(42),-2));return row;
+    }
+    private TextView sectionLabel(String text){TextView t=new TextView(this);t.setText(text);t.setTextSize(12);t.setTextColor(0xFF8E8E93);t.setPadding(dp(2),dp(10),0,dp(2));return t;}
+    /**
+     * One tidy panel for the pen and for the highlighter (opened by tapping the tool again): live preview, pen type, thickness,
+     * opacity, colours and the on/off options. It replaces the width / colour rows that used to hang under the tool strip.
+     */
+    private void showPenPanel(View anchor,boolean hl){
+        final float lo=hl?0.01f:0.0015f,hi=hl?0.06f:0.012f;
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(10),dp(8),dp(10),dp(4));box.setTag("pen_panel");box.setContentDescription(hl?"형광펜 설정":"펜 설정");
+        final View[] previewRef={null};
+        final Runnable redraw=()->{if(previewRef[0]!=null)previewRef[0].invalidate();};
+        TextView title=new TextView(this);title.setText(hl?"형광펜":"펜");title.setTextSize(15);title.setTypeface(Typeface.DEFAULT_BOLD);title.setTextColor(0xFF1C1C1E);title.setPadding(dp(2),0,0,dp(6));box.addView(title);
+        View preview=new View(this){@Override protected void onDraw(Canvas c){
+            float w=getWidth(),h=getHeight();Paint bg=new Paint(Paint.ANTI_ALIAS_FLAG);bg.setColor(0xFFF7F7FA);c.drawRoundRect(new RectF(0,0,w,h),dp(14),dp(14),bg);
+            if(hl){Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(selectedColor);p.setStrokeWidth(Math.min(h-dp(8),Math.max(dp(6),highlightThick*h*3f)));p.setStrokeCap(Paint.Cap.BUTT);c.drawLine(w*.08f,h/2f,w*.92f,h/2f,p);return;}
+            AnnotationStore.InkStroke sample=new AnnotationStore.InkStroke();sample.pen=inkPen;sample.color=inkColor;sample.width=inkWidth*dp(420)/Math.max(1f,w);
+            for(int k=0;k<=24;k++){float x=.08f+.84f*k/24f;sample.points.add(new AnnotationStore.InkPoint(x,.5f+.24f*(float)Math.sin(k/24f*Math.PI*2),k<2||k>22?.5f:.9f));}
+            AnnotationPainter.stroke(c,new RectF(0,0,w,h),sample);}};
+        previewRef[0]=preview;box.addView(preview,new LinearLayout.LayoutParams(-1,dp(56)));
+        if(!hl){
+            box.addView(sectionLabel("펜 종류"));
+            box.addView(iconSegmented(AnnotationPainter.PEN_NAMES.length,()->inkPen,i->{inkPen=i;pageView.setInkPen(i);recentPrefs.edit().putInt("ink_pen",i).apply();syncOtherTools();updateInkButton();redraw.run();},(c,w,h,i)->{
+                AnnotationStore.InkStroke sample=new AnnotationStore.InkStroke();sample.pen=i;sample.color=0xFF1C1C1E;sample.width=i==4?.07f:i==3?.06f:.034f;
+                for(int k=0;k<=12;k++){float x=.18f+.64f*k/12f;sample.points.add(new AnnotationStore.InkPoint(x,.5f+.2f*(float)Math.sin(k/12f*Math.PI*2),k<2||k>10?.5f:.9f));}
+                AnnotationPainter.stroke(c,new RectF(0,0,w,h),sample);}));
+            LinearLayout names=new LinearLayout(this);names.setPadding(dp(4),0,dp(4),0);
+            for(String n:AnnotationPainter.PEN_NAMES){TextView t=new TextView(this);t.setText(n);t.setTextSize(11);t.setTextColor(0xFF8E8E93);t.setGravity(Gravity.CENTER);t.setSingleLine();names.addView(t,new LinearLayout.LayoutParams(0,-2,1));}
+            box.addView(names);
+        }
+        float current=hl?highlightThick:inkWidth;
+        box.addView(sliderRow("굵기",1,100,Math.max(1,Math.min(100,Math.round(1+(current-lo)/(hi-lo)*99))),v->{
+            float f=lo+(hi-lo)*(v-1)/99f;
+            if(hl){highlightThick=f;applyHighlightStyle();}else{inkWidth=f;pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();}
+            redraw.run();},v->String.valueOf(v)));
+        int alpha=Color.alpha(hl?selectedColor:inkColor);
+        box.addView(sliderRow("투명도",10,100,Math.max(10,Math.round(alpha*100f/255f)),v->{
+            int a=Math.max(hl?26:1,Math.round(v*255f/100f));
+            if(hl)setHighlightColor((a<<24)|(selectedColor&0xFFFFFF));else{inkColor=(a<<24)|(inkColor&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();}
+            redraw.run();},v->v+"%"));
+        box.addView(sectionLabel("색상"));
+        if(!hl){
+            java.util.function.IntConsumer pick=c->{inkColor=(inkColor&0xFF000000)|(c&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();redraw.run();};
+            box.addView(swatches(INK_COLORS,()->inkColor|0xFF000000,pick,24));
+            box.addView(swatches(INK_COLORS2,()->inkColor|0xFF000000,pick,24,1));
+        }else{
+            java.util.function.IntSupplier preset=()->{for(int c:HIGHLIGHT_COLORS)if((c&0xFFFFFF)==(selectedColor&0xFFFFFF))return c;return selectedColor;};
+            box.addView(swatches(HIGHLIGHT_COLORS,preset,c->{boolean isPreset=false;for(int p:HIGHLIGHT_COLORS)if(p==c)isPreset=true;setHighlightColor(isPreset?(Color.alpha(selectedColor)<<24)|(c&0xFFFFFF):c);redraw.run();},28,2));
+        }
+        if(!hl){
+            box.addView(sectionLabel("옵션"));
+            box.addView(switchRow("직선 · 시작점에서 끝점까지",inkMode==3,on->setInkMode(on?3:1)));
+            box.addView(switchRow("손가락 필기",fingerInk,on->toggleFingerInk()));
+        }else{
+            box.addView(sectionLabel("모양"));
+            box.addView(segmented(new String[]{"직선","자유형"},()->highlightFree?1:0,i->{highlightFree=i==1;applyHighlightStyle();}));
+        }
+        AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box)),null);
+    }
+    private LinearLayout switchRow(String label,boolean on,java.util.function.Consumer<Boolean> changed){
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(2),dp(2),0,dp(2));
+        TextView text=new TextView(this);text.setText(label);text.setTextSize(13);text.setTextColor(0xFF1C1C1E);row.addView(text,new LinearLayout.LayoutParams(0,-2,1));
+        android.widget.Switch toggle=new android.widget.Switch(this);toggle.setChecked(on);toggle.setContentDescription(label);toggle.setOnCheckedChangeListener((b,checked)->changed.accept(checked));
+        row.addView(toggle,new LinearLayout.LayoutParams(-2,-2));row.setOnClickListener(v->toggle.toggle());return row;
     }
     private boolean highlightFree;private float highlightThick=0.022f;
     /** Highlighter colour incl. its opacity; the opacity is remembered for the next session (new strokes only, old marks keep theirs). */
@@ -377,26 +445,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(!writeMode)setWriteMode(true);
         eraserTap(anchor);
     }
-    private static final float[] HL_THICK={.012f,.022f,.034f,.05f};
-    /** Width step (0-3) shared by the pen and the highlighter: whichever of the two is in use is changed. */
-    private int sharedWidthIndex(){if(!highlightMode)return widthIndex();int best=0;for(int i=1;i<HL_THICK.length;i++)if(Math.abs(HL_THICK[i]-highlightThick)<Math.abs(HL_THICK[best]-highlightThick))best=i;return best;}
-    private void setSharedWidth(int i){if(highlightMode){highlightThick=HL_THICK[i];applyHighlightStyle();}else{inkWidth=INK_WIDTHS[i];pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();}}
-    /** The width and colour rows under the pen strip; one set of controls for the pen and the highlighter (the palette follows the tool in use). */
-    private void updateInkOptions(){
-        if(inkOptions==null)return;boolean hl=highlightMode,pen=!hl&&(inkMode==1||inkMode==3)&&writeMode;int kind=hl?2:pen?1:0;
-        if(kind==inkOptionsKind)return;inkOptionsKind=kind;inkOptions.removeAllViews();
-        if(kind==0){inkOptions.setVisibility(View.GONE);positionTopTools();return;}
-        inkOptions.addView(iconSegmented(INK_WIDTHS.length,this::sharedWidthIndex,this::setSharedWidth,(c,w,h,i)->{Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(0xFF1C1C1E);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeWidth(getResources().getDisplayMetrics().density*(1.2f+i*1.9f));c.drawLine(w*.22f,h/2f,w*.78f,h/2f,p);}));
-        if(kind==1){
-            java.util.function.IntConsumer pickInk=c->{inkColor=(inkColor&0xFF000000)|(c&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();};
-            inkOptions.addView(swatches(INK_COLORS,()->inkColor|0xFF000000,pickInk,22));
-            inkOptions.addView(swatches(INK_COLORS2,()->inkColor|0xFF000000,pickInk,22,1));
-        }else{
-            java.util.function.IntSupplier preset=()->{for(int c:HIGHLIGHT_COLORS)if((c&0xFFFFFF)==(selectedColor&0xFFFFFF))return c;return selectedColor;};
-            inkOptions.addView(swatches(HIGHLIGHT_COLORS,preset,c->{boolean isPreset=false;for(int h:HIGHLIGHT_COLORS)if(h==c)isPreset=true;setHighlightColor(isPreset?(Color.alpha(selectedColor)<<24)|(c&0xFFFFFF):c);},30,2));
-        }
-        inkOptions.setVisibility(View.VISIBLE);positionTopTools();
-    }
+    /** The strip keeps only the tools; width, opacity, colour and pen type live in the pen panel (showPenPanel). */
+    private void updateInkOptions(){if(inkOptions!=null&&inkOptions.getVisibility()!=View.GONE){inkOptions.setVisibility(View.GONE);positionTopTools();}}
     private void eraserTap(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
         if(inkMode==2&&!highlightMode)showEraserMenu(anchor);else setInkMode(2);
@@ -428,13 +478,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void setEraserRadius(float dp){recentPrefs.edit().putFloat("eraser_radius",dp).apply();for(PdfPageView v:paneViews)if(v!=null)v.setEraserRadius(dp);}
     private void applyHighlightStyle(){pageView.setHighlightStyle(highlightFree,highlightThick);syncOtherTools();}
-    private void showHighlightMenu(View anchor){
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(6),dp(2),0);
-        box.addView(opacityBar(()->Color.alpha(selectedColor),a->setHighlightColor((a<<24)|(selectedColor&0xFFFFFF))));
-        AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box),AnchoredMenu.Row.divider(),
-            new AnchoredMenu.Row("직선",R.drawable.ic_line,()->{highlightFree=false;applyHighlightStyle();}).selected(!highlightFree).tint(selectedColor|0xFF000000),
-            new AnchoredMenu.Row("자유형",R.drawable.ic_curve,()->{highlightFree=true;applyHighlightStyle();}).selected(highlightFree).tint(selectedColor|0xFF000000)),null);
-    }
     private void showViewMenu(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
         List<AnchoredMenu.Row> rows=AnchoredMenu.rows(
@@ -2214,17 +2257,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         return line;
     }
     private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose){return swatches(colors,current,choose,32);}
-    /** A "투명도 NN%" slider (10-100%) for colours that carry their own alpha. */
-    private LinearLayout opacityBar(java.util.function.IntSupplier alpha,java.util.function.IntConsumer set){
-        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(2),dp(8),dp(4));
-        TextView label=new TextView(this);label.setTextSize(12);label.setTextColor(0xFF8E8E93);label.setText("투명도 "+Math.round(alpha.getAsInt()*100f/255f)+"%");row.addView(label,new LinearLayout.LayoutParams(dp(72),-2));
-        android.widget.SeekBar bar=new android.widget.SeekBar(this);bar.setMax(90);bar.setProgress(Math.max(0,Math.round(alpha.getAsInt()*100f/255f)-10));
-        bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
-            @Override public void onProgressChanged(android.widget.SeekBar b,int value,boolean user){int percent=value+10;label.setText("투명도 "+percent+"%");if(user)set.accept(Math.round(percent*255f/100f));}
-            @Override public void onStartTrackingTouch(android.widget.SeekBar b){}
-            @Override public void onStopTrackingTouch(android.widget.SeekBar b){}});
-        row.addView(bar,new LinearLayout.LayoutParams(0,dp(32),1));return row;
-    }
     private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose,int size){return swatches(colors,current,choose,size,0);}
     /** @param more 0 = presets only, 1 = adds a rainbow chip that opens the free colour chooser, 2 = the same with an opacity slider */
     private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose,int size,int more){

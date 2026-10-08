@@ -49,8 +49,8 @@ public class ReadingToolbarTest {
         assertEquals(View.VISIBLE,read.getVisibility());assertEquals(View.GONE,strip.getVisibility());assertNull("필기 도구는 하단 막대 밖에 있습니다",description(bar,"펜"));
         description(bar,"필기 모드").performClick();assertEquals("필기 모드에서도 하단 메뉴는 그대로입니다",View.VISIBLE,read.getVisibility());assertEquals(View.VISIBLE,strip.getVisibility());assertEquals("필기 모드에서는 펜이 바로 켜집니다",1,(int)(Integer)field("inkMode"));
         assertNotNull("지우개는 필기 모드 옆 하단 메뉴에 있습니다",description(bar,"지우개"));View options=root.findViewWithTag("ink_options");
-        layout(root,360,720);assertEquals("펜을 쓰는 동안 굵기·색 줄이 필기 도구 줄 아래에 나옵니다",View.VISIBLE,options.getVisibility());assertNotNull(description(options,"굵기 1"));assertNotNull(description(options,"색상 1"));
-        description(root,"펜").performClick();description(root,"형광펜").performClick();assertTrue((Boolean)field("highlightMode"));layout(root,360,720);assertEquals("형광펜도 같은 굵기·색 줄을 씁니다",View.VISIBLE,options.getVisibility());assertNotNull(description(options,"굵기 4"));description(options,"굵기 4").performClick();assertEquals(.05f,(Float)field("highlightThick"),.0001f);
+        layout(root,360,720);assertEquals("굵기·색은 필기 도구 줄 아래가 아니라 펜 설정 패널에 있습니다",View.GONE,options.getVisibility());
+        description(root,"펜").performClick();description(root,"형광펜").performClick();assertTrue((Boolean)field("highlightMode"));layout(root,360,720);assertEquals("형광펜에도 줄이 생기지 않습니다",View.GONE,options.getVisibility());
         description(root,"형광펜").performClick();description(bar,"지우개").performClick();assertEquals(2,(int)(Integer)field("inkMode"));assertEquals("지우개에는 굵기·색 줄이 없습니다",View.GONE,options.getVisibility());
         description(bar,"필기 모드").performClick();assertEquals("한 번 더 누르면 필기 도구 줄이 숨습니다",View.GONE,strip.getVisibility());assertTrue((Boolean)field("writeMode"));
         description(bar,"필기 모드").performClick();assertEquals(View.VISIBLE,strip.getVisibility());
