@@ -360,7 +360,7 @@ final class AnnotationStore {
         JSONObject root=new JSONObject(json);
         String format=root.optString("format");
         if(!format.equals("PDF Note annotations v1")&&!format.equals("PDF Note annotations v2"))
-            throw new JSONException("PDF Note 주석 백업이 아닙니다");
+            throw new JSONException("Everynote 주석 백업이 아닙니다");
         AnnotationStore temporary=new AnnotationStore();
         JSONArray a=root.getJSONArray("marks"), b=root.getJSONArray("bookmarks"), o=root.getJSONArray("outlines"),
             s=root.getJSONArray("strokes"), t=root.getJSONArray("translations");
