@@ -64,9 +64,9 @@ final class AnchoredMenu {
         GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.WHITE); bg.setCornerRadius(18 * density); bg.setStroke(Math.max(1, Math.round(density * .5f)), 0x14000000); card.setBackground(bg);
         card.setPadding(Math.round(6 * density), Math.round(6 * density), Math.round(6 * density), Math.round(6 * density)); card.setElevation(12 * density);
         LinearLayout list = new LinearLayout(context); list.setOrientation(LinearLayout.VERTICAL);
-        boolean wide = false;
+        boolean wide = false, panel = false;
         for (final Row row : rows) {
-            if (row.custom != null) { list.addView(row.custom, new LinearLayout.LayoutParams(-1, -2)); wide = true; continue; }
+            if (row.custom != null) { list.addView(row.custom, new LinearLayout.LayoutParams(-1, -2)); wide = true; panel |= "pen_panel".equals(row.custom.getTag()); continue; }
             if (row.divider) { View line = new View(context); line.setBackgroundColor(LINE); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, Math.round(density * .5f))); lp.setMargins(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(4 * density)); list.addView(line, lp); continue; }
             LinearLayout line = new LinearLayout(context); line.setGravity(Gravity.CENTER_VERTICAL); line.setPadding(Math.round(12 * density), Math.round(4 * density), Math.round(12 * density), Math.round(4 * density)); line.setMinimumHeight(Math.round(42 * density)); line.setContentDescription(row.label);
             if (row.icon != 0) { ImageView glyph = new ImageView(context); glyph.setImageResource(row.icon); glyph.setColorFilter(row.danger ? RED : row.tint != 0 ? row.tint : ACCENT); LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(Math.round(20 * density), Math.round(20 * density)); gp.rightMargin = Math.round(12 * density); line.addView(glyph, gp); }
@@ -108,7 +108,7 @@ final class AnchoredMenu {
             }
             card.addView(icons, new LinearLayout.LayoutParams(-1, Math.round(44 * density)));
         }
-        float natural = Math.min(screenW - 24 * density, (wide ? 268 : 250) * density);
+        float natural = Math.min(screenW - 24 * density, (panel ? 304 : wide ? 268 : 250) * density);
         boolean sideRight = true;
         final android.graphics.Rect bar = verticalBar(anchor);
         if (beside && avoid != null) {
