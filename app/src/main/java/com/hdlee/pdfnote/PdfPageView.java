@@ -462,6 +462,8 @@ final class PdfPageView extends View {
     /** side -1 = left page (aligned to its right edge), 1 = right page (aligned to its left edge), 0 = single page centred. In a spread
      * scale/panX/panY are one shared transform of the whole spread (in the parent's coordinates), mirrored to the partner page. */
     @Override public void invalidate() { super.invalidate(); if (spreadSide != 0 && getParent() instanceof View) ((View) getParent()).invalidate(); }   // a zoomed spread page may draw past its own half
+    /** Back to a plain, unzoomed single page view (used when a split screen ends and the pane is reused for a spread). */
+    void resetPaneState() { spreadSide = 0; partner = null; scale = 1f; panX = panY = 0f; applyBackground(); invalidate(); }
     void setSpread(int side, PdfPageView other) { spreadSide = other == null ? 0 : side; partner = other; applyBackground(); invalidate(); }
     private AnnotationStore.PageElement linkHit; private boolean linkLongFired;
     private final Runnable linkLongPress = () -> { if (linkHit != null) { linkLongFired = true; AnnotationStore.PageElement hit = linkHit; performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); PdfPageView.this.listener.onHyperlinkTapped(hit, true); } };
