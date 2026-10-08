@@ -37,6 +37,28 @@ import java.io.*;
 import java.util.*;
 
 public class MainActivity extends Activity implements PdfPageView.Listener {
+    /** The page area: a plain two-page row, or (split view) a grid of 2 to 4 panes placed by {@link #paneRect}. A touch goes to the pane under the finger. */
+    private final class PaneLayout extends LinearLayout{
+        PdfPageView routed;boolean grid;
+        PaneLayout(Context c){super(c);}
+        @Override protected void onMeasure(int w,int h){
+            if(!grid){super.onMeasure(w,h);return;}
+            int pw=MeasureSpec.getSize(w),ph=MeasureSpec.getSize(h);setMeasuredDimension(pw,ph);
+            for(int i=0;i<getChildCount();i++){View c=getChildAt(i);if(c.getVisibility()==View.GONE)continue;int[] r=paneRect(i,pw,ph);c.measure(MeasureSpec.makeMeasureSpec(Math.max(0,r[2]-r[0]),MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(Math.max(0,r[3]-r[1]),MeasureSpec.EXACTLY));}
+        }
+        @Override protected void onLayout(boolean changed,int l,int t,int r,int b){
+            if(!grid){super.onLayout(changed,l,t,r,b);return;}
+            for(int i=0;i<getChildCount();i++){View c=getChildAt(i);if(c.getVisibility()==View.GONE)continue;int[] rc=paneRect(i,r-l,b-t);c.layout(rc[0],rc[1],rc[2],rc[3]);}
+        }
+        @Override public boolean dispatchTouchEvent(MotionEvent e){
+            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){routed=null;if(splitMode&&renderer!=null){PdfPageView hitPane=paneAt(e.getX(),e.getY());if(hitPane!=null)splitFocusView(hitPane);}
+                if(twoPage&&secondPageView.getVisibility()==View.VISIBLE&&firstPageView.getMatrix().isIdentity()&&secondPageView.getMatrix().isIdentity()){PdfPageView under=e.getX()<secondPageView.getLeft()?firstPageView:secondPageView;
+                    for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView}){RectF r=v.pageRect();r.offset(v.getLeft(),v.getTop());if(r.contains(e.getX(),e.getY())){if(v!=under)routed=v;break;}}}}
+            if(routed==null)return super.dispatchTouchEvent(e);
+            MotionEvent c=MotionEvent.obtain(e);c.offsetLocation(-routed.getLeft(),-routed.getTop());boolean handled=routed.dispatchTouchEvent(c);c.recycle();
+            if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL)routed=null;return handled;
+        }
+    }
     private final class PageListener implements PdfPageView.Listener {
         PdfPageView view;
         private void active(){if(splitMode&&view!=null&&renderer!=null){splitFocusView(view);return;}if(view!=null&&renderer!=null&&pageView!=view){pageView=view;currentPage=view.getPageNumber();activeSession.page=currentPage;updateBookmarkButton();refreshStudyPanel();}}
@@ -82,8 +104,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private boolean verticalPageSwipe;
     private boolean fingerInk,swipeEnabled;
     private HwpConversion hwpConversion;
-    private final List<DocumentSession> sessions=new ArrayList<>(); private DocumentSession activeSession; private boolean splitMode,twoPageBeforeSplit; private DocumentSession splitLeft,splitRight;
-    private float splitRatio=.5f; private View splitDivider; private ImageButton splitButton; private LinearLayout splitBar; private TextView[] paneChip=new TextView[2]; private View papersView; private DocumentSession splitWantedSession; private long splitWantedAt;
+    private final List<DocumentSession> sessions=new ArrayList<>(); private DocumentSession activeSession; private boolean splitMode,twoPageBeforeSplit;
+    private final PdfPageView[] paneViews=new PdfPageView[4]; private final DocumentSession[] paneSessions=new DocumentSession[4]; private int paneCount,splitLayout; private float[] splitCols={1f},splitRows={1f}; private final List<View> splitDividers=new ArrayList<>(); private PaneLayout papersLayout;
+    private ImageButton splitButton; private FrameLayout splitBar; private final TextView[] paneChip=new TextView[4]; private View papersView; private DocumentSession splitWantedSession; private long splitWantedAt; private boolean paneWanted; private long paneWantedAt;
     private LinearLayout tabRow,thumbnailList; private HorizontalScrollView tabStrip; private ScrollView thumbnailPanel;
     private int thumbnailGeneration; private boolean sidebarVisible;
     private int inkMode,inkPen,inkColor=0xFF1C1C1E; private float inkWidth=0.004f;
@@ -210,18 +233,10 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             }
         };viewportLayer=viewport;installDrop(viewport);
         // two-page spread: the pages touch at the seam and a zoomed page may reach into the other half, so a gesture goes to the page under the finger (not the half)
-        LinearLayout papers=new LinearLayout(this){PdfPageView routed;
-            @Override public boolean dispatchTouchEvent(MotionEvent e){
-                if(e.getActionMasked()==MotionEvent.ACTION_DOWN){routed=null;if(splitMode&&renderer!=null)splitFocusView(e.getX()<secondPageView.getLeft()?firstPageView:secondPageView);
-                    if(twoPage&&secondPageView.getVisibility()==View.VISIBLE&&firstPageView.getMatrix().isIdentity()&&secondPageView.getMatrix().isIdentity()){PdfPageView under=e.getX()<secondPageView.getLeft()?firstPageView:secondPageView;
-                        for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView}){RectF r=v.pageRect();r.offset(v.getLeft(),v.getTop());if(r.contains(e.getX(),e.getY())){if(v!=under)routed=v;break;}}}}
-                if(routed==null)return super.dispatchTouchEvent(e);
-                MotionEvent c=MotionEvent.obtain(e);c.offsetLocation(-routed.getLeft(),-routed.getTop());boolean handled=routed.dispatchTouchEvent(c);c.recycle();
-                if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL)routed=null;return handled;
-            }};papers.setClipChildren(false);papers.setMotionEventSplittingEnabled(false);
+        PaneLayout papers=new PaneLayout(this);papersLayout=papers;papers.setClipChildren(false);papers.setMotionEventSplittingEnabled(false);
         PageListener firstListener=new PageListener(),secondListener=new PageListener();
         firstPageView=new PdfPageView(this,firstListener);secondPageView=new PdfPageView(this,secondListener);firstListener.view=firstPageView;secondListener.view=secondPageView;pageView=firstPageView;
-        firstPageView.setPageDrag(pageDragHandler);secondPageView.setPageDrag(pageDragHandler);papers.addView(firstPageView,new LinearLayout.LayoutParams(0,-1,1));papers.addView(secondPageView,new LinearLayout.LayoutParams(0,-1,1));secondPageView.setVisibility(twoPage?View.VISIBLE:View.GONE);viewport.addView(papers,new FrameLayout.LayoutParams(-1,-1));papersView=papers;buildSplitBar(viewport);installSplitChrome(viewport,papers);
+        firstPageView.setPageDrag(pageDragHandler);secondPageView.setPageDrag(pageDragHandler);papers.addView(firstPageView,new LinearLayout.LayoutParams(0,-1,1));papers.addView(secondPageView,new LinearLayout.LayoutParams(0,-1,1));paneViews[0]=firstPageView;paneViews[1]=secondPageView;for(int pi=2;pi<4;pi++){PageListener pl=new PageListener();PdfPageView pv=new PdfPageView(this,pl);pl.view=pv;pv.setPageDrag(pageDragHandler);pv.setVisibility(View.GONE);paneViews[pi]=pv;papers.addView(pv,new LinearLayout.LayoutParams(0,-1,1));}secondPageView.setVisibility(twoPage?View.VISIBLE:View.GONE);viewport.addView(papers,new FrameLayout.LayoutParams(-1,-1));papersView=papers;buildSplitBar(viewport);installSplitChrome(viewport,papers);
         previousOverlay=icon(R.drawable.ic_chevron_left,"이전 페이지",NAVY,v->animatePage(-1));nextOverlay=icon(R.drawable.ic_chevron_right,"다음 페이지",NAVY,v->animatePage(1));
         ImageButton[] arrows={previousOverlay,nextOverlay};for(int i=0;i<arrows.length;i++){ImageButton arrow=arrows[i];arrow.setBackground(round(0xE6F7F5FF,26));arrow.setAlpha(0.38f);arrow.setElevation(dp(3));FrameLayout.LayoutParams ap=new FrameLayout.LayoutParams(dp(52),dp(52),Gravity.CENTER_VERTICAL|(i==0?Gravity.START:Gravity.END));ap.setMargins(dp(8),0,dp(8),0);viewport.addView(arrow,ap);}
         zoomPanel=new LinearLayout(this);zoomPanel.setTag("zoom_panel");zoomPanel.setOrientation(LinearLayout.VERTICAL);zoomPanel.setGravity(Gravity.CENTER_HORIZONTAL);zoomPanel.setBackground(round(0xF2FFFFFF,22));zoomPanel.setElevation(dp(4));zoomPanel.setPadding(0,dp(2),0,dp(2));
@@ -334,13 +349,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void updateSplitChrome(){
         if(paneFrame==null||firstPageView==null||previousOverlay==null)return;
-        PdfPageView pane=pageView==secondPageView?secondPageView:firstPageView;
-        positionTopTools();positionSplitDivider();
-        if(!splitMode||pane.getWidth()<=0){paneFrame.setVisibility(View.GONE);previousOverlay.setTranslationX(0);nextOverlay.setTranslationX(0);return;}
+        PdfPageView pane=pageView==null?firstPageView:pageView;
+        positionTopTools();positionSplitDividers();positionPaneChips();
+        if(!splitMode||pane.getWidth()<=0){paneFrame.setVisibility(View.GONE);previousOverlay.setTranslationX(0);nextOverlay.setTranslationX(0);previousOverlay.setTranslationY(0);nextOverlay.setTranslationY(0);return;}
         FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)paneFrame.getLayoutParams();
         if(lp.width!=pane.getWidth()||lp.height!=pane.getHeight()){lp.width=pane.getWidth();lp.height=pane.getHeight();paneFrame.setLayoutParams(lp);}
         View papers=(View)pane.getParent();paneFrame.setTranslationX(papers.getLeft()+pane.getLeft());paneFrame.setTranslationY(papers.getTop()+pane.getTop());paneFrame.setVisibility(View.VISIBLE);
         previousOverlay.setTranslationX(pane.getLeft());nextOverlay.setTranslationX(pane.getRight()-papers.getWidth());
+        float dy=pane.getTop()+pane.getHeight()/2f-papers.getHeight()/2f;previousOverlay.setTranslationY(dy);nextOverlay.setTranslationY(dy);
     }
     private void showPenMenu(View anchor){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(4),dp(2),0);
@@ -403,14 +419,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         clearAll.setOnClickListener(v->{if(menu[0]!=null)menu[0].dismiss();confirmClearPage();});
         menu[0]=AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box)),null);
     }
-    private void setEraserPartial(boolean partial){recentPrefs.edit().putBoolean("eraser_partial",partial).apply();firstPageView.setEraserPartial(partial);secondPageView.setEraserPartial(partial);toast(partial?"부분 지우기 · 지우개가 닿은 부분만 지웁니다":"획 지우기 · 지우개가 닿은 획 전체를 지웁니다");}
+    private void setEraserPartial(boolean partial){recentPrefs.edit().putBoolean("eraser_partial",partial).apply();for(PdfPageView v:paneViews)if(v!=null)v.setEraserPartial(partial);toast(partial?"부분 지우기 · 지우개가 닿은 부분만 지웁니다":"획 지우기 · 지우개가 닿은 획 전체를 지웁니다");}
     /** Clears all ink and highlights of the page being shown, after asking. */
     private void confirmClearPage(){
         if(renderer==null||pageView==null)return;final PdfPageView target=pageView;final int number=target.getPageNumber();
         new AlertDialog.Builder(this).setTitle("페이지 전체 지우기").setMessage((number+1)+"페이지의 모든 필기와 형광펜을 지웁니다. 계속할까요?\n(지운 직후에는 ‘실행 취소’로 되살릴 수 있습니다)")
             .setPositiveButton("전체 지우기",(d,w)->{if(target.clearPageInk()){DocumentSession ds=activeSession;if(ds!=null){ds.clearedStrokes.clear();ds.clearedStrokes.addAll(target.clearedStrokes);ds.clearedMarks.clear();ds.clearedMarks.addAll(target.clearedMarks);ds.clearedPage=number;}toast("페이지를 지웠습니다");}else toast("지울 필기가 없습니다");}).setNegativeButton("취소",null).show();
     }
-    private void setEraserRadius(float dp){recentPrefs.edit().putFloat("eraser_radius",dp).apply();firstPageView.setEraserRadius(dp);secondPageView.setEraserRadius(dp);}
+    private void setEraserRadius(float dp){recentPrefs.edit().putFloat("eraser_radius",dp).apply();for(PdfPageView v:paneViews)if(v!=null)v.setEraserRadius(dp);}
     private void applyHighlightStyle(){pageView.setHighlightStyle(highlightFree,highlightThick);syncOtherTools();}
     private void showHighlightMenu(View anchor){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(6),dp(2),0);
@@ -621,12 +637,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         new Thread(()->{try{File saved=library.importPdf(source,title,destination);runOnUiThread(()->{importing.remove(source.toString());if(isFinishing()||isDestroyed())return;if(progress!=null)progress.dismiss();openPdf(Uri.fromFile(saved),false,page,activate);if(announce)toast("문서함에 자동 저장했습니다");saveSessionState();});}catch(Exception error){runOnUiThread(()->{importing.remove(source.toString());if(isFinishing()||isDestroyed())return;if(progress!=null)progress.dismiss();toast("가져오기 실패: "+error.getMessage());});}},"library-import").start();
     }
     private void switchDocument(DocumentSession s){switchDocumentNow(s);consumeSplitWanted(s);}
-    private void switchDocumentNow(DocumentSession s){if(splitMode){splitAssign(s);return;}commitInlineText();if(searchOwner!=null&&searchOwner!=s)closeSearch();library.opened(s.uri);if(activeSession!=null)activeSession.page=currentPage;activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);highlightMode=memoMode=outlineMode=false;inkMode=0;pageView.setLassoMode(false);pageView.stopTextSelection();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setInkTool(0,inkColor,inkWidth);updateToolStates();updateInkButton();updateTabs();showPage(Math.min(s.page,renderer.getPageCount()-1));rebuildThumbnails();saveSessionState();}
-    private void closeDocument(DocumentSession s){if(splitMode&&(s==splitLeft||s==splitRight))exitSplit();commitInlineText();if(s==searchOwner)closeSearch();int oldIndex=sessions.indexOf(s);sessions.remove(s);if(s.renderer!=null)s.renderer.close();if(s.descriptor!=null)try{s.descriptor.close();}catch(IOException ignored){}if(s.officePreview!=null)s.officePreview.delete();if(s==activeSession){activeSession=null;if(sessions.isEmpty()){renderer=null;descriptor=null;documentUri=null;store=null;firstPageView.clearPage();secondPageView.clearPage();thumbnailList.removeAllViews();refreshStudyPanel();updateTabs();showWelcome();}else switchDocument(sessions.get(Math.max(0,Math.min(oldIndex,sessions.size()-1))));}else updateTabs();saveSessionState();}
+    private void switchDocumentNow(DocumentSession s){if(splitMode){if(consumePaneWanted(s))return;splitAssign(s);return;}commitInlineText();if(searchOwner!=null&&searchOwner!=s)closeSearch();library.opened(s.uri);if(activeSession!=null)activeSession.page=currentPage;activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);highlightMode=memoMode=outlineMode=false;inkMode=0;pageView.setLassoMode(false);pageView.stopTextSelection();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setInkTool(0,inkColor,inkWidth);updateToolStates();updateInkButton();updateTabs();showPage(Math.min(s.page,renderer.getPageCount()-1));rebuildThumbnails();saveSessionState();}
+    private void closeDocument(DocumentSession s){if(splitMode&&paneIndex(s)>=0)removePane(paneIndex(s));commitInlineText();if(s==searchOwner)closeSearch();int oldIndex=sessions.indexOf(s);sessions.remove(s);if(s.renderer!=null)s.renderer.close();if(s.descriptor!=null)try{s.descriptor.close();}catch(IOException ignored){}if(s.officePreview!=null)s.officePreview.delete();if(s==activeSession){activeSession=null;if(sessions.isEmpty()){renderer=null;descriptor=null;documentUri=null;store=null;firstPageView.clearPage();secondPageView.clearPage();thumbnailList.removeAllViews();refreshStudyPanel();updateTabs();showWelcome();}else switchDocument(sessions.get(Math.max(0,Math.min(oldIndex,sessions.size()-1))));}else updateTabs();saveSessionState();}
     private void updateTabs(){
         updateSplitBar();tabRow.removeAllViews();View activeTab=null;
         for(DocumentSession session:sessions){
-            boolean active=session==activeSession,paired=splitMode&&(session==splitLeft||session==splitRight);LinearLayout chip=new LinearLayout(this);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(8),0,dp(0),0);chip.setTag("document_tab");
+            boolean active=session==activeSession,paired=splitMode&&paneIndex(session)>=0;LinearLayout chip=new LinearLayout(this);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(8),0,dp(0),0);chip.setTag("document_tab");
             GradientDrawable background=round(active?Color.WHITE:0xFFF2F2F7,14);background.setStroke(dp(1),active?0xFFC7C7CC:paired?ACCENT:0xFFE5E5EA);chip.setBackground(background);chip.setElevation(active?dp(2):0);
             ImageView documentIcon=new ImageView(this);documentIcon.setImageResource(R.drawable.ic_document_tab);documentIcon.setColorFilter(active?ACCENT:0xFFAEAEB2);chip.addView(documentIcon,new LinearLayout.LayoutParams(dp(20),dp(20)));
             TextView name=new TextView(this){@Override protected void onLayout(boolean changed,int l,int t,int r,int b){super.onLayout(changed,l,t,r,b);scrollTo(0,0);}};
@@ -656,14 +672,53 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         loadViewText(firstPageView);if(twoPage&&secondPageView.getVisibility()==View.VISIBLE)loadViewText(secondPageView);
     }
     private void loadViewText(PdfPageView view){List<PdfPageView.TextRegion> cached=activeSession.textRegions.get(view.getPageNumber());if(cached!=null)view.setTextRegions(cached,false);else view.post(()->recognizeViewText(view,false));}
-    private void syncOtherTools(){if(firstPageView!=null&&secondPageView!=null){PdfPageView other=pageView==firstPageView?secondPageView:firstPageView;other.copyToolsFrom(pageView);}}
-    /** Split view: two open documents side by side; the pane touched last is the active one (its document, page and tools drive the toolbar). */
+    private void syncOtherTools(){if(pageView==null)return;for(PdfPageView v:paneViews)if(v!=null&&v!=pageView)v.copyToolsFrom(pageView);}
+    // ---------------------------------------------------------------- split view: 2 to 4 open documents at once (left/right, top/bottom, 2x2)
+    // Page views are slot-fixed: paneViews[i] is the i-th pane on screen and shows paneSessions[i]. The pane touched last is the active one
+    // (pageView / activeSession / ... follow it). splitLayout: 0 = side by side, 1 = stacked, 2 = grid (3 panes: one wide on top and two below, 4 panes: 2 x 2).
+    private static final int MAX_PANES=4;
+    private int paneIndex(PdfPageView v){for(int i=0;i<paneCount;i++)if(paneViews[i]==v)return i;return -1;}
+    private int paneIndex(DocumentSession s){for(int i=0;i<paneCount;i++)if(paneSessions[i]==s)return i;return -1;}
+    private int activePane(){int i=paneIndex(pageView);return i<0?0:i;}
+    private int clampPage(DocumentSession s){return Math.max(0,Math.min(s.page,s.renderer.getPageCount()-1));}
+    private int normLayout(int layout,int n){return layout==1?1:(layout==2&&n>=3?2:0);}
+    private int trackCols(int layout,int n){return layout==1?1:layout==2?2:n;}
+    private int trackRows(int layout,int n){return layout==1?n:layout==2?2:1;}
+    /** {column, row, column span} of pane i (0-based) */
+    private int[] paneCell(int layout,int n,int i){
+        if(layout==1)return new int[]{0,i,1};
+        if(layout==2)return n==3?(i==0?new int[]{0,0,2}:new int[]{i-1,1,1}):new int[]{i%2,i/2,1};
+        return new int[]{i,0,1};
+    }
+    private float[] equalSizes(int k){float[] a=new float[k];Arrays.fill(a,1f/k);return a;}
+    private float[] sizePair(float r){r=Math.min(.85f,Math.max(.15f,r));return new float[]{r,1-r};}
+    private void resetSplitSizes(){
+        int c=trackCols(splitLayout,paneCount),r=trackRows(splitLayout,paneCount);
+        splitCols=c==2?sizePair(recentPrefs.getFloat("split_ratio",.5f)):equalSizes(c);splitRows=r==2?sizePair(recentPrefs.getFloat("split_vratio",.5f)):equalSizes(r);
+    }
+    /** {start,end} pixel pairs of the tracks along a length with 4 dp gaps between them */
+    private int[] trackEdges(float[] sizes,int len){
+        int gap=dp(4),k=sizes.length;float total=Math.max(0,len-gap*(k-1)),pos=0;int[] e=new int[k*2];
+        for(int i=0;i<k;i++){e[i*2]=Math.round(pos);pos+=sizes[i]*total;e[i*2+1]=i==k-1?len:Math.round(pos);pos+=gap;}
+        return e;
+    }
+    /** {left,top,right,bottom} of pane i inside the papers area of the given size */
+    private int[] paneRect(int i,int w,int h){
+        if(i>=paneCount)return new int[]{0,0,0,0};
+        int[] cell=paneCell(splitLayout,paneCount,i),ce=trackEdges(splitCols,w),re=trackEdges(splitRows,h);int last=cell[0]+cell[2]-1;
+        return new int[]{ce[cell[0]*2],re[cell[1]*2],ce[last*2+1],re[cell[1]*2+1]};
+    }
+    private PdfPageView paneAt(float x,float y){
+        for(int i=0;i<paneCount;i++){PdfPageView v=paneViews[i];if(v.getVisibility()==View.VISIBLE&&x>=v.getLeft()&&x<v.getRight()&&y>=v.getTop()&&y<v.getBottom())return v;}
+        return null;
+    }
+    /** Split view: open documents side by side; the pane touched last is the active one (its document, page and tools drive the toolbar). */
     private void toggleSplit(){
         if(splitMode){exitSplit();toast("분할 보기를 종료했습니다");return;}
         if(activeSession==null||renderer==null){toast("문서를 먼저 여세요");return;}
         List<DocumentSession> others=new ArrayList<>(sessions);others.remove(activeSession);
         if(others.isEmpty()){
-            new AlertDialog.Builder(this).setTitle("분할 보기").setMessage("화면을 나누려면 문서가 두 개 필요합니다. 두 번째 문서를 열까요?\n(열면 지금 문서와 좌우로 나란히 표시됩니다)")
+            new AlertDialog.Builder(this).setTitle("분할 보기").setMessage("화면을 나누려면 문서가 두 개 필요합니다. 두 번째 문서를 열까요?\n(열면 지금 문서와 나란히 표시됩니다. 화면은 최대 4개까지, 좌우·상하·2×2로 나눌 수 있습니다)")
                 .setPositiveButton("문서 열기",(d,w)->{splitWantedSession=activeSession;splitWantedAt=SystemClock.elapsedRealtime();showAddDocumentMenu();}).setNegativeButton("취소",null).show();
             return;
         }
@@ -675,109 +730,194 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Shows {@code other} (an open document that is not the active one) in a second pane next to the active document. */
     private void enterSplit(DocumentSession other){
         if(splitMode||activeSession==null||other==null||other==activeSession||!sessions.contains(other))return;
-        twoPageBeforeSplit=twoPage;twoPage=false;splitMode=true;splitLeft=activeSession;splitRight=other;
-        secondPageView.setVisibility(View.VISIBLE);setSplitGap(true);updateSplitBar();
-        showPaneView(secondPageView,splitRight,Math.min(splitRight.page,splitRight.renderer.getPageCount()-1));
-        showPage(currentPage);updateTabs();toast("분할 보기 · 필기할 화면을 터치하고, 위쪽 문서 이름을 눌러 문서를 바꿉니다");
+        twoPageBeforeSplit=twoPage;twoPage=false;splitMode=true;paneCount=2;Arrays.fill(paneSessions,null);paneSessions[0]=activeSession;paneSessions[1]=other;
+        pageView=firstPageView;splitLayout=normLayout(recentPrefs.getInt("split_layout",0),2);resetSplitSizes();
+        secondPageView.setVisibility(View.VISIBLE);applySplitLayout();
+        showPaneView(secondPageView,other,clampPage(other));
+        showPage(currentPage);updateTabs();toast("분할 보기 · 필기할 화면을 터치하고, 화면 위쪽 문서 이름을 눌러 문서·배치를 바꿉니다");
     }
     /** Finishes "split with a newly opened document" (the old document goes left, the new one right). */
     private void consumeSplitWanted(DocumentSession opened){
         DocumentSession wanted=splitWantedSession;if(wanted==null)return;splitWantedSession=null;
-        if(SystemClock.elapsedRealtime()-splitWantedAt<3*60*1000L&&wanted!=opened&&sessions.contains(wanted)&&!splitMode&&opened==activeSession){enterSplit(wanted);swapSplitPanes();}
+        if(SystemClock.elapsedRealtime()-splitWantedAt<3*60*1000L&&wanted!=opened&&sessions.contains(wanted)&&!splitMode&&opened==activeSession){enterSplit(wanted);swapSplitPanes(0,1);}
     }
-    /** Exchanges the left and right documents. */
-    private void swapSplitPanes(){
-        if(!splitMode||splitLeft==null||splitRight==null)return;
+    /** A document opened right after "화면 추가" becomes a new pane instead of replacing the active one. */
+    private boolean consumePaneWanted(DocumentSession opened){
+        if(!paneWanted)return false;paneWanted=false;
+        if(SystemClock.elapsedRealtime()-paneWantedAt<3*60*1000L&&splitMode&&paneCount<MAX_PANES&&paneIndex(opened)<0&&sessions.contains(opened)){addPane(opened,true);return true;}
+        return false;
+    }
+    /** Adds a pane (2 -> 3 -> 4) showing {@code s}; {@code activate} makes it the pane that is written on. */
+    private void addPane(DocumentSession s,boolean activate){
+        if(!splitMode||paneCount>=MAX_PANES||s==null||paneIndex(s)>=0||!sessions.contains(s))return;
         commitInlineText();if(activeSession!=null)activeSession.page=currentPage;
-        DocumentSession t=splitLeft;splitLeft=splitRight;splitRight=t;
-        showPaneView(firstPageView,splitLeft,Math.max(0,Math.min(splitLeft.page,splitLeft.renderer.getPageCount()-1)));
-        showPaneView(secondPageView,splitRight,Math.max(0,Math.min(splitRight.page,splitRight.renderer.getPageCount()-1)));
-        firstPageView.setZoom(1f);secondPageView.setZoom(1f);
-        pageView=activeSession==splitRight?secondPageView:firstPageView;currentPage=pageView.getPageNumber();syncOtherTools();updateZoomLabel(pageView.zoom());updateTabs();
+        PdfPageView v=paneViews[paneCount];paneSessions[paneCount]=s;paneCount++;
+        splitLayout=normLayout(splitLayout,paneCount);resetSplitSizes();
+        v.copyToolsFrom(pageView);v.setZoom(1f);v.setVisibility(View.VISIBLE);applySplitLayout();
+        showPaneView(v,s,clampPage(s));
+        if(activate)splitFocusView(v);
+        updateTabs();updateSplitChrome();
+    }
+    private void promptAddPane(){
+        if(!splitMode||paneCount>=MAX_PANES){toast("화면은 최대 4개까지 나눌 수 있습니다");return;}
+        List<DocumentSession> free=new ArrayList<>();for(DocumentSession o:sessions)if(paneIndex(o)<0)free.add(o);
+        if(free.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("화면 추가").setMessage("추가로 보여 줄 문서가 없습니다. 새 문서를 열까요?")
+                .setPositiveButton("문서 열기",(d,w)->{paneWanted=true;paneWantedAt=SystemClock.elapsedRealtime();showAddDocumentMenu();}).setNegativeButton("취소",null).show();
+            return;
+        }
+        if(free.size()==1){addPane(free.get(0),true);return;}
+        List<AnchoredMenu.Row> rows=new ArrayList<>();
+        for(DocumentSession o:free)rows.add(new AnchoredMenu.Row(o.title,R.drawable.ic_document_tab,()->addPane(o,true)).tint(0xFF007AFF));
+        AnchoredMenu.showCentered(this,getWindow().getDecorView(),"추가할 문서 선택",rows);
+    }
+    /** Takes pane k off the screen; the panes after it move up one place. With two panes left the split ends instead. */
+    private void removePane(int k){
+        if(!splitMode||k<0||k>=paneCount)return;
+        if(paneCount<=2){if(k==activePane())splitFocusView(paneViews[k==0?1:0]);exitSplit();return;}
+        commitInlineText();
+        if(paneSessions[k]==activeSession)splitFocusView(paneViews[k>0?k-1:1]);
+        DocumentSession act=activeSession;act.page=currentPage;
+        for(int j=k;j<paneCount-1;j++){paneSessions[j]=paneSessions[j+1];showPaneView(paneViews[j],paneSessions[j],clampPage(paneSessions[j]));paneViews[j].setZoom(1f);}
+        PdfPageView last=paneViews[paneCount-1];last.clearPage();last.setVisibility(View.GONE);paneSessions[paneCount-1]=null;paneCount--;
+        splitLayout=normLayout(splitLayout,paneCount);resetSplitSizes();
+        int a=paneIndex(act);pageView=paneViews[a<0?0:a];currentPage=pageView.getPageNumber();syncOtherTools();updateZoomLabel(pageView.zoom());
+        applySplitLayout();updateTabs();
+    }
+    /** Exchanges the positions of two panes (the documents move with them; the active document stays active). */
+    private void swapSplitPanes(int a,int b){
+        if(!splitMode||a==b||a<0||b<0||a>=paneCount||b>=paneCount)return;
+        commitInlineText();if(activeSession!=null)activeSession.page=currentPage;
+        DocumentSession act=activeSession,t=paneSessions[a];paneSessions[a]=paneSessions[b];paneSessions[b]=t;
+        for(int i:new int[]{a,b}){showPaneView(paneViews[i],paneSessions[i],clampPage(paneSessions[i]));paneViews[i].setZoom(1f);}
+        int k=paneIndex(act);pageView=paneViews[k<0?0:k];currentPage=pageView.getPageNumber();syncOtherTools();updateZoomLabel(pageView.zoom());updateTabs();updateSplitChrome();
+    }
+    private void setSplitLayoutMode(int layout){
+        if(!splitMode)return;splitLayout=normLayout(layout,paneCount);recentPrefs.edit().putInt("split_layout",splitLayout).apply();resetSplitSizes();applySplitLayout();
+    }
+    /** Shows / hides the pane views, switches the papers area to the pane layout, and rebuilds dividers and name chips. */
+    private void applySplitLayout(){
+        if(papersLayout==null)return;
+        if(splitMode){
+            splitLayout=normLayout(splitLayout,paneCount);
+            if(splitCols.length!=trackCols(splitLayout,paneCount)||splitRows.length!=trackRows(splitLayout,paneCount))resetSplitSizes();
+            for(int i=0;i<4;i++)paneViews[i].setVisibility(i<paneCount?View.VISIBLE:View.GONE);
+        }
+        papersLayout.grid=splitMode;papersLayout.setBackgroundColor(splitMode?0xFF8E8E93:Color.TRANSPARENT);papersLayout.requestLayout();
+        buildSplitDividers();updateSplitBar();
+    }
+    private final class SplitDivider extends View{
+        final boolean horizontal;final int index;final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);float downPos;long lastTap;boolean moved;
+        SplitDivider(boolean horizontal,int index){super(MainActivity.this);this.horizontal=horizontal;this.index=index;
+            setTag(horizontal?"split_divider_h":"split_divider");setContentDescription(horizontal?"화면 높이 조절 · 위아래로 끌기, 두 번 누르면 같은 크기로":"화면 너비 조절 · 좌우로 끌기, 두 번 누르면 같은 크기로");}
+        @Override protected void onDraw(Canvas c){
+            float d=getResources().getDisplayMetrics().density;float gw=horizontal?44*d:6*d,gh=horizontal?6*d:44*d;
+            p.setStyle(Paint.Style.FILL);p.setColor(Color.WHITE);RectF r=new RectF(getWidth()/2f-gw/2,getHeight()/2f-gh/2,getWidth()/2f+gw/2,getHeight()/2f+gh/2);c.drawRoundRect(r,3*d,3*d,p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(d);p.setColor(0xFF8E8E93);c.drawRoundRect(r,3*d,3*d,p);
+        }
+        @Override public boolean onTouchEvent(MotionEvent e){
+            if(papersView==null||papersView.getWidth()<=0)return true;
+            float[] sizes=horizontal?splitRows:splitCols;
+            switch(e.getActionMasked()){
+                case MotionEvent.ACTION_DOWN:downPos=horizontal?e.getRawY():e.getRawX();moved=false;getParent().requestDisallowInterceptTouchEvent(true);return true;
+                case MotionEvent.ACTION_MOVE:{
+                    float raw=horizontal?e.getRawY():e.getRawX();if(Math.abs(raw-downPos)>dp(6))moved=true;
+                    int[] loc=new int[2];papersView.getLocationOnScreen(loc);float len=horizontal?papersView.getHeight():papersView.getWidth();
+                    float pos=(raw-(horizontal?loc[1]:loc[0]))/len,before=0;for(int j=0;j<index;j++)before+=sizes[j];
+                    float pair=sizes[index]+sizes[index+1],m=Math.min(.15f,pair/2),q=Math.min(before+pair-m,Math.max(before+m,pos));
+                    sizes[index]=q-before;sizes[index+1]=pair-sizes[index];papersLayout.requestLayout();return true;}
+                case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:{
+                    if(!moved&&e.getActionMasked()==MotionEvent.ACTION_UP){long now=SystemClock.elapsedRealtime();if(now-lastTap<400){float[] eq=equalSizes(sizes.length);System.arraycopy(eq,0,sizes,0,sizes.length);papersLayout.requestLayout();lastTap=0;}else lastTap=now;}
+                    if(sizes.length==2)recentPrefs.edit().putFloat(horizontal?"split_vratio":"split_ratio",sizes[0]).apply();return true;}
+            }
+            return true;
+        }
+    }
+    private void buildSplitDividers(){
+        if(viewportLayer==null)return;
+        for(View d:splitDividers)viewportLayer.removeView(d);splitDividers.clear();
+        if(!splitMode)return;
+        for(int i=0;i<splitCols.length-1;i++)splitDividers.add(new SplitDivider(false,i));
+        for(int i=0;i<splitRows.length-1;i++)splitDividers.add(new SplitDivider(true,i));
+        for(View d:splitDividers){d.setVisibility(View.GONE);viewportLayer.addView(d,new FrameLayout.LayoutParams(dp(28),dp(28),Gravity.TOP|Gravity.START));}
+        positionSplitDividers();
+    }
+    /** Each grip sits on its seam, centred along it (in a 2 x 2 grid the two grips are moved apart so they never overlap). */
+    private void positionSplitDividers(){
+        if(papersView==null)return;boolean show=splitMode&&papersView.getWidth()>0;
+        int w=papersView.getWidth(),h=papersView.getHeight();int[] ce=trackEdges(splitCols,w),re=trackEdges(splitRows,h);
+        boolean both=splitCols.length>1&&splitRows.length>1,topWide=splitLayout==2&&paneCount==3;
+        for(View view:splitDividers){
+            SplitDivider d=(SplitDivider)view;if(!show){d.setVisibility(View.GONE);continue;}
+            FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)d.getLayoutParams();int cx,cy;
+            if(!d.horizontal){
+                cx=(ce[d.index*2+1]+ce[(d.index+1)*2])/2;
+                if(topWide)cy=(re[2]+re[3])/2;else if(both)cy=(re[0]+re[1])/2;else cy=h/2;
+                lp.width=dp(28);lp.height=dp(64);
+            }else{
+                cy=(re[d.index*2+1]+re[(d.index+1)*2])/2;
+                cx=both&&!topWide?(ce[0]+ce[1])/2:w/2;
+                lp.width=dp(64);lp.height=dp(28);
+            }
+            int x=papersView.getLeft()+cx-lp.width/2,y=papersView.getTop()+cy-lp.height/2;
+            if(lp.leftMargin!=x||lp.topMargin!=y){lp.leftMargin=x;lp.topMargin=y;d.setLayoutParams(lp);}
+            d.setVisibility(View.VISIBLE);
+        }
     }
     private void buildSplitBar(FrameLayout viewport){
         // like the Windows app: each split screen carries its own menu chip (document name ▾) in its top-left corner, floating over the page — no separate bar
-        splitBar=new LinearLayout(this);splitBar.setTag("split_bar");splitBar.setOrientation(LinearLayout.HORIZONTAL);splitBar.setVisibility(View.GONE);
-        for(int i=0;i<2;i++){
-            final boolean right=i==1;FrameLayout cell=new FrameLayout(this);cell.setPadding(dp(8),0,dp(8),0);
-            TextView chip=new TextView(this);chip.setTag("split_pane_chip");chip.setSingleLine();chip.setEllipsize(android.text.TextUtils.TruncateAt.END);chip.setGravity(Gravity.CENTER);chip.setTextSize(12.5f);chip.setPadding(dp(11),0,dp(11),0);chip.setElevation(dp(3));
-            chip.setOnClickListener(v->showPaneMenu(v,right));paneChip[i]=chip;cell.addView(chip,new FrameLayout.LayoutParams(-2,dp(28),Gravity.START|Gravity.TOP));
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=right?dp(4):0;splitBar.addView(cell,lp);
+        splitBar=new FrameLayout(this);splitBar.setTag("split_bar");splitBar.setVisibility(View.GONE);
+        for(int i=0;i<4;i++){
+            final int k=i;TextView chip=new TextView(this);chip.setTag("split_pane_chip");chip.setSingleLine();chip.setEllipsize(android.text.TextUtils.TruncateAt.END);chip.setGravity(Gravity.CENTER);chip.setTextSize(12.5f);chip.setPadding(dp(11),0,dp(11),0);chip.setElevation(dp(3));
+            chip.setVisibility(View.GONE);chip.setOnClickListener(v->showPaneMenu(v,k));paneChip[i]=chip;splitBar.addView(chip,new FrameLayout.LayoutParams(-2,dp(28),Gravity.START|Gravity.TOP));
         }
-        FrameLayout.LayoutParams barParams=new FrameLayout.LayoutParams(-1,dp(34),Gravity.TOP);barParams.topMargin=dp(6);viewport.addView(splitBar,barParams);
-        splitRatio=Math.min(.8f,Math.max(.2f,recentPrefs.getFloat("split_ratio",.5f)));
-        final float d=getResources().getDisplayMetrics().density;
-        splitDivider=new View(this){final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
-            @Override protected void onDraw(Canvas c){p.setStyle(Paint.Style.FILL);p.setColor(Color.WHITE);RectF r=new RectF(getWidth()/2f-3*d,getHeight()/2f-22*d,getWidth()/2f+3*d,getHeight()/2f+22*d);c.drawRoundRect(r,3*d,3*d,p);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(d);p.setColor(0xFF8E8E93);c.drawRoundRect(r,3*d,3*d,p);}};
-        splitDivider.setTag("split_divider");splitDivider.setContentDescription("화면 너비 조절 · 좌우로 끌기, 두 번 누르면 절반씩");splitDivider.setVisibility(View.GONE);
-        splitDivider.setOnTouchListener(new View.OnTouchListener(){float downX;long lastTap;boolean moved;
-            @Override public boolean onTouch(View v,MotionEvent e){
-                if(papersView==null||papersView.getWidth()<=0)return true;
-                switch(e.getActionMasked()){
-                    case MotionEvent.ACTION_DOWN:downX=e.getRawX();moved=false;v.getParent().requestDisallowInterceptTouchEvent(true);return true;
-                    case MotionEvent.ACTION_MOVE:{if(Math.abs(e.getRawX()-downX)>dp(6))moved=true;int[] loc=new int[2];papersView.getLocationOnScreen(loc);splitRatio=Math.min(.8f,Math.max(.2f,(e.getRawX()-loc[0])/papersView.getWidth()));applySplitRatio();return true;}
-                    case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:{
-                        if(!moved&&e.getActionMasked()==MotionEvent.ACTION_UP){long now=SystemClock.elapsedRealtime();if(now-lastTap<400){splitRatio=.5f;applySplitRatio();lastTap=0;}else lastTap=now;}
-                        recentPrefs.edit().putFloat("split_ratio",splitRatio).apply();return true;}
-                }
-                return true;
-            }});
-        viewport.addView(splitDivider,new FrameLayout.LayoutParams(dp(28),dp(64),Gravity.TOP|Gravity.START));
+        viewport.addView(splitBar,new FrameLayout.LayoutParams(-1,-1));
     }
-    /** Pane title chips (pick a document / swap / end) and the split toggle state; the papers move down below the bar. */
-    /** Left pane gets {@code splitRatio} of the width, the right pane the rest; the grip sits on the seam. */
-    private void applySplitRatio(){
-        if(firstPageView==null||secondPageView==null)return;float r=splitMode?Math.min(.8f,Math.max(.2f,splitRatio)):.5f;
-        LinearLayout.LayoutParams a=(LinearLayout.LayoutParams)firstPageView.getLayoutParams(),b=(LinearLayout.LayoutParams)secondPageView.getLayoutParams();
-        float wa=splitMode?r:1,wb=splitMode?1-r:1;
-        if(a.weight!=wa||b.weight!=wb){a.weight=wa;b.weight=wb;firstPageView.setLayoutParams(a);secondPageView.setLayoutParams(b);}
-        if(splitBar!=null&&splitBar.getChildCount()==2)for(int i=0;i<2;i++){LinearLayout.LayoutParams cp=(LinearLayout.LayoutParams)splitBar.getChildAt(i).getLayoutParams();float w=splitMode?(i==0?r:1-r):1;if(cp.weight!=w){cp.weight=w;splitBar.getChildAt(i).setLayoutParams(cp);}}
-        positionSplitDivider();
-    }
-    private void positionSplitDivider(){
-        if(splitDivider==null||papersView==null)return;
-        if(!splitMode||papersView.getWidth()<=0){splitDivider.setVisibility(View.GONE);return;}
-        FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)splitDivider.getLayoutParams();
-        int x=papersView.getLeft()+firstPageView.getRight()+dp(2)-lp.width/2,y=papersView.getTop()+(papersView.getHeight()-lp.height)/2;
-        if(lp.leftMargin!=x||lp.topMargin!=y){lp.leftMargin=x;lp.topMargin=y;splitDivider.setLayoutParams(lp);}
-        splitDivider.setVisibility(View.VISIBLE);
-    }
+    /** Pane title chips (pick a document / layout / add / close / end) and the split toggle state. */
     private void updateSplitBar(){
-        if(splitBar==null)return;boolean on=splitMode&&splitLeft!=null&&splitRight!=null;
+        if(splitBar==null)return;boolean on=splitMode&&paneCount>=2;
         splitBar.setVisibility(on?View.VISIBLE:View.GONE);
         if(papersView!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)papersView.getLayoutParams();if(lp.topMargin!=0){lp.topMargin=0;papersView.setLayoutParams(lp);}}
         if(splitButton!=null)splitButton.setBackground(round(on?0xFFE4E4FA:Color.TRANSPARENT,22));
-        applySplitRatio();
-        if(!on)return;
-        DocumentSession[] panes={splitLeft,splitRight};
-        for(int i=0;i<2;i++){
-            boolean active=panes[i]==activeSession;TextView chip=paneChip[i];chip.setText(panes[i].title+" ▾");chip.setContentDescription("화면 문서: "+panes[i].title);
+        for(int i=0;i<4;i++){
+            TextView chip=paneChip[i];boolean show=on&&i<paneCount;chip.setVisibility(show?View.VISIBLE:View.GONE);if(!show)continue;
+            DocumentSession s=paneSessions[i];boolean active=s==activeSession;chip.setText(s.title+" ▾");chip.setContentDescription("화면 문서: "+s.title);
             chip.setTextColor(active?ACCENT:0xFF636366);chip.setTypeface(active?Typeface.DEFAULT_BOLD:Typeface.DEFAULT);
             GradientDrawable bg=round(active?Color.WHITE:0xFFEDEDF0,12);bg.setStroke(dp(active?2:1),active?ACCENT:0xFFD1D1D6);chip.setBackground(bg);
         }
+        updateSplitChrome();
     }
-    /** Document list for one pane + swap + end split. */
-    private void showPaneMenu(View anchor,boolean right){
-        DocumentSession mine=right?splitRight:splitLeft;List<AnchoredMenu.Row> rows=new ArrayList<>();
-        for(DocumentSession o:sessions)rows.add(new AnchoredMenu.Row(o.title,R.drawable.ic_document_tab,()->assignPaneDocument(right,o)).tint(0xFF007AFF).selected(o==mine));
+    private void positionPaneChips(){
+        if(!splitMode||papersView==null||papersView.getWidth()<=0)return;
+        for(int i=0;i<paneCount;i++){PdfPageView p=paneViews[i];TextView chip=paneChip[i];chip.setMaxWidth(Math.max(dp(60),p.getWidth()-dp(16)));chip.setTranslationX(papersView.getLeft()+p.getLeft()+dp(8));chip.setTranslationY(papersView.getTop()+p.getTop()+dp(6));}
+    }
+    private String layoutLabel(int layout,int n){return layout==0?(n==2?"좌우로 나누기":"가로로 "+n+"등분"):layout==1?(n==2?"상하로 나누기":"세로로 "+n+"등분"):(n==3?"위 1칸 · 아래 2칸":"2 × 2 (4분할)");}
+    /** Menu of pane k: its document, the layout, add / close / swap panes, end split. */
+    private void showPaneMenu(View anchor,int k){
+        if(!splitMode||k>=paneCount)return;DocumentSession mine=paneSessions[k];List<AnchoredMenu.Row> rows=new ArrayList<>();
+        for(DocumentSession o:sessions)rows.add(new AnchoredMenu.Row(o.title,R.drawable.ic_document_tab,()->assignPaneDocument(k,o)).tint(0xFF007AFF).selected(o==mine));
         rows.add(AnchoredMenu.Row.divider());
-        rows.add(new AnchoredMenu.Row("좌우 바꾸기",R.drawable.ic_swipe,this::swapSplitPanes).tint(0xFF5856D6));
-        rows.add(new AnchoredMenu.Row("다른 문서 열기",R.drawable.ic_folder_open,()->{splitFocusView(right?secondPageView:firstPageView);showAddDocumentMenu();}).tint(0xFF8E8E93));
+        for(int L=0;L<3;L++){if(L==2&&paneCount<3)continue;final int layout=L;rows.add(new AnchoredMenu.Row(layoutLabel(L,paneCount),R.drawable.ic_dual,()->setSplitLayoutMode(layout)).tint(0xFF5856D6).selected(splitLayout==L));}
+        if(paneCount<MAX_PANES)rows.add(new AnchoredMenu.Row("화면 추가 ("+paneCount+"/"+MAX_PANES+")",R.drawable.ic_page_add,this::promptAddPane).tint(0xFF34C759));
+        if(paneCount>2)rows.add(new AnchoredMenu.Row("이 화면 닫기",R.drawable.ic_close,()->removePane(k)).tint(0xFFFF9500));
+        for(int j=0;j<paneCount;j++){if(j==k)continue;final int other=j;rows.add(new AnchoredMenu.Row(paneCount==2?"위치 바꾸기":"위치 바꾸기 · "+paneSessions[j].title,R.drawable.ic_swipe,()->swapSplitPanes(k,other)).tint(0xFF5856D6));}
+        rows.add(new AnchoredMenu.Row("다른 문서 열기",R.drawable.ic_folder_open,()->{splitFocusView(paneViews[k]);showAddDocumentMenu();}).tint(0xFF8E8E93));
         rows.add(new AnchoredMenu.Row("분할 보기 끝내기",R.drawable.ic_close,()->{exitSplit();toast("분할 보기를 종료했습니다");}).danger());
         AnchoredMenu.show(this,anchor,false,rows,null);
     }
-    private void assignPaneDocument(boolean right,DocumentSession s){
-        if(!splitMode)return;DocumentSession mine=right?splitRight:splitLeft,other=right?splitLeft:splitRight;
-        if(s==mine){splitFocusView(right?secondPageView:firstPageView);return;}
-        if(s==other){swapSplitPanes();return;}
-        splitFocusView(right?secondPageView:firstPageView);splitAssign(s);
+    private void assignPaneDocument(int k,DocumentSession s){
+        if(!splitMode||k>=paneCount)return;DocumentSession mine=paneSessions[k];
+        if(s==mine){splitFocusView(paneViews[k]);return;}
+        int j=paneIndex(s);if(j>=0){swapSplitPanes(k,j);return;}
+        splitFocusView(paneViews[k]);splitAssign(s);
     }
-    private void setSplitGap(boolean on){LinearLayout.LayoutParams lp=(LinearLayout.LayoutParams)secondPageView.getLayoutParams();lp.leftMargin=on?dp(4):0;secondPageView.setLayoutParams(lp);updateSplitChrome();}
     private void exitSplit(){
-        if(!splitMode)return;DocumentSession keep=activeSession;splitMode=false;twoPage=twoPageBeforeSplit;splitLeft=splitRight=null;setSplitGap(false);
+        if(!splitMode)return;DocumentSession keep=activeSession;splitMode=false;twoPage=twoPageBeforeSplit;paneCount=0;Arrays.fill(paneSessions,null);
+        papersLayout.grid=false;papersLayout.setBackgroundColor(Color.TRANSPARENT);
         // both halves go back to equal width and to "spread" (seam-aligned) drawing, whatever width the divider had and whichever pane was touched last
         for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView}){v.resetPaneState();LinearLayout.LayoutParams lp=(LinearLayout.LayoutParams)v.getLayoutParams();lp.weight=1;lp.leftMargin=0;v.setLayoutParams(lp);}
-        secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);updateSplitBar();
+        for(int i=2;i<4;i++){paneViews[i].clearPage();paneViews[i].resetPaneState();paneViews[i].setVisibility(View.GONE);}
+        secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);buildSplitDividers();updateSplitBar();papersLayout.requestLayout();
         if(keep!=null&&renderer!=null){pageView=firstPageView;showPage(keep.page<0?0:Math.min(keep.page,renderer.getPageCount()-1));}
         updateTabs();updateSplitChrome();
         papersView.post(()->{if(splitMode||renderer==null||!twoPage||secondPageView.getVisibility()!=View.VISIBLE)return;firstPageView.setSpread(-1,secondPageView);secondPageView.setSpread(1,firstPageView);firstPageView.invalidate();secondPageView.invalidate();});
@@ -787,7 +927,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         v.showPage(renderPage(s.renderer,index),index,s.store.marks,s.store.strokes,s.store.translations);v.setAnnotationStore(s.store);v.setSpread(v==firstPageView?-1:1,null);s.page=index;
     }
     private void showSplitPane(int index){
-        PdfPageView v=activeSession==splitRight?secondPageView:firstPageView;
+        int k=paneIndex(activeSession);PdfPageView v=paneViews[k<0?0:k];
         showPaneView(v,activeSession,index);pageView=v;currentPage=index;syncOtherTools();updateZoomLabel(v.zoom());
         previousOverlay.setVisibility(index>0?View.VISIBLE:View.GONE);nextOverlay.setVisibility(index+1<renderer.getPageCount()||isNotebook(activeSession)?View.VISIBLE:View.GONE);
         pageLabel.setText((index+1)+" / "+renderer.getPageCount());updateSplitChrome();loadViewText(v);updateBookmarkButton();updateThumbnailSelection();refreshStudyPanel();saveSessionState();applySearchHighlights();
@@ -795,7 +935,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Makes the document shown in the touched pane the active one (document, page, store) without resetting the tools. */
     private void splitFocusView(PdfPageView v){splitFocusImpl(v);updateSplitChrome();}
     private void splitFocusImpl(PdfPageView v){
-        DocumentSession s=v==secondPageView?splitRight:splitLeft;if(s==null||v.getVisibility()!=View.VISIBLE)return;
+        int k=paneIndex(v);if(k<0||v.getVisibility()!=View.VISIBLE)return;DocumentSession s=paneSessions[k];if(s==null)return;
         if(s==activeSession){pageView=v;currentPage=v.getPageNumber();return;}
         commitInlineText();if(searchOwner!=null&&searchOwner!=s)closeSearch();activeSession.page=currentPage;
         activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);
@@ -805,9 +945,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     /** In split view a tab shows its document in the active pane (or just focuses the pane that already shows it). */
     private void splitAssign(DocumentSession s){
-        if(s==splitLeft){splitFocusView(firstPageView);return;}if(s==splitRight){splitFocusView(secondPageView);return;}
-        commitInlineText();PdfPageView v=pageView==secondPageView?secondPageView:firstPageView;
-        if(v==secondPageView)splitRight=s;else splitLeft=s;
+        int k=paneIndex(s);if(k>=0){splitFocusView(paneViews[k]);return;}
+        commitInlineText();int a=paneIndex(pageView);if(a<0)a=0;
+        paneSessions[a]=s;
         activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);library.opened(s.uri);
         showPage(Math.max(0,Math.min(s.page,renderer.getPageCount()-1)));rebuildThumbnails();updateTabs();
     }
@@ -862,7 +1002,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private float carryScale=-1f,carryPanX,carryPanY;
     /** Remembers the zoom of the page being left so the next page opens at the same zoom and position. */
     private void carryZoom(){if(splitMode){carryScale=-1f;return;}if(pageView!=null&&Math.abs(pageView.zoom()-1f)>.001f){carryScale=pageView.zoom();carryPanX=pageView.panOffsetX();carryPanY=pageView.panOffsetY();}else carryScale=-1f;}
-    private void resetPageTransforms(){for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView})if(v!=null){v.animate().cancel();v.setAlpha(1f);v.setTranslationX(0);v.setTranslationY(0);v.setRotationY(0);}}
+    private void resetPageTransforms(){for(PdfPageView v:paneViews)if(v!=null){v.animate().cancel();v.setAlpha(1f);v.setTranslationX(0);v.setTranslationY(0);v.setRotationY(0);}}
     private void animatePage(int direction){
         if(pageAnimating||renderer==null)return;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0)return;if(target>=renderer.getPageCount()){if(direction>0&&isNotebook(activeSession))appendPage(activeSession,library.paper(new File(activeSession.uri.getPath())));return;}
         pageAnimating=true;carryZoom();
@@ -875,7 +1015,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private boolean slidePage(int direction,int target){
         final View papers=viewportLayer==null?null:viewportLayer.getChildAt(0);
         if(papers==null||papers.getWidth()<=0||papers.getHeight()<=0)return false;
-        final PdfPageView pane=splitMode?(pageView==secondPageView?secondPageView:firstPageView):null;
+        final PdfPageView pane=splitMode?pageView:null;
         final int rl=pane==null?0:pane.getLeft(),rt=pane==null?0:pane.getTop(),w=pane==null?papers.getWidth():pane.getWidth(),h=pane==null?papers.getHeight():pane.getHeight();
         if(w<8||h<8)return false;
         final Bitmap oldPage,newPage;
@@ -918,7 +1058,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private PageCurlView beginCurl(int direction,int target){
         curlConsumed=false;final View papers=viewportLayer==null?null:viewportLayer.getChildAt(0);
         if(papers==null||papers.getWidth()<=0||papers.getHeight()<=0||firstPageView.getWidth()<=0)return null;
-        final PdfPageView pane=splitMode?(pageView==secondPageView?secondPageView:firstPageView):null;final boolean forward=direction>0,two=!splitMode&&twoPage&&secondPageView.getWidth()>0;
+        final PdfPageView pane=splitMode?pageView:null;final boolean forward=direction>0,two=!splitMode&&twoPage&&secondPageView.getWidth()>0;
         RectF region=curlRegion(papers,two,pane);int rl=Math.round(region.left),rt=Math.round(region.top),w=Math.round(region.width()),h=Math.round(region.height());
         if(w<8||h<8)return null;
         final Bitmap oldFull,newFull;curlOrigin=currentPage;
@@ -961,7 +1101,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private int swipeMode(){return !swipeEnabled?0:verticalPageSwipe?2:1;}
     private void choosePageAnimation(){showActionSheet("넘김 효과",ANIM_CHOICES,pageAnimStyle(),this::setPageAnim);}
     private boolean darkPage(){return recentPrefs.getBoolean("dark_page",false);}
-    private void applyDarkPage(){boolean on=darkPage();PageCurlView.backTint=0x00FFFFFF;if(firstPageView!=null)firstPageView.setDarkPage(on);if(secondPageView!=null)secondPageView.setDarkPage(on);}
+    private void applyDarkPage(){boolean on=darkPage();PageCurlView.backTint=0x00FFFFFF;for(PdfPageView v:paneViews)if(v!=null)v.setDarkPage(on);}
     private void toggleDarkPage(){recentPrefs.edit().putBoolean("dark_page",!darkPage()).apply();applyDarkPage();toast(darkPage()?"문서 배경을 검게 표시합니다. 어두운 글씨 필기는 밝게 보입니다":"문서를 원래 색으로 표시합니다");}
     private boolean cropMargins(){return recentPrefs.getBoolean("crop_margins",false);}
     /** Trims blank page margins so the printed area fills the screen (not for notebooks, where the margins are writing space). */
@@ -1598,7 +1738,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(inlinePlayer!=null&&viewportLayer!=null)viewportLayer.removeView(inlinePlayer);inlinePlayer=null;
     }
     private Rect inlineBoxFor(AnnotationStore.PageElement element){
-        PdfPageView view=firstPageView!=null&&firstPageView.getPageNumber()==element.page?firstPageView:secondPageView;View papers=viewportLayer.getChildAt(0);if(view==null||papers==null)return null;
+        PdfPageView view=splitMode&&pageView!=null?pageView:firstPageView!=null&&firstPageView.getPageNumber()==element.page?firstPageView:secondPageView;View papers=viewportLayer.getChildAt(0);if(view==null||papers==null)return null;
         RectF r=view.pageRect();if(r.isEmpty())return null;
         float l=papers.getLeft()+view.getLeft()+r.left+element.left*r.width(),t=papers.getTop()+view.getTop()+r.top+element.top*r.height(),rr=papers.getLeft()+view.getLeft()+r.left+element.right*r.width(),b=papers.getTop()+view.getTop()+r.top+element.bottom*r.height();
         int minW=dp(220),minH=dp(124),w=Math.max(minW,Math.round(rr-l)),h=Math.max(minH,Math.round(b-t));
@@ -1887,7 +2027,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(uri==null&&dropYt==null){toast("끌어 놓은 항목에서 이미지나 동영상을 찾지 못했습니다");return false;}
         try{requestDragAndDropPermissions(e);}catch(RuntimeException ignored){}
         View papers=viewportLayer.getChildAt(0);float px=e.getX()-papers.getLeft(),py=e.getY()-papers.getTop();
-        PdfPageView hit=firstPageView;if((twoPage||splitMode)&&secondPageView.getVisibility()==View.VISIBLE&&px>=secondPageView.getLeft())hit=secondPageView;
+        PdfPageView hit=firstPageView;if(splitMode){PdfPageView under=paneAt(px,py);if(under!=null)hit=under;}else if(twoPage&&secondPageView.getVisibility()==View.VISIBLE&&px>=secondPageView.getLeft())hit=secondPageView;
         float[] n=hit.toPage(px-hit.getLeft(),py-hit.getTop());dropTarget=new float[]{hit.getPageNumber(),n[0],n[1]};dropTime=System.currentTimeMillis();
         if(dropYt!=null){importYoutube(dropYt);return true;}
         String scheme=uri.getScheme()==null?"":uri.getScheme();final Uri source=uri;
@@ -1925,7 +2065,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         chooseLinkTarget(link->{
             int group=new Random().nextInt(Integer.MAX_VALUE)+1;List<RectF> pieces=selection.bounds==null||selection.bounds.isEmpty()?Collections.singletonList(selection.unionBounds):selection.bounds;
             for(RectF b:pieces){AnnotationStore.PageElement e=new AnnotationStore.PageElement();e.page=page;e.kind="hyperlink";e.text=link;e.color=group;e.left=Math.max(0f,b.left);e.top=Math.max(0f,b.top);e.right=Math.min(1f,b.right);e.bottom=Math.min(1f,b.bottom);if(e.right-e.left<.005f||e.bottom-e.top<.003f)continue;target.elements.add(e);}
-            target.save();for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView})if(v!=null)v.stopTextSelection();syncOtherTools();redrawPages();if(sidebarVisible&&panelTab==4)rebuildInsertions();toast("링크를 만들었습니다. 글자를 탭하면 바로 열리고, 길게 누르면 수정·삭제 메뉴가 나옵니다");
+            target.save();for(PdfPageView v:paneViews)if(v!=null)v.stopTextSelection();syncOtherTools();redrawPages();if(sidebarVisible&&panelTab==4)rebuildInsertions();toast("링크를 만들었습니다. 글자를 탭하면 바로 열리고, 길게 누르면 수정·삭제 메뉴가 나옵니다");
         });
     }
     /** Web address, a page of this document, or another document of the library (optionally at a page). */
@@ -2266,11 +2406,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         placeElement("text","");
     }
     private PdfPageView viewForPage(int page){
+        if(splitMode&&pageView!=null&&pageView.getVisibility()==View.VISIBLE&&pageView.getPageNumber()==page)return pageView;
         if(firstPageView!=null&&firstPageView.getVisibility()==View.VISIBLE&&firstPageView.getPageNumber()==page)return firstPageView;
         if(secondPageView!=null&&secondPageView.getVisibility()==View.VISIBLE&&secondPageView.getPageNumber()==page)return secondPageView;
         return null;
     }
-    private void redrawPages(){if(firstPageView!=null)firstPageView.invalidate();if(secondPageView!=null)secondPageView.invalidate();}
+    private void redrawPages(){for(PdfPageView v:paneViews)if(v!=null)v.invalidate();}
     private AnnotationStore.PageElement elementAt(int page,float x,float y){
         if(store==null)return null;
         for(int i=store.elements.size()-1;i>=0;i--){AnnotationStore.PageElement e=store.elements.get(i);if(e.page==page&&"text".equals(e.kind)&&x>=e.left&&x<=e.right&&y>=e.top&&y<=e.bottom)return e;}
@@ -2896,7 +3037,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         int next=searchCurrent<0?(direction>0?0:searchHits.size()-1):(searchCurrent+direction+searchHits.size())%searchHits.size();selectHit(next,true);
     }
     private void applySearchHighlights(){
-        for(PdfPageView view:new PdfPageView[]{firstPageView,secondPageView}){
+        for(PdfPageView view:paneViews){
             if(view==null)continue;
             if(searchHits.isEmpty()||searchPanel==null||searchPanel.getVisibility()!=View.VISIBLE){view.clearSearchHighlights();continue;}
             List<RectF> others=new ArrayList<>();RectF current=null;
