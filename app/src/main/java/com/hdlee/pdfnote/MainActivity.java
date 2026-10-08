@@ -77,7 +77,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private String documentTitle="PDF"; private int currentPage, selectedColor=0x66FFDE59;
     private PdfPageView pageView,firstPageView,secondPageView;
     private boolean twoPage; private TextView titleView,pageLabel;
-    private ImageButton bookmarkButton,memoButton,inkButton,fullscreenExit,previousOverlay,nextOverlay; private LinearLayout header,bottomBar,fullscreenDock,readBar,writeBar; private ImageButton penButton,hlButton,eraserButton; private View dockHandle; private boolean dockShown; private final Runnable dockHider=()->hideFullscreenDock(true); private final java.util.Map<ImageButton,Integer> baseTint=new java.util.HashMap<>(); private boolean writeMode;
+    private ImageButton bookmarkButton,memoButton,inkButton,fullscreenExit,previousOverlay,nextOverlay; private LinearLayout header,bottomBar,fullscreenDock,readBar,writeBar,stripBox,inkOptions; private ImageButton penButton,hlButton,eraserButton,eraserBarButton; private int inkOptionsKind=-1; private View dockHandle; private boolean dockShown; private final Runnable dockHider=()->hideFullscreenDock(true); private final java.util.Map<ImageButton,Integer> baseTint=new java.util.HashMap<>(); private boolean writeMode;
     private FrameLayout root; private AnnotationStore store; private boolean highlightMode,memoMode,outlineMode,fullscreen;
     private boolean verticalPageSwipe;
     private boolean fingerInk,swipeEnabled;
@@ -161,7 +161,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         showTranslationResult(source,translated==null?"":translated.toString(),bounds);
     }
 
-    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",false);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);selectedColor=(Math.max(26,Math.min(255,recentPrefs.getInt("highlight_alpha",Color.alpha(selectedColor))))<<24)|(selectedColor&0xFFFFFF);firstPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));secondPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));firstPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));secondPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
+    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",true);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);selectedColor=(Math.max(26,Math.min(255,recentPrefs.getInt("highlight_alpha",Color.alpha(selectedColor))))<<24)|(selectedColor&0xFFFFFF);firstPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));secondPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));firstPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));secondPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
     private void applyKeepAwake(){if(recentPrefs.getBoolean("keep_awake",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
     @Override protected void onResume(){super.onResume();enforceChrome();applyKeepAwake();root.postDelayed(this::autoCheckForUpdate,4000);if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
         .setMessage("문서 앱에서 PDF로 내보냈다면 파일을 가져와 필기와 주석을 이어갈 수 있습니다.")
@@ -235,12 +235,13 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         studySplit=new LinearLayout(this);studySplit.addView(pdfArea);buildStudyPanel();studySplit.addView(studyPanel);
         content.addView(studySplit,new LinearLayout.LayoutParams(-1,0,1));layoutStudyPanel();
         bottomBar=new LinearLayout(this);bottomBar.setTag("reading_toolbar");bottomBar.setGravity(Gravity.CENTER_VERTICAL);bottomBar.setPadding(dp(6),0,dp(6),0);barSurface=new GradientDrawable();barSurface.setColor(Color.WHITE);barSurface.setCornerRadii(new float[]{dp(22),dp(22),dp(22),dp(22),0,0,0,0});bottomBar.setBackground(barSurface);bottomBar.setElevation(dp(8));
-        readBar=new LinearLayout(this);readBar.setTag("read_bar");readBar.setGravity(Gravity.CENTER_VERTICAL);writeBar=new LinearLayout(this);writeBar.setTag("writing_toolbar");writeBar.setGravity(Gravity.CENTER_VERTICAL);writeBar.setVisibility(View.GONE);writeBar.setTag("writing_toolbar");
+        readBar=new LinearLayout(this);readBar.setTag("read_bar");readBar.setGravity(Gravity.CENTER_VERTICAL);writeBar=new LinearLayout(this);writeBar.setTag("writing_toolbar");writeBar.setGravity(Gravity.CENTER_VERTICAL);writeBar.setVisibility(View.VISIBLE);writeBar.setTag("writing_toolbar");
         pageLabel=new TextView(this);pageLabel.setTag("page_indicator");pageLabel.setGravity(Gravity.CENTER);pageLabel.setIncludeFontPadding(false);pageLabel.setPadding(0,0,0,0);pageLabel.setTextAlignment(View.TEXT_ALIGNMENT_GRAVITY);pageLabel.setTextColor(0xFF8E8E93);pageLabel.setTextSize(11);pageLabel.setSingleLine();pageLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);pageLabel.setBackground(round(0xFFF2F2F7,10));pageLabel.setContentDescription("페이지 번호 · 눌러 이동");pageLabel.setOnClickListener(v->{if(renderer==null)showAddDocumentMenu();else goToPage();});LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(dp(64),dp(32));pp.setMargins(0,0,dp(5),0);readBar.addView(pageLabel,pp);
         pageLabel.setOnClickListener(v->{if(renderer==null)showAddDocumentMenu();else showPageJumpMenu(v);});pageLabel.setContentDescription("페이지 이동");
         barIcon(readBar,R.drawable.ic_eye,"보기 방법",0xFF30B0C7,v->showViewMenu(v));
         readButton=barIcon(readBar,R.drawable.ic_book,"읽기 모드",0xFF007AFF,v->setWriteMode(false));
         inkButton=barIcon(readBar,R.drawable.ic_ink,"필기 모드",0xFF5856D6,v->inkModeTap());
+        eraserBarButton=barIcon(readBar,R.drawable.ic_eraser,"지우개",0xFFFF6B8A,v->eraserBarTap(v));
         textButton=barIcon(readBar,R.drawable.ic_text,"타이핑",0xFF34C759,v->toggleTyping());
         bookmarkButton=barIcon(readBar,R.drawable.ic_star_outline,"즐겨찾기",0xFFF5A623,v->toggleBookmark());
         lassoButton=barIcon(readBar,R.drawable.ic_lasso,"올가미 선택",0xFFAF52DE,v->toggleLasso());
@@ -251,12 +252,17 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         eraserButton=stripIcon(R.drawable.ic_eraser,"지우개",0xFFFF6B8A,v->eraserTap(v));
         stripIcon(R.drawable.ic_undo,"실행 취소",0xFF8E8E93,v->undoInk());
         stripIcon(R.drawable.ic_redo,"다시 실행",0xFF8E8E93,v->redoInk());
-        FrameLayout.LayoutParams stripParams=new FrameLayout.LayoutParams(-2,dp(44),Gravity.TOP|Gravity.CENTER_HORIZONTAL);stripParams.topMargin=dp(8);viewport.addView(writeBar,stripParams);
+        writeBar.addView(makeGrip(stripBox=new LinearLayout(this),"strip"),0,new LinearLayout.LayoutParams(dp(18),dp(44)));   // the strip floats: drag the dotted grip to move it
+        stripBox.setOrientation(LinearLayout.VERTICAL);stripBox.setGravity(Gravity.CENTER_HORIZONTAL);stripBox.setVisibility(View.GONE);stripBox.setTag("write_strip_box");stripBox.addView(writeBar,new LinearLayout.LayoutParams(-2,dp(44)));
+        inkOptions=new LinearLayout(this);inkOptions.setTag("ink_options");inkOptions.setOrientation(LinearLayout.VERTICAL);inkOptions.setBackground(round(0xF8FFFFFF,18));inkOptions.setElevation(dp(8));inkOptions.setPadding(dp(6),dp(4),dp(6),dp(2));inkOptions.setVisibility(View.GONE);
+        LinearLayout.LayoutParams optionsParams=new LinearLayout.LayoutParams(dp(280),-2);optionsParams.topMargin=dp(6);stripBox.addView(inkOptions,optionsParams);
+        FrameLayout.LayoutParams stripParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);stripParams.topMargin=dp(8);viewport.addView(stripBox,stripParams);
         barGrip=makeGrip(bottomBar,"bar");barGrip.setVisibility(View.GONE);bottomBar.addView(barGrip,new LinearLayout.LayoutParams(dp(18),dp(44)));bottomBar.addView(readBar,new LinearLayout.LayoutParams(0,-1,1));barMenuButton=icon(R.drawable.ic_float,"하단 메뉴 위치·방향",0xFF8E8E93,v->showBarLayoutMenu(v));barMenuButton.setTag("bar_layout");barMenuButton.setPadding(dp(8),dp(8),dp(8),dp(8));bottomBar.addView(barMenuButton,new LinearLayout.LayoutParams(dp(38),dp(44)));content.addView(bottomBar,new LinearLayout.LayoutParams(-1,dp(54)));
         fullscreenDock=new LinearLayout(this);fullscreenDock.setTag("fullscreen_toolbar");fullscreenDock.setGravity(Gravity.CENTER_VERTICAL);fullscreenDock.setPadding(dp(6),0,dp(6),0);GradientDrawable dockSurface=round(Color.WHITE,24);dockSurface.setStroke(Math.max(1,dp(1)/2),0x14000000);fullscreenDock.setBackground(dockSurface);fullscreenDock.setElevation(dp(10));   // same solid surface and coloured icons as the normal bottom barfullscreenDock.setVisibility(View.GONE);
         fullscreenDock.addView(dockIcon(R.drawable.ic_outline,"전체 화면 개요",0xFF007AFF,v->showOutlineList()),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_eye,"전체 화면 보기 방법",0xFF30B0C7,v->showViewMenu(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_ink,"전체 화면 필기도구",0xFF5856D6,v->penTap(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_eraser,"전체 화면 지우개",0xFFFF6B8A,v->eraserBarTap(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_insert,"전체 화면 삽입",0xFFFF2D55,v->showInsertMenu(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_text,"전체 화면 타이핑",0xFF34C759,v->toggleTyping()),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_lasso,"전체 화면 올가미",0xFFAF52DE,v->toggleLasso()),new LinearLayout.LayoutParams(dp(44),dp(44)));
@@ -294,14 +300,14 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** The pen / highlighter / eraser strip floats on the page while writing; it can be kept visible or hidden (the choice is remembered). */
     private void setWriteStripShown(boolean on){recentPrefs.edit().putBoolean("write_strip",on).apply();updateWriteStrip();toast(on?"필기 도구 줄을 계속 보여줍니다":"필기 도구 줄을 숨겼습니다. 필기 모드 단추를 눌러 다시 볼 수 있습니다");}
     private void updateWriteStrip(){
-        boolean show=writeMode&&writeStripShown();if(writeBar!=null)writeBar.setVisibility(show?View.VISIBLE:View.GONE);
+        boolean show=writeMode&&writeStripShown();if(stripBox!=null){boolean was=stripBox.getVisibility()==View.VISIBLE;stripBox.setVisibility(show?View.VISIBLE:View.GONE);if(show&&!was)applyFloatPos(stripBox,"strip");}
         positionTopTools();
     }
     /** The pen strip and the lasso bar float at the top of the page, below the split-view name bar when that is shown. */
     private void positionTopTools(){
-        if(writeBar==null)return;boolean strip=writeMode&&writeStripShown();int base=dp(8)+(splitBar!=null&&splitBar.getVisibility()==View.VISIBLE?dp(30):0);
-        FrameLayout.LayoutParams sp=(FrameLayout.LayoutParams)writeBar.getLayoutParams();if(sp.topMargin!=base){sp.topMargin=base;writeBar.setLayoutParams(sp);}
-        if(lassoBar!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)lassoBar.getLayoutParams();int top=base+(strip?dp(52):0);if(lp.topMargin!=top){lp.topMargin=top;lassoBar.setLayoutParams(lp);}}
+        if(stripBox==null)return;boolean strip=writeMode&&writeStripShown();int base=dp(8)+(splitBar!=null&&splitBar.getVisibility()==View.VISIBLE?dp(40):0);
+        FrameLayout.LayoutParams sp=(FrameLayout.LayoutParams)stripBox.getLayoutParams();if(sp.topMargin!=base){sp.topMargin=base;stripBox.setLayoutParams(sp);}
+        if(lassoBar!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)lassoBar.getLayoutParams();int top=base+(strip?dp(52)+(inkOptions!=null&&inkOptions.getVisibility()==View.VISIBLE?dp(6)+Math.max(inkOptions.getHeight(),dp(96)):0):0);if(lp.topMargin!=top){lp.topMargin=top;lassoBar.setLayoutParams(lp);}}
     }
     /** Writing-mode button: switches to writing; pressed again while writing it shows or hides the tool strip. */
     private void inkModeTap(){
@@ -338,14 +344,10 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void showPenMenu(View anchor){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(4),dp(2),0);
-        box.addView(iconSegmented(INK_WIDTHS.length,this::widthIndex,i->{inkWidth=INK_WIDTHS[i];pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();},(c,w,h,i)->{Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(0xFF1C1C1E);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeWidth(getResources().getDisplayMetrics().density*(1.2f+i*1.9f));c.drawLine(w*.22f,h/2f,w*.78f,h/2f,p);}));
         box.addView(iconSegmented(AnnotationPainter.PEN_NAMES.length,()->inkPen,i->{inkPen=i;pageView.setInkPen(i);recentPrefs.edit().putInt("ink_pen",i).apply();syncOtherTools();},(c,w,h,i)->{
             AnnotationStore.InkStroke sample=new AnnotationStore.InkStroke();sample.pen=i;sample.color=0xFF1C1C1E;sample.width=i==4?.07f:i==3?.06f:.034f;
             for(int k=0;k<=12;k++){float x=.18f+.64f*k/12f;sample.points.add(new AnnotationStore.InkPoint(x,.5f+.2f*(float)Math.sin(k/12f*Math.PI*2),k<2||k>10?.5f:.9f));}
             AnnotationPainter.stroke(c,new RectF(0,0,w,h),sample);}));
-        java.util.function.IntConsumer pickInk=c->{inkColor=(inkColor&0xFF000000)|(c&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();};
-        box.addView(swatches(INK_COLORS,()->inkColor|0xFF000000,pickInk,22));
-        box.addView(swatches(INK_COLORS2,()->inkColor|0xFF000000,pickInk,22,1));
         box.addView(opacityBar(()->Color.alpha(inkColor),a->{inkColor=(a<<24)|(inkColor&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();}));
         AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box),AnchoredMenu.Row.divider(),new AnchoredMenu.Row("직선",R.drawable.ic_line,()->setInkMode(3)).selected(inkMode==3).tint(inkColor|0xFF000000),new AnchoredMenu.Row("손가락 필기",R.drawable.ic_touch,this::toggleFingerInk).tint(0xFF007AFF).selected(fingerInk)),null);
     }
@@ -353,6 +355,32 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Highlighter colour incl. its opacity; the opacity is remembered for the next session (new strokes only, old marks keep theirs). */
     private void setHighlightColor(int color){selectedColor=color;recentPrefs.edit().putInt("highlight_alpha",Color.alpha(color)).apply();pageView.setHighlightMode(highlightMode,selectedColor);syncOtherTools();updateInkButton();}
     private static final int[] ERASER_SIZES={5,10,18,28,40};
+    /** Bottom-bar eraser: starts writing with the eraser; pressed again it opens the eraser range menu. */
+    private void eraserBarTap(View anchor){
+        if(renderer==null){toast("문서를 먼저 여세요");return;}
+        if(!writeMode)setWriteMode(true);
+        eraserTap(anchor);
+    }
+    private static final float[] HL_THICK={.012f,.022f,.034f,.05f};
+    /** Width step (0-3) shared by the pen and the highlighter: whichever of the two is in use is changed. */
+    private int sharedWidthIndex(){if(!highlightMode)return widthIndex();int best=0;for(int i=1;i<HL_THICK.length;i++)if(Math.abs(HL_THICK[i]-highlightThick)<Math.abs(HL_THICK[best]-highlightThick))best=i;return best;}
+    private void setSharedWidth(int i){if(highlightMode){highlightThick=HL_THICK[i];applyHighlightStyle();}else{inkWidth=INK_WIDTHS[i];pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();}}
+    /** The width and colour rows under the pen strip; one set of controls for the pen and the highlighter (the palette follows the tool in use). */
+    private void updateInkOptions(){
+        if(inkOptions==null)return;boolean hl=highlightMode,pen=!hl&&(inkMode==1||inkMode==3)&&writeMode;int kind=hl?2:pen?1:0;
+        if(kind==inkOptionsKind)return;inkOptionsKind=kind;inkOptions.removeAllViews();
+        if(kind==0){inkOptions.setVisibility(View.GONE);positionTopTools();return;}
+        inkOptions.addView(iconSegmented(INK_WIDTHS.length,this::sharedWidthIndex,this::setSharedWidth,(c,w,h,i)->{Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(0xFF1C1C1E);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeWidth(getResources().getDisplayMetrics().density*(1.2f+i*1.9f));c.drawLine(w*.22f,h/2f,w*.78f,h/2f,p);}));
+        if(kind==1){
+            java.util.function.IntConsumer pickInk=c->{inkColor=(inkColor&0xFF000000)|(c&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();};
+            inkOptions.addView(swatches(INK_COLORS,()->inkColor|0xFF000000,pickInk,22));
+            inkOptions.addView(swatches(INK_COLORS2,()->inkColor|0xFF000000,pickInk,22,1));
+        }else{
+            java.util.function.IntSupplier preset=()->{for(int c:HIGHLIGHT_COLORS)if((c&0xFFFFFF)==(selectedColor&0xFFFFFF))return c;return selectedColor;};
+            inkOptions.addView(swatches(HIGHLIGHT_COLORS,preset,c->{boolean isPreset=false;for(int h:HIGHLIGHT_COLORS)if(h==c)isPreset=true;setHighlightColor(isPreset?(Color.alpha(selectedColor)<<24)|(c&0xFFFFFF):c);},30,2));
+        }
+        inkOptions.setVisibility(View.VISIBLE);positionTopTools();
+    }
     private void eraserTap(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
         if(inkMode==2&&!highlightMode)showEraserMenu(anchor);else setInkMode(2);
@@ -386,18 +414,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void applyHighlightStyle(){pageView.setHighlightStyle(highlightFree,highlightThick);syncOtherTools();}
     private void showHighlightMenu(View anchor){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(2),dp(6),dp(2),0);
-        // presets keep the chosen opacity: compare by colour only, apply the saved alpha
-        java.util.function.IntSupplier preset=()->{for(int c:HIGHLIGHT_COLORS)if((c&0xFFFFFF)==(selectedColor&0xFFFFFF))return c;return selectedColor;};
-        box.addView(swatches(HIGHLIGHT_COLORS,preset,c->{boolean isPreset=false;for(int h:HIGHLIGHT_COLORS)if(h==c)isPreset=true;setHighlightColor(isPreset?(Color.alpha(selectedColor)<<24)|(c&0xFFFFFF):c);},30,2));
         box.addView(opacityBar(()->Color.alpha(selectedColor),a->setHighlightColor((a<<24)|(selectedColor&0xFFFFFF))));
-        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(8),dp(8),dp(4));
-        TextView label=new TextView(this);label.setTextSize(12);label.setTextColor(0xFF8E8E93);label.setText("굵기 "+Math.round(highlightThick*1000f));row.addView(label,new LinearLayout.LayoutParams(dp(72),-2));
-        android.widget.SeekBar bar=new android.widget.SeekBar(this);bar.setMax(30);bar.setProgress(Math.round((highlightThick-.008f)/.0024f));
-        bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
-            @Override public void onProgressChanged(android.widget.SeekBar b,int value,boolean user){float t=.008f+value*.0024f;label.setText("굵기 "+Math.round(t*1000f));if(user){highlightThick=t;applyHighlightStyle();}}
-            @Override public void onStartTrackingTouch(android.widget.SeekBar b){}
-            @Override public void onStopTrackingTouch(android.widget.SeekBar b){}});
-        row.addView(bar,new LinearLayout.LayoutParams(0,dp(32),1));box.addView(row);
         AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box),AnchoredMenu.Row.divider(),
             new AnchoredMenu.Row("직선",R.drawable.ic_line,()->{highlightFree=false;applyHighlightStyle();}).selected(!highlightFree).tint(selectedColor|0xFF000000),
             new AnchoredMenu.Row("자유형",R.drawable.ic_curve,()->{highlightFree=true;applyHighlightStyle();}).selected(highlightFree).tint(selectedColor|0xFF000000)),null);
@@ -679,13 +696,15 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         pageView=activeSession==splitRight?secondPageView:firstPageView;currentPage=pageView.getPageNumber();syncOtherTools();updateZoomLabel(pageView.zoom());updateTabs();
     }
     private void buildSplitBar(FrameLayout viewport){
-        splitBar=new LinearLayout(this);splitBar.setTag("split_bar");splitBar.setOrientation(LinearLayout.HORIZONTAL);splitBar.setVisibility(View.GONE);splitBar.setPadding(dp(4),dp(3),dp(4),dp(3));splitBar.setBackgroundColor(0xFFF7F7F7);
+        // like the Windows app: each split screen carries its own menu chip (document name ▾) in its top-left corner, floating over the page — no separate bar
+        splitBar=new LinearLayout(this);splitBar.setTag("split_bar");splitBar.setOrientation(LinearLayout.HORIZONTAL);splitBar.setVisibility(View.GONE);
         for(int i=0;i<2;i++){
-            final boolean right=i==1;TextView chip=new TextView(this);chip.setTag("split_pane_chip");chip.setSingleLine();chip.setEllipsize(android.text.TextUtils.TruncateAt.END);chip.setGravity(Gravity.CENTER);chip.setTextSize(12.5f);chip.setPadding(dp(10),0,dp(10),0);
-            chip.setOnClickListener(v->showPaneMenu(v,right));paneChip[i]=chip;
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=right?dp(4):0;splitBar.addView(chip,lp);
+            final boolean right=i==1;FrameLayout cell=new FrameLayout(this);cell.setPadding(dp(8),0,dp(8),0);
+            TextView chip=new TextView(this);chip.setTag("split_pane_chip");chip.setSingleLine();chip.setEllipsize(android.text.TextUtils.TruncateAt.END);chip.setGravity(Gravity.CENTER);chip.setTextSize(12.5f);chip.setPadding(dp(11),0,dp(11),0);chip.setElevation(dp(3));
+            chip.setOnClickListener(v->showPaneMenu(v,right));paneChip[i]=chip;cell.addView(chip,new FrameLayout.LayoutParams(-2,dp(28),Gravity.START|Gravity.TOP));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=right?dp(4):0;splitBar.addView(cell,lp);
         }
-        viewport.addView(splitBar,new FrameLayout.LayoutParams(-1,dp(30),Gravity.TOP));
+        FrameLayout.LayoutParams barParams=new FrameLayout.LayoutParams(-1,dp(34),Gravity.TOP);barParams.topMargin=dp(6);viewport.addView(splitBar,barParams);
         splitRatio=Math.min(.8f,Math.max(.2f,recentPrefs.getFloat("split_ratio",.5f)));
         final float d=getResources().getDisplayMetrics().density;
         splitDivider=new View(this){final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -726,7 +745,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void updateSplitBar(){
         if(splitBar==null)return;boolean on=splitMode&&splitLeft!=null&&splitRight!=null;
         splitBar.setVisibility(on?View.VISIBLE:View.GONE);
-        if(papersView!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)papersView.getLayoutParams();int top=on?dp(30):0;if(lp.topMargin!=top){lp.topMargin=top;papersView.setLayoutParams(lp);}}
+        if(papersView!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)papersView.getLayoutParams();if(lp.topMargin!=0){lp.topMargin=0;papersView.setLayoutParams(lp);}}
         if(splitButton!=null)splitButton.setBackground(round(on?0xFFE4E4FA:Color.TRANSPARENT,22));
         applySplitRatio();
         if(!on)return;
@@ -756,9 +775,12 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void setSplitGap(boolean on){LinearLayout.LayoutParams lp=(LinearLayout.LayoutParams)secondPageView.getLayoutParams();lp.leftMargin=on?dp(4):0;secondPageView.setLayoutParams(lp);updateSplitChrome();}
     private void exitSplit(){
         if(!splitMode)return;DocumentSession keep=activeSession;splitMode=false;twoPage=twoPageBeforeSplit;splitLeft=splitRight=null;setSplitGap(false);
+        // both halves go back to equal width and to "spread" (seam-aligned) drawing, whatever width the divider had and whichever pane was touched last
+        for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView}){v.resetPaneState();LinearLayout.LayoutParams lp=(LinearLayout.LayoutParams)v.getLayoutParams();lp.weight=1;lp.leftMargin=0;v.setLayoutParams(lp);}
         secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);updateSplitBar();
         if(keep!=null&&renderer!=null){pageView=firstPageView;showPage(keep.page<0?0:Math.min(keep.page,renderer.getPageCount()-1));}
         updateTabs();updateSplitChrome();
+        papersView.post(()->{if(splitMode||renderer==null||!twoPage||secondPageView.getVisibility()!=View.VISIBLE)return;firstPageView.setSpread(-1,secondPageView);secondPageView.setSpread(1,firstPageView);firstPageView.invalidate();secondPageView.invalidate();});
     }
     /** Draws one document page into the given pane without touching the active-document state. */
     private void showPaneView(PdfPageView v,DocumentSession s,int index){
@@ -800,7 +822,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private int soft(int color){return (color&0xFFFFFF)|0x26000000;}
     private void updateInkButton(){updateLassoBar();boolean hl=highlightMode,eraser=inkMode==2&&!hl,pen=!hl&&(inkMode==1||inkMode==3);int penColor=inkColor|0xFF000000,hlColor=selectedColor|0xFF000000;
         if(penButton!=null)baseTint.put(penButton,penColor);if(hlButton!=null)baseTint.put(hlButton,hlColor);
-        paintTool(penButton,pen,soft(penColor),penColor);paintTool(hlButton,hl,soft(hlColor),hlColor);paintTool(eraserButton,eraser,0xFFFFE3E8,0xFFFF3B30);
+        paintTool(penButton,pen,soft(penColor),penColor);paintTool(hlButton,hl,soft(hlColor),hlColor);paintTool(eraserButton,eraser,0xFFFFE3E8,0xFFFF3B30);paintTool(eraserBarButton,eraser&&writeMode,0xFFFFE3E8,0xFFFF3B30);updateInkOptions();
         if(penButton!=null)penButton.setContentDescription("펜");if(inkButton!=null){inkButton.setContentDescription("필기 모드");}}
     private void toggleFingerInk(){fingerInk=!fingerInk;recentPrefs.edit().putBoolean("finger_ink",fingerInk).apply();pageView.setFingerInk(fingerInk);syncOtherTools();toast(fingerInk?"펜·지우개는 손가락으로도 사용합니다. 두 손가락으로 확대하세요":"손가락은 선택·이동, S펜은 필기에 사용합니다");}
     private void undoInk(){if(store==null)return;
@@ -839,28 +861,44 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     @Override public void onPageSwipe(int direction){animatePage(direction);}
     private float carryScale=-1f,carryPanX,carryPanY;
     /** Remembers the zoom of the page being left so the next page opens at the same zoom and position. */
-    private void carryZoom(){if(pageView!=null&&Math.abs(pageView.zoom()-1f)>.001f){carryScale=pageView.zoom();carryPanX=pageView.panOffsetX();carryPanY=pageView.panOffsetY();}else carryScale=-1f;}
+    private void carryZoom(){if(splitMode){carryScale=-1f;return;}if(pageView!=null&&Math.abs(pageView.zoom()-1f)>.001f){carryScale=pageView.zoom();carryPanX=pageView.panOffsetX();carryPanY=pageView.panOffsetY();}else carryScale=-1f;}
     private void resetPageTransforms(){for(PdfPageView v:new PdfPageView[]{firstPageView,secondPageView})if(v!=null){v.animate().cancel();v.setAlpha(1f);v.setTranslationX(0);v.setTranslationY(0);v.setRotationY(0);}}
     private void animatePage(int direction){
         if(pageAnimating||renderer==null)return;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0)return;if(target>=renderer.getPageCount()){if(direction>0&&isNotebook(activeSession))appendPage(activeSession,library.paper(new File(activeSession.uri.getPath())));return;}
         pageAnimating=true;carryZoom();
-        if(splitMode||pageAnimStyle()==2){showPage(target);resetPageTransforms();pageAnimating=false;return;}
+        if(pageAnimStyle()==2){showPage(target);resetPageTransforms();pageAnimating=false;return;}
         if(pageAnimStyle()==0&&!verticalPageSwipe&&curlPage(direction,target))return;
-        float offset=dp(26)*direction;
-        boolean vertical=verticalPageSwipe;PdfPageView moving=pageView;
-        moving.animate().alpha(0.45f).translationX(vertical?0:-offset).translationY(vertical?-offset:0)
-            .setDuration(110).withEndAction(()->{
-                showPage(target);resetPageTransforms();
-                pageView.setAlpha(.45f);pageView.setTranslationX(vertical?0:offset);pageView.setTranslationY(vertical?offset:0);
-                pageView.animate().alpha(1f).translationX(0).translationY(0).setDuration(170)
-                    .withEndAction(()->{resetPageTransforms();pageAnimating=false;}).start();
-            }).start();
+        if(slidePage(direction,target))return;
+        showPage(target);resetPageTransforms();pageAnimating=false;
+    }
+    /** Slide effect: the old page is pushed out and the new one pushed in, inside the area of the page (the whole reading area, or only the touched split screen). */
+    private boolean slidePage(int direction,int target){
+        final View papers=viewportLayer==null?null:viewportLayer.getChildAt(0);
+        if(papers==null||papers.getWidth()<=0||papers.getHeight()<=0)return false;
+        final PdfPageView pane=splitMode?(pageView==secondPageView?secondPageView:firstPageView):null;
+        final int rl=pane==null?0:pane.getLeft(),rt=pane==null?0:pane.getTop(),w=pane==null?papers.getWidth():pane.getWidth(),h=pane==null?papers.getHeight():pane.getHeight();
+        if(w<8||h<8)return false;
+        final Bitmap oldPage,newPage;
+        try{Bitmap oldFull=snapshot(papers);showPage(target);resetPageTransforms();Bitmap newFull=snapshot(papers);oldPage=slice(oldFull,rl,rt,w,h);newPage=slice(newFull,rl,rt,w,h);oldFull.recycle();newFull.recycle();}
+        catch(OutOfMemoryError error){showPage(target);pageAnimating=false;return true;}
+        final boolean vertical=verticalPageSwipe;final float span=vertical?h:w;
+        final FrameLayout clip=new FrameLayout(this);clip.setTag("page_slide");clip.setClipChildren(true);
+        final ImageView oldView=new ImageView(this),newView=new ImageView(this);oldView.setImageBitmap(oldPage);newView.setImageBitmap(newPage);
+        clip.addView(oldView,new FrameLayout.LayoutParams(w,h));clip.addView(newView,new FrameLayout.LayoutParams(w,h));
+        FrameLayout.LayoutParams cp=new FrameLayout.LayoutParams(w,h,Gravity.TOP|Gravity.START);cp.leftMargin=papers.getLeft()+rl;cp.topMargin=papers.getTop()+rt;
+        viewportLayer.addView(clip,1,cp);
+        final float from=direction*span;
+        if(vertical)newView.setTranslationY(from);else newView.setTranslationX(from);
+        android.animation.ValueAnimator animator=android.animation.ValueAnimator.ofFloat(0f,1f);animator.setDuration(260);animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        animator.addUpdateListener(a->{float t=(Float)a.getAnimatedValue();float in=from*(1f-t),out=-from*t;if(vertical){newView.setTranslationY(in);oldView.setTranslationY(out);}else{newView.setTranslationX(in);oldView.setTranslationX(out);}});
+        animator.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator a){viewportLayer.removeView(clip);oldView.setImageDrawable(null);newView.setImageDrawable(null);oldPage.recycle();newPage.recycle();resetPageTransforms();pageAnimating=false;}});
+        animator.start();return true;
     }
     private Bitmap snapshot(View view){Bitmap bitmap=Bitmap.createBitmap(Math.max(1,view.getWidth()),Math.max(1,view.getHeight()),Bitmap.Config.ARGB_8888);bitmap.eraseColor(darkPage()?Color.BLACK:Color.WHITE);view.draw(new Canvas(bitmap));return bitmap;}
     private static Bitmap slice(Bitmap source,int x,int y,int w,int h){Bitmap part=Bitmap.createBitmap(Math.max(1,w),Math.max(1,h),Bitmap.Config.ARGB_8888);new Canvas(part).drawBitmap(source,-x,-y,null);return part;}
     /** The part of the reading area that is really paper: the page rectangles (both pages for a spread), never the screen around them. */
-    private RectF curlRegion(View papers,boolean two){
-        RectF union=null;PdfPageView[] views=two?new PdfPageView[]{firstPageView,secondPageView}:new PdfPageView[]{firstPageView};
+    private RectF curlRegion(View papers,boolean two,PdfPageView pane){
+        RectF union=null;PdfPageView[] views=two?new PdfPageView[]{firstPageView,secondPageView}:new PdfPageView[]{pane!=null?pane:firstPageView};
         for(PdfPageView v:views){RectF r=v.pageRect();if(r.isEmpty())r=new RectF(0,0,v.getWidth(),v.getHeight());if(!r.intersect(0,0,v.getWidth(),v.getHeight()))r=new RectF(0,0,v.getWidth(),v.getHeight());r.offset(v.getLeft(),v.getTop());if(union==null)union=new RectF(r);else union.union(r);}
         if(two){int spine=secondPageView.getLeft();float half=Math.min(spine-union.left,union.right-spine);if(half>0){union.left=spine-half;union.right=spine+half;}}   // symmetric about the seam, but only as wide as the paper
         return union;
@@ -868,7 +906,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private PageCurlView dragCurl;private int curlOrigin;private float dragSpan;private boolean curlConsumed;
     private final PdfPageView.PageDrag pageDragHandler=new PdfPageView.PageDrag(){
         @Override public boolean start(int direction){
-            if(pageAnimating||renderer==null||verticalPageSwipe||splitMode||pageAnimStyle()!=0)return false;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0||target>=renderer.getPageCount())return false;
+            if(pageAnimating||renderer==null||verticalPageSwipe||pageAnimStyle()!=0)return false;int target=twoPage?(currentPage/2)*2+direction*2:currentPage+direction;if(target<0||target>=renderer.getPageCount())return false;
             pageAnimating=true;carryZoom();PageCurlView curl=beginCurl(direction,target);if(curl==null){pageAnimating=curlConsumed;return false;}
             dragCurl=curl;dragSpan=Math.max(dp(120),curl.contentWidth()*(twoPage?.5f:1f)*1.1f);return true;
         }
@@ -880,8 +918,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private PageCurlView beginCurl(int direction,int target){
         curlConsumed=false;final View papers=viewportLayer==null?null:viewportLayer.getChildAt(0);
         if(papers==null||papers.getWidth()<=0||papers.getHeight()<=0||firstPageView.getWidth()<=0)return null;
-        final boolean forward=direction>0,two=twoPage&&secondPageView.getWidth()>0;
-        RectF region=curlRegion(papers,two);int rl=Math.round(region.left),rt=Math.round(region.top),w=Math.round(region.width()),h=Math.round(region.height());
+        final PdfPageView pane=splitMode?(pageView==secondPageView?secondPageView:firstPageView):null;final boolean forward=direction>0,two=!splitMode&&twoPage&&secondPageView.getWidth()>0;
+        RectF region=curlRegion(papers,two,pane);int rl=Math.round(region.left),rt=Math.round(region.top),w=Math.round(region.width()),h=Math.round(region.height());
         if(w<8||h<8)return null;
         final Bitmap oldFull,newFull;curlOrigin=currentPage;
         try{oldFull=snapshot(papers);showPage(target);resetPageTransforms();newFull=snapshot(papers);}
