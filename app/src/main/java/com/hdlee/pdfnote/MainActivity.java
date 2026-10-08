@@ -61,6 +61,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         Uri uri; String title; ParcelFileDescriptor descriptor; PdfRenderer renderer;
         AnnotationStore store; int page; File officePreview;
         final Deque<AnnotationStore.InkStroke> redoStrokes=new ArrayDeque<>();
+        /** Ink removed by "페이지 전체 지우기" on {@code clearedPage}; the next undo brings it back (any other ink edit forgets it). */
+        final List<AnnotationStore.InkStroke> clearedStrokes=new ArrayList<>();final List<AnnotationStore.Mark> clearedMarks=new ArrayList<>();int clearedPage=-1;
         final Map<Integer,List<PdfPageView.TextRegion>> textRegions=new HashMap<>();
     }
     private static final int EXPORT_PDF=30,IMPORT_IMAGE=31,IMPORT_VIDEO=32,IMPORT_TEMPLATE=33,EXPORT_ORIGINAL=34;
@@ -81,6 +83,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private boolean fingerInk,swipeEnabled;
     private HwpConversion hwpConversion;
     private final List<DocumentSession> sessions=new ArrayList<>(); private DocumentSession activeSession; private boolean splitMode,twoPageBeforeSplit; private DocumentSession splitLeft,splitRight;
+    private ImageButton splitButton; private LinearLayout splitBar; private TextView[] paneChip=new TextView[2]; private View papersView; private DocumentSession splitWantedSession; private long splitWantedAt;
     private LinearLayout tabRow,thumbnailList; private HorizontalScrollView tabStrip; private ScrollView thumbnailPanel;
     private int thumbnailGeneration; private boolean sidebarVisible;
     private int inkMode,inkPen,inkColor=0xFF1C1C1E; private float inkWidth=0.004f;
@@ -173,9 +176,10 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(4),0,dp(4),0);header.setBackgroundColor(0xFFF9F9F9);
         ImageButton libraryButton=icon(R.drawable.ic_folder_open,"문서함",NAVY,v->showLibrary());libraryButton.setColorFilter(null);libraryButton.setImageDrawable(new FolderIconDrawable(LibraryRepository.FOLDER_COLORS[1],dp(30)));libraryButton.setBackground(round(Color.WHITE,16));libraryButton.setPadding(dp(5),dp(5),dp(5),dp(5));LinearLayout.LayoutParams libraryParams=new LinearLayout.LayoutParams(dp(42),dp(42));libraryParams.setMargins(dp(8),0,dp(2),0);header.addView(libraryButton,libraryParams);
         titleView=new TextView(this);titleView.setTextColor(NAVY);titleView.setTextSize(15);titleView.setTypeface(Typeface.DEFAULT_BOLD);titleView.setTag("document_title");titleView.setOnClickListener(v->{if(activeSession!=null)beginTitleEdit();else showLibrary();});titleView.setSingleLine();titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);titleView.setTextDirection(View.TEXT_DIRECTION_LTR);titleView.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);titleView.setPadding(dp(8),0,dp(8),0);titleView.setBackground(round(Color.WHITE,18));titleView.setMaxWidth(Math.round(getResources().getDisplayMetrics().widthPixels*.46f));titleView.setPadding(dp(14),0,dp(14),0);LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-2,dp(36));titleParams.setMargins(dp(6),0,dp(6),0);header.addView(titleView,titleParams);header.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));
-        header.addOnLayoutChangeListener((v,l,t,rr,b,ol,ot,or,ob)->{int w=rr-l;if(w<=0)return;int max=Math.max(dp(60),Math.min(Math.round(w*.46f),w-dp(256)));if(titleView.getMaxWidth()!=max)titleView.setMaxWidth(max);});
+        header.addOnLayoutChangeListener((v,l,t,rr,b,ol,ot,or,ob)->{int w=rr-l;if(w<=0)return;int max=Math.max(dp(60),Math.min(Math.round(w*.46f),w-dp(300)));if(titleView.getMaxWidth()!=max)titleView.setMaxWidth(max);});
         header.addView(icon(R.drawable.ic_sidebar,"페이지 목록",0xFF007AFF,v->toggleSidebar()),new LinearLayout.LayoutParams(dp(44),dp(52)));
         header.addView(icon(R.drawable.ic_search,"문서·필기 검색",0xFF30B0C7,v->searchDocument()),new LinearLayout.LayoutParams(dp(44),dp(52)));
+        splitButton=icon(R.drawable.ic_dual,"분할 보기 · 문서 두 개를 나란히",0xFF5856D6,v->toggleSplit());header.addView(splitButton,new LinearLayout.LayoutParams(dp(44),dp(52)));
         header.addView(icon(R.drawable.ic_fullscreen,"전체 화면",0xFFAF52DE,v->toggleFullscreen()),new LinearLayout.LayoutParams(dp(44),dp(52)));
         header.addView(icon(R.drawable.ic_more_vert,"도구",NAVY,v->showMainMenu(v,false)),new LinearLayout.LayoutParams(dp(44),dp(52)));content.addView(header,new LinearLayout.LayoutParams(-1,dp(52)));
         tabStrip=new HorizontalScrollView(this);tabStrip.setHorizontalScrollBarEnabled(false);tabStrip.setBackgroundColor(0xFFF7F7F7);tabRow=new LinearLayout(this);tabRow.setGravity(Gravity.CENTER_VERTICAL);tabRow.setPadding(dp(6),dp(4),dp(6),dp(4));tabStrip.addView(tabRow,new HorizontalScrollView.LayoutParams(-2,-1));content.addView(tabStrip,new LinearLayout.LayoutParams(-1,dp(40)));
@@ -217,7 +221,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             }};papers.setClipChildren(false);papers.setMotionEventSplittingEnabled(false);
         PageListener firstListener=new PageListener(),secondListener=new PageListener();
         firstPageView=new PdfPageView(this,firstListener);secondPageView=new PdfPageView(this,secondListener);firstListener.view=firstPageView;secondListener.view=secondPageView;pageView=firstPageView;
-        firstPageView.setPageDrag(pageDragHandler);secondPageView.setPageDrag(pageDragHandler);papers.addView(firstPageView,new LinearLayout.LayoutParams(0,-1,1));papers.addView(secondPageView,new LinearLayout.LayoutParams(0,-1,1));secondPageView.setVisibility(twoPage?View.VISIBLE:View.GONE);viewport.addView(papers,new FrameLayout.LayoutParams(-1,-1));
+        firstPageView.setPageDrag(pageDragHandler);secondPageView.setPageDrag(pageDragHandler);papers.addView(firstPageView,new LinearLayout.LayoutParams(0,-1,1));papers.addView(secondPageView,new LinearLayout.LayoutParams(0,-1,1));secondPageView.setVisibility(twoPage?View.VISIBLE:View.GONE);viewport.addView(papers,new FrameLayout.LayoutParams(-1,-1));papersView=papers;buildSplitBar(viewport);
         previousOverlay=icon(R.drawable.ic_chevron_left,"이전 페이지",NAVY,v->animatePage(-1));nextOverlay=icon(R.drawable.ic_chevron_right,"다음 페이지",NAVY,v->animatePage(1));
         ImageButton[] arrows={previousOverlay,nextOverlay};for(int i=0;i<arrows.length;i++){ImageButton arrow=arrows[i];arrow.setBackground(round(0xE6F7F5FF,26));arrow.setAlpha(0.38f);arrow.setElevation(dp(3));FrameLayout.LayoutParams ap=new FrameLayout.LayoutParams(dp(52),dp(52),Gravity.CENTER_VERTICAL|(i==0?Gravity.START:Gravity.END));ap.setMargins(dp(8),0,dp(8),0);viewport.addView(arrow,ap);}
         zoomPanel=new LinearLayout(this);zoomPanel.setTag("zoom_panel");zoomPanel.setOrientation(LinearLayout.VERTICAL);zoomPanel.setGravity(Gravity.CENTER_HORIZONTAL);zoomPanel.setBackground(round(0xF2FFFFFF,22));zoomPanel.setElevation(dp(4));zoomPanel.setPadding(0,dp(2),0,dp(2));
@@ -327,8 +331,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Clears all ink and highlights of the page being shown, after asking. */
     private void confirmClearPage(){
         if(renderer==null||pageView==null)return;final PdfPageView target=pageView;final int number=target.getPageNumber();
-        new AlertDialog.Builder(this).setTitle("페이지 전체 지우기").setMessage((number+1)+"페이지의 모든 필기와 형광펜을 지웁니다. 계속할까요?")
-            .setPositiveButton("전체 지우기",(d,w)->{if(target.clearPageInk())toast("페이지를 지웠습니다");else toast("지울 필기가 없습니다");}).setNegativeButton("취소",null).show();
+        new AlertDialog.Builder(this).setTitle("페이지 전체 지우기").setMessage((number+1)+"페이지의 모든 필기와 형광펜을 지웁니다. 계속할까요?\n(지운 직후에는 ‘실행 취소’로 되살릴 수 있습니다)")
+            .setPositiveButton("전체 지우기",(d,w)->{if(target.clearPageInk()){DocumentSession ds=activeSession;if(ds!=null){ds.clearedStrokes.clear();ds.clearedStrokes.addAll(target.clearedStrokes);ds.clearedMarks.clear();ds.clearedMarks.addAll(target.clearedMarks);ds.clearedPage=number;}toast("페이지를 지웠습니다");}else toast("지울 필기가 없습니다");}).setNegativeButton("취소",null).show();
     }
     private void setEraserRadius(float dp){recentPrefs.edit().putFloat("eraser_radius",dp).apply();firstPageView.setEraserRadius(dp);secondPageView.setEraserRadius(dp);}
     private void applyHighlightStyle(){pageView.setHighlightStyle(highlightFree,highlightThick);syncOtherTools();}
@@ -551,10 +555,11 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         ProgressDialog progress=announce?ProgressDialog.show(this,"PDF 가져오기","문서함에 저장하는 중…",true,false):null;
         new Thread(()->{try{File saved=library.importPdf(source,title,destination);runOnUiThread(()->{importing.remove(source.toString());if(isFinishing()||isDestroyed())return;if(progress!=null)progress.dismiss();openPdf(Uri.fromFile(saved),false,page,activate);if(announce)toast("문서함에 자동 저장했습니다");saveSessionState();});}catch(Exception error){runOnUiThread(()->{importing.remove(source.toString());if(isFinishing()||isDestroyed())return;if(progress!=null)progress.dismiss();toast("가져오기 실패: "+error.getMessage());});}},"library-import").start();
     }
-    private void switchDocument(DocumentSession s){if(splitMode){splitAssign(s);return;}commitInlineText();if(searchOwner!=null&&searchOwner!=s)closeSearch();library.opened(s.uri);if(activeSession!=null)activeSession.page=currentPage;activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);highlightMode=memoMode=outlineMode=false;inkMode=0;pageView.setLassoMode(false);pageView.stopTextSelection();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setInkTool(0,inkColor,inkWidth);updateToolStates();updateInkButton();updateTabs();showPage(Math.min(s.page,renderer.getPageCount()-1));rebuildThumbnails();saveSessionState();}
+    private void switchDocument(DocumentSession s){switchDocumentNow(s);consumeSplitWanted(s);}
+    private void switchDocumentNow(DocumentSession s){if(splitMode){splitAssign(s);return;}commitInlineText();if(searchOwner!=null&&searchOwner!=s)closeSearch();library.opened(s.uri);if(activeSession!=null)activeSession.page=currentPage;activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);highlightMode=memoMode=outlineMode=false;inkMode=0;pageView.setLassoMode(false);pageView.stopTextSelection();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setInkTool(0,inkColor,inkWidth);updateToolStates();updateInkButton();updateTabs();showPage(Math.min(s.page,renderer.getPageCount()-1));rebuildThumbnails();saveSessionState();}
     private void closeDocument(DocumentSession s){if(splitMode&&(s==splitLeft||s==splitRight))exitSplit();commitInlineText();if(s==searchOwner)closeSearch();int oldIndex=sessions.indexOf(s);sessions.remove(s);if(s.renderer!=null)s.renderer.close();if(s.descriptor!=null)try{s.descriptor.close();}catch(IOException ignored){}if(s.officePreview!=null)s.officePreview.delete();if(s==activeSession){activeSession=null;if(sessions.isEmpty()){renderer=null;descriptor=null;documentUri=null;store=null;firstPageView.clearPage();secondPageView.clearPage();thumbnailList.removeAllViews();refreshStudyPanel();updateTabs();showWelcome();}else switchDocument(sessions.get(Math.max(0,Math.min(oldIndex,sessions.size()-1))));}else updateTabs();saveSessionState();}
     private void updateTabs(){
-        tabRow.removeAllViews();View activeTab=null;
+        updateSplitBar();tabRow.removeAllViews();View activeTab=null;
         for(DocumentSession session:sessions){
             boolean active=session==activeSession,paired=splitMode&&(session==splitLeft||session==splitRight);LinearLayout chip=new LinearLayout(this);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(8),0,dp(0),0);chip.setTag("document_tab");
             GradientDrawable background=round(active?Color.WHITE:0xFFF2F2F7,14);background.setStroke(dp(1),active?0xFFC7C7CC:paired?ACCENT:0xFFE5E5EA);chip.setBackground(background);chip.setElevation(active?dp(2):0);
@@ -590,18 +595,84 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Split view: two open documents side by side; the pane touched last is the active one (its document, page and tools drive the toolbar). */
     private void toggleSplit(){
         if(splitMode){exitSplit();toast("분할 보기를 종료했습니다");return;}
-        if(activeSession==null){toast("문서를 먼저 여세요");return;}
-        if(sessions.size()<2){toast("분할 보기는 문서가 2개 이상 필요합니다. + 로 문서를 추가하세요");showAddDocumentMenu();return;}
-        int at=sessions.indexOf(activeSession);DocumentSession other=sessions.get((at+1)%sessions.size());
+        if(activeSession==null||renderer==null){toast("문서를 먼저 여세요");return;}
+        List<DocumentSession> others=new ArrayList<>(sessions);others.remove(activeSession);
+        if(others.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("분할 보기").setMessage("화면을 나누려면 문서가 두 개 필요합니다. 두 번째 문서를 열까요?\n(열면 지금 문서와 좌우로 나란히 표시됩니다)")
+                .setPositiveButton("문서 열기",(d,w)->{splitWantedSession=activeSession;splitWantedAt=SystemClock.elapsedRealtime();showAddDocumentMenu();}).setNegativeButton("취소",null).show();
+            return;
+        }
+        if(others.size()==1){enterSplit(others.get(0));return;}
+        List<AnchoredMenu.Row> rows=new ArrayList<>();
+        for(DocumentSession o:others)rows.add(new AnchoredMenu.Row(o.title,R.drawable.ic_document_tab,()->enterSplit(o)).tint(0xFF007AFF));
+        AnchoredMenu.showCentered(this,getWindow().getDecorView(),"두 번째 문서 선택",rows);
+    }
+    /** Shows {@code other} (an open document that is not the active one) in a second pane next to the active document. */
+    private void enterSplit(DocumentSession other){
+        if(splitMode||activeSession==null||other==null||other==activeSession||!sessions.contains(other))return;
         twoPageBeforeSplit=twoPage;twoPage=false;splitMode=true;splitLeft=activeSession;splitRight=other;
-        secondPageView.setVisibility(View.VISIBLE);setSplitGap(true);
+        secondPageView.setVisibility(View.VISIBLE);setSplitGap(true);updateSplitBar();
         showPaneView(secondPageView,splitRight,Math.min(splitRight.page,splitRight.renderer.getPageCount()-1));
-        showPage(currentPage);updateTabs();toast("분할 보기 · 탭을 눌러 선택한 쪽의 문서를 바꿉니다");
+        showPage(currentPage);updateTabs();toast("분할 보기 · 필기할 화면을 터치하고, 위쪽 문서 이름을 눌러 문서를 바꿉니다");
+    }
+    /** Finishes "split with a newly opened document" (the old document goes left, the new one right). */
+    private void consumeSplitWanted(DocumentSession opened){
+        DocumentSession wanted=splitWantedSession;if(wanted==null)return;splitWantedSession=null;
+        if(SystemClock.elapsedRealtime()-splitWantedAt<3*60*1000L&&wanted!=opened&&sessions.contains(wanted)&&!splitMode&&opened==activeSession){enterSplit(wanted);swapSplitPanes();}
+    }
+    /** Exchanges the left and right documents. */
+    private void swapSplitPanes(){
+        if(!splitMode||splitLeft==null||splitRight==null)return;
+        commitInlineText();if(activeSession!=null)activeSession.page=currentPage;
+        DocumentSession t=splitLeft;splitLeft=splitRight;splitRight=t;
+        showPaneView(firstPageView,splitLeft,Math.max(0,Math.min(splitLeft.page,splitLeft.renderer.getPageCount()-1)));
+        showPaneView(secondPageView,splitRight,Math.max(0,Math.min(splitRight.page,splitRight.renderer.getPageCount()-1)));
+        firstPageView.setZoom(1f);secondPageView.setZoom(1f);
+        pageView=activeSession==splitRight?secondPageView:firstPageView;currentPage=pageView.getPageNumber();syncOtherTools();updateZoomLabel(pageView.zoom());updateTabs();
+    }
+    private void buildSplitBar(FrameLayout viewport){
+        splitBar=new LinearLayout(this);splitBar.setTag("split_bar");splitBar.setOrientation(LinearLayout.HORIZONTAL);splitBar.setVisibility(View.GONE);splitBar.setPadding(dp(4),dp(3),dp(4),dp(3));splitBar.setBackgroundColor(0xFFF7F7F7);
+        for(int i=0;i<2;i++){
+            final boolean right=i==1;TextView chip=new TextView(this);chip.setTag("split_pane_chip");chip.setSingleLine();chip.setEllipsize(android.text.TextUtils.TruncateAt.END);chip.setGravity(Gravity.CENTER);chip.setTextSize(12.5f);chip.setPadding(dp(10),0,dp(10),0);
+            chip.setOnClickListener(v->showPaneMenu(v,right));paneChip[i]=chip;
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=right?dp(4):0;splitBar.addView(chip,lp);
+        }
+        viewport.addView(splitBar,new FrameLayout.LayoutParams(-1,dp(30),Gravity.TOP));
+    }
+    /** Pane title chips (pick a document / swap / end) and the split toggle state; the papers move down below the bar. */
+    private void updateSplitBar(){
+        if(splitBar==null)return;boolean on=splitMode&&splitLeft!=null&&splitRight!=null;
+        splitBar.setVisibility(on?View.VISIBLE:View.GONE);
+        if(papersView!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)papersView.getLayoutParams();int top=on?dp(30):0;if(lp.topMargin!=top){lp.topMargin=top;papersView.setLayoutParams(lp);}}
+        if(splitButton!=null)splitButton.setBackground(round(on?0xFFE4E4FA:Color.TRANSPARENT,22));
+        if(!on)return;
+        DocumentSession[] panes={splitLeft,splitRight};
+        for(int i=0;i<2;i++){
+            boolean active=panes[i]==activeSession;TextView chip=paneChip[i];chip.setText(panes[i].title+" ▾");chip.setContentDescription("화면 문서: "+panes[i].title);
+            chip.setTextColor(active?ACCENT:0xFF636366);chip.setTypeface(active?Typeface.DEFAULT_BOLD:Typeface.DEFAULT);
+            GradientDrawable bg=round(active?Color.WHITE:0xFFEDEDF0,12);bg.setStroke(dp(active?2:1),active?ACCENT:0xFFD1D1D6);chip.setBackground(bg);
+        }
+    }
+    /** Document list for one pane + swap + end split. */
+    private void showPaneMenu(View anchor,boolean right){
+        DocumentSession mine=right?splitRight:splitLeft;List<AnchoredMenu.Row> rows=new ArrayList<>();
+        for(DocumentSession o:sessions)rows.add(new AnchoredMenu.Row(o.title,R.drawable.ic_document_tab,()->assignPaneDocument(right,o)).tint(0xFF007AFF).selected(o==mine));
+        rows.add(AnchoredMenu.Row.divider());
+        rows.add(new AnchoredMenu.Row("좌우 바꾸기",R.drawable.ic_swipe,this::swapSplitPanes).tint(0xFF5856D6));
+        rows.add(new AnchoredMenu.Row("다른 문서 열기",R.drawable.ic_folder_open,()->{splitFocusView(right?secondPageView:firstPageView);showAddDocumentMenu();}).tint(0xFF8E8E93));
+        rows.add(new AnchoredMenu.Row("분할 보기 끝내기",R.drawable.ic_close,()->{exitSplit();toast("분할 보기를 종료했습니다");}).danger());
+        AnchoredMenu.show(this,anchor,false,rows,null);
+    }
+    private void assignPaneDocument(boolean right,DocumentSession s){
+        if(!splitMode)return;DocumentSession mine=right?splitRight:splitLeft,other=right?splitLeft:splitRight;
+        if(s==mine){splitFocusView(right?secondPageView:firstPageView);return;}
+        if(s==other){swapSplitPanes();return;}
+        splitFocusView(right?secondPageView:firstPageView);splitAssign(s);
     }
     private void setSplitGap(boolean on){LinearLayout.LayoutParams lp=(LinearLayout.LayoutParams)secondPageView.getLayoutParams();lp.leftMargin=on?dp(4):0;secondPageView.setLayoutParams(lp);}
     private void exitSplit(){
         if(!splitMode)return;DocumentSession keep=activeSession;splitMode=false;twoPage=twoPageBeforeSplit;splitLeft=splitRight=null;setSplitGap(false);
-        secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);
+        secondPageView.clearPage();secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);updateSplitBar();
         if(keep!=null&&renderer!=null){pageView=firstPageView;showPage(keep.page<0?0:Math.min(keep.page,renderer.getPageCount()-1));}
         updateTabs();
     }
@@ -647,7 +718,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         paintTool(penButton,pen,soft(penColor),penColor);paintTool(hlButton,hl,soft(hlColor),hlColor);paintTool(eraserButton,eraser,0xFFFFE3E8,0xFFFF3B30);
         if(penButton!=null)penButton.setContentDescription("펜");if(inkButton!=null){inkButton.setContentDescription("필기 모드");}}
     private void toggleFingerInk(){fingerInk=!fingerInk;recentPrefs.edit().putBoolean("finger_ink",fingerInk).apply();pageView.setFingerInk(fingerInk);syncOtherTools();toast(fingerInk?"펜·지우개는 손가락으로도 사용합니다. 두 손가락으로 확대하세요":"손가락은 선택·이동, S펜은 필기에 사용합니다");}
-    private void undoInk(){if(store==null)return;for(int i=store.strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=store.strokes.get(i);if(s.page==currentPage){store.strokes.remove(i);activeSession.redoStrokes.push(s);store.save();pageView.invalidate();toast("마지막 필기를 취소했습니다");return;}}toast("취소할 필기가 없습니다");}
+    private void undoInk(){if(store==null)return;
+        if(activeSession!=null&&activeSession.clearedPage==currentPage){store.strokes.addAll(activeSession.clearedStrokes);store.marks.addAll(activeSession.clearedMarks);activeSession.clearedStrokes.clear();activeSession.clearedMarks.clear();activeSession.clearedPage=-1;store.save();pageView.invalidate();refreshStudyPanel();toast("지운 필기를 되살렸습니다");return;}
+        for(int i=store.strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=store.strokes.get(i);if(s.page==currentPage){store.strokes.remove(i);activeSession.redoStrokes.push(s);store.save();pageView.invalidate();toast("마지막 필기를 취소했습니다");return;}}toast("취소할 필기가 없습니다");}
     private void redoInk(){if(activeSession==null||activeSession.redoStrokes.isEmpty()){toast("다시 실행할 필기가 없습니다");return;}AnnotationStore.InkStroke s=activeSession.redoStrokes.pop();store.strokes.add(s);store.save();if(s.page!=currentPage)showPage(s.page);else pageView.invalidate();}
     private void showInkHelp(){new AlertDialog.Builder(this).setTitle("필기 안내").setMessage("• S펜: 필기 또는 지우개\n• 손가락 필기 켜기: 펜·지우개 사용\n• 손가락 필기 끄기: 글자 선택·화면 이동\n• 두 손가락: 확대·이동\n• 필압: 누르는 힘에 따라 선 굵기 변화\n• S펜 측면 버튼: 누르는 동안 임시 지우개\n• 펜 뒤쪽 지우개: 지원 기기에서 자동 인식\n\n일반 정전식 펜과 손가락은 필압을 지원하지 않습니다.").setPositiveButton("확인",null).show();}
     private void toggleBookmark(){if(renderer==null)return;if(!store.bookmarks.add(currentPage))store.bookmarks.remove(currentPage);store.save();updateBookmarkButton();if(sidebarVisible&&!showAllThumbnails)rebuildThumbnails();}
@@ -776,7 +849,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     @Override public void onOutlinePointRequested(int page,float x,float y){promptOutline(page,x,y,"");}
     private void promptOutline(int page,float x,float y,String suggested){EditText input=new EditText(this);input.setHint("예: 2. 세부 검토사항");if(suggested!=null&&!suggested.isEmpty())input.setText(suggested.length()>60?suggested.substring(0,60)+"…":suggested);input.setPadding(dp(24),dp(12),dp(24),dp(12));new AlertDialog.Builder(this).setTitle("개요 제목").setView(input).setPositiveButton("저장",(d,w)->{String title=input.getText().toString().trim();if(title.isEmpty())title="페이지 "+(page+1);AnnotationStore.OutlineItem item=new AnnotationStore.OutlineItem();item.page=page;item.x=x;item.y=y;item.title=title;store.outlines.add(item);store.save();if(sidebarVisible&&panelTab==2)rebuildOutlinePanel();outlineMode=false;pageView.setOutlineMode(false);updateToolStates();toast("개요에 저장했습니다");}).setNegativeButton("취소",null).show();}
-    @Override public void onInkChanged(){if(store!=null){store.save();if(activeSession!=null)activeSession.redoStrokes.clear();}}
+    @Override public void onInkChanged(){if(store!=null){store.save();if(activeSession!=null){activeSession.redoStrokes.clear();activeSession.clearedPage=-1;}}}
     @Override public void onTextSelectionFinished(PdfPageView.TextSelection selection,float anchorX,float anchorY){showTextSelectionPopup(selection,anchorX,anchorY);}
     @Override public void onTranslationTapped(AnnotationStore.TranslationNote note){editTranslation(note);}
     private void startTextSelection(){if(renderer==null)return;setInkMode(0);pageView.setDirectTextSelection(true);syncOtherTools();recognizePageText(true);toast("텍스트 선택: 단어에서 드래그하세요");}

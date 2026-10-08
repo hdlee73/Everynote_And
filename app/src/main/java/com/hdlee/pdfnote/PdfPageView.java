@@ -777,7 +777,9 @@ final class PdfPageView extends View {
     void setEraserPartial(boolean on){eraserPartial=on;}
     boolean eraserPartial(){return eraserPartial;}
     /** Removes every ink stroke and highlight of this page; returns whether anything was removed. */
-    boolean clearPageInk(){boolean changed=false;if(strokes!=null)for(int i=strokes.size()-1;i>=0;i--)if(strokes.get(i).page==page){strokes.remove(i);changed=true;}if(marks!=null)for(int i=marks.size()-1;i>=0;i--){AnnotationStore.Mark m=marks.get(i);if(m.page==page&&!m.noteOnly){marks.remove(i);changed=true;}}if(changed)listener.onInkChanged();invalidate();return changed;}
+    /** What the last {@link #clearPageInk()} removed, so the caller can offer an undo. */
+    final List<AnnotationStore.InkStroke> clearedStrokes=new ArrayList<>();final List<AnnotationStore.Mark> clearedMarks=new ArrayList<>();
+    boolean clearPageInk(){clearedStrokes.clear();clearedMarks.clear();boolean changed=false;if(strokes!=null)for(int i=strokes.size()-1;i>=0;i--)if(strokes.get(i).page==page){clearedStrokes.add(0,strokes.remove(i));changed=true;}if(marks!=null)for(int i=marks.size()-1;i>=0;i--){AnnotationStore.Mark m=marks.get(i);if(m.page==page&&!m.noteOnly){clearedMarks.add(0,marks.remove(i));changed=true;}}if(changed)listener.onInkChanged();invalidate();return changed;}
     /** Partial erase: cuts the parts of the stroke inside the circle (centre cx,cy, radius r, all in view px) out and returns the remaining pieces (null when untouched). */
     private List<AnnotationStore.InkStroke> cutStroke(AnnotationStore.InkStroke s,RectF dest,float cx,float cy,float r){
         float reach=r+s.width*dest.width()/2f,w=dest.width(),h=dest.height();boolean near=false;
