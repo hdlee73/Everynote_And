@@ -83,7 +83,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private boolean fingerInk,swipeEnabled;
     private HwpConversion hwpConversion;
     private final List<DocumentSession> sessions=new ArrayList<>(); private DocumentSession activeSession; private boolean splitMode,twoPageBeforeSplit; private DocumentSession splitLeft,splitRight;
-    private ImageButton splitButton; private LinearLayout splitBar; private TextView[] paneChip=new TextView[2]; private View papersView; private DocumentSession splitWantedSession; private long splitWantedAt;
+    private float splitRatio=.5f; private View splitDivider; private ImageButton splitButton; private LinearLayout splitBar; private TextView[] paneChip=new TextView[2]; private View papersView; private DocumentSession splitWantedSession; private long splitWantedAt;
     private LinearLayout tabRow,thumbnailList; private HorizontalScrollView tabStrip; private ScrollView thumbnailPanel;
     private int thumbnailGeneration; private boolean sidebarVisible;
     private int inkMode,inkPen,inkColor=0xFF1C1C1E; private float inkWidth=0.004f;
@@ -329,7 +329,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void updateSplitChrome(){
         if(paneFrame==null||firstPageView==null||previousOverlay==null)return;
         PdfPageView pane=pageView==secondPageView?secondPageView:firstPageView;
-        positionTopTools();
+        positionTopTools();positionSplitDivider();
         if(!splitMode||pane.getWidth()<=0){paneFrame.setVisibility(View.GONE);previousOverlay.setTranslationX(0);nextOverlay.setTranslationX(0);return;}
         FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)paneFrame.getLayoutParams();
         if(lp.width!=pane.getWidth()||lp.height!=pane.getHeight()){lp.width=pane.getWidth();lp.height=pane.getHeight();paneFrame.setLayoutParams(lp);}
@@ -686,13 +686,49 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=right?dp(4):0;splitBar.addView(chip,lp);
         }
         viewport.addView(splitBar,new FrameLayout.LayoutParams(-1,dp(30),Gravity.TOP));
+        splitRatio=Math.min(.8f,Math.max(.2f,recentPrefs.getFloat("split_ratio",.5f)));
+        final float d=getResources().getDisplayMetrics().density;
+        splitDivider=new View(this){final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas c){p.setStyle(Paint.Style.FILL);p.setColor(Color.WHITE);RectF r=new RectF(getWidth()/2f-3*d,getHeight()/2f-22*d,getWidth()/2f+3*d,getHeight()/2f+22*d);c.drawRoundRect(r,3*d,3*d,p);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(d);p.setColor(0xFF8E8E93);c.drawRoundRect(r,3*d,3*d,p);}};
+        splitDivider.setTag("split_divider");splitDivider.setContentDescription("화면 너비 조절 · 좌우로 끌기, 두 번 누르면 절반씩");splitDivider.setVisibility(View.GONE);
+        splitDivider.setOnTouchListener(new View.OnTouchListener(){float downX;long lastTap;boolean moved;
+            @Override public boolean onTouch(View v,MotionEvent e){
+                if(papersView==null||papersView.getWidth()<=0)return true;
+                switch(e.getActionMasked()){
+                    case MotionEvent.ACTION_DOWN:downX=e.getRawX();moved=false;v.getParent().requestDisallowInterceptTouchEvent(true);return true;
+                    case MotionEvent.ACTION_MOVE:{if(Math.abs(e.getRawX()-downX)>dp(6))moved=true;int[] loc=new int[2];papersView.getLocationOnScreen(loc);splitRatio=Math.min(.8f,Math.max(.2f,(e.getRawX()-loc[0])/papersView.getWidth()));applySplitRatio();return true;}
+                    case MotionEvent.ACTION_UP:case MotionEvent.ACTION_CANCEL:{
+                        if(!moved&&e.getActionMasked()==MotionEvent.ACTION_UP){long now=SystemClock.elapsedRealtime();if(now-lastTap<400){splitRatio=.5f;applySplitRatio();lastTap=0;}else lastTap=now;}
+                        recentPrefs.edit().putFloat("split_ratio",splitRatio).apply();return true;}
+                }
+                return true;
+            }});
+        viewport.addView(splitDivider,new FrameLayout.LayoutParams(dp(28),dp(64),Gravity.TOP|Gravity.START));
     }
     /** Pane title chips (pick a document / swap / end) and the split toggle state; the papers move down below the bar. */
+    /** Left pane gets {@code splitRatio} of the width, the right pane the rest; the grip sits on the seam. */
+    private void applySplitRatio(){
+        if(firstPageView==null||secondPageView==null)return;float r=splitMode?Math.min(.8f,Math.max(.2f,splitRatio)):.5f;
+        LinearLayout.LayoutParams a=(LinearLayout.LayoutParams)firstPageView.getLayoutParams(),b=(LinearLayout.LayoutParams)secondPageView.getLayoutParams();
+        float wa=splitMode?r:1,wb=splitMode?1-r:1;
+        if(a.weight!=wa||b.weight!=wb){a.weight=wa;b.weight=wb;firstPageView.setLayoutParams(a);secondPageView.setLayoutParams(b);}
+        if(splitBar!=null&&splitBar.getChildCount()==2)for(int i=0;i<2;i++){LinearLayout.LayoutParams cp=(LinearLayout.LayoutParams)splitBar.getChildAt(i).getLayoutParams();float w=splitMode?(i==0?r:1-r):1;if(cp.weight!=w){cp.weight=w;splitBar.getChildAt(i).setLayoutParams(cp);}}
+        positionSplitDivider();
+    }
+    private void positionSplitDivider(){
+        if(splitDivider==null||papersView==null)return;
+        if(!splitMode||papersView.getWidth()<=0){splitDivider.setVisibility(View.GONE);return;}
+        FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)splitDivider.getLayoutParams();
+        int x=papersView.getLeft()+firstPageView.getRight()+dp(2)-lp.width/2,y=papersView.getTop()+(papersView.getHeight()-lp.height)/2;
+        if(lp.leftMargin!=x||lp.topMargin!=y){lp.leftMargin=x;lp.topMargin=y;splitDivider.setLayoutParams(lp);}
+        splitDivider.setVisibility(View.VISIBLE);
+    }
     private void updateSplitBar(){
         if(splitBar==null)return;boolean on=splitMode&&splitLeft!=null&&splitRight!=null;
         splitBar.setVisibility(on?View.VISIBLE:View.GONE);
         if(papersView!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)papersView.getLayoutParams();int top=on?dp(30):0;if(lp.topMargin!=top){lp.topMargin=top;papersView.setLayoutParams(lp);}}
         if(splitButton!=null)splitButton.setBackground(round(on?0xFFE4E4FA:Color.TRANSPARENT,22));
+        applySplitRatio();
         if(!on)return;
         DocumentSession[] panes={splitLeft,splitRight};
         for(int i=0;i<2;i++){
