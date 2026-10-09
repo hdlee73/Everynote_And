@@ -124,11 +124,13 @@ final class AnnotationPainter {
         for(AnnotationStore.InkStroke s:store.strokes)if(s.page==page)stroke(c,d,s);
     }
     static final String[] PEN_NAMES={"볼펜","연필","만년필","붓","사인펜"};
-    /** One stroke in the style of its pen: ballpoint, pencil, fountain pen (nib angle), brush (taper) or felt marker. Translucent colours do not darken where the stroke overlaps itself. */
+    /** The ink highlighter (형광펜) pen id: a freehand or straight translucent band of constant width. */
+    static final int HIGHLIGHTER=5;
+    /** One stroke in the style of its pen: ballpoint, pencil, fountain pen (nib angle), brush (taper), felt marker or (pen 5, not in {@link #PEN_NAMES}) the highlighter: flat constant width, no pressure, translucent. Translucent colours do not darken where the stroke overlaps itself. */
     static void stroke(Canvas c,RectF d,AnnotationStore.InkStroke s){
         int n=s.points.size();if(n==0||d.width()<=0)return;
         int argb=adj(s.color);float penAlpha=s.pen==1?.78f:s.pen==3?.92f:s.pen==4?.82f:1f;int eff=Math.round(Color.alpha(argb)*penAlpha);
-        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(argb|0xFF000000);p.setStrokeCap(s.pen==4?Paint.Cap.SQUARE:Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(argb|0xFF000000);p.setStrokeCap(s.pen>=4?Paint.Cap.SQUARE:Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
         int save=-1;if(eff<255)save=c.saveLayerAlpha(d.left,d.top,d.right,d.bottom,Math.max(8,eff));
         float base=s.width*d.width();
         for(int i=0;i<n;i++){
@@ -140,6 +142,7 @@ final class AnnotationPainter {
                 case 2:{double ang=Math.atan2(by-ay,bx-ax);double cut=Math.abs(Math.sin(ang+Math.PI/4));w=base*(float)(.32+1.05*cut)*(.65f+pr*.7f);break;}
                 case 3:{float t=n<=1?.5f:i/(float)(n-1);float taper=Math.min(1f,Math.min(t,1f-t)*7f);w=base*2.1f*(.35f+pr*.95f)*(.35f+.65f*taper);break;}
                 case 4:w=base*1.5f;break;
+                case 5:w=base;break;
                 default:w=base*(.45f+pr*1.15f);
             }
             w=Math.max(1.5f,w);p.setStrokeWidth(w);

@@ -32,6 +32,7 @@ public class InlineTextTest {
     }
     @SuppressWarnings("unchecked") private <T>T field(String name)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);return (T)f.get(activity);}
     private void set(String name,Object value)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);f.set(activity,value);}
+    private void invokeInt(String name,int value)throws Exception{Method m=MainActivity.class.getDeclaredMethod(name,int.class);m.setAccessible(true);m.invoke(activity,value);}
     private void invoke(String name)throws Exception{Method m=MainActivity.class.getDeclaredMethod(name);m.setAccessible(true);m.invoke(activity);}
     private static boolean hasText(View view,String text){if(view instanceof TextView&&((TextView)view).getText().toString().contains(text))return true;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++)if(hasText(((ViewGroup)view).getChildAt(i),text))return true;return false;}
     private View byTag(String tag){return root.findViewWithTag(tag);}
@@ -93,8 +94,9 @@ public class InlineTextTest {
     @Test public void headerTitleRenamesAndLassoIsOnTheMainToolbar()throws Exception{
         View title=byTag("document_title");assertNotNull(title);assertTrue(title.hasOnClickListeners());
         View bar=byTag("reading_toolbar");View lasso=byDescription(bar,"올가미 선택");assertNotNull("올가미는 메인 하단 도구막대에 있습니다",lasso);
-        lasso.performClick();PdfPageView page=field("pageView");assertTrue(page.isLassoMode());assertEquals(View.VISIBLE,byTag("lasso_bar").getVisibility());
-        byTag("lasso_shape_1").performClick();assertEquals(PdfPageView.LASSO_RECT,page.getLassoShape());byTag("lasso_shape_2").performClick();assertEquals(PdfPageView.LASSO_CIRCLE,page.getLassoShape());
-        byDescription(bar,"올가미 선택").performClick();assertFalse(page.isLassoMode());assertEquals(View.GONE,byTag("lasso_bar").getVisibility());
+        lasso.performClick();PdfPageView page=field("pageView");assertTrue(page.isLassoMode());assertNull("올가미 모양은 막대가 아니라 떠 있는 메뉴에서 고릅니다",byTag("lasso_bar"));
+        lasso.performClick();assertTrue("한 번 더 누르면 모양 메뉴가 열리고 올가미는 유지됩니다",page.isLassoMode());
+        invokeInt("chooseLassoShape",PdfPageView.LASSO_RECT);assertEquals(PdfPageView.LASSO_RECT,page.getLassoShape());invokeInt("chooseLassoShape",PdfPageView.LASSO_CIRCLE);assertEquals(PdfPageView.LASSO_CIRCLE,page.getLassoShape());
+        invokeInt("setInkMode",0);assertFalse(page.isLassoMode());
     }
 }

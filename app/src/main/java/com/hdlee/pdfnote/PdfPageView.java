@@ -319,7 +319,7 @@ final class PdfPageView extends View {
         invalidate();
     }
 
-    void setInkPen(int pen) { inkPen = Math.max(0, Math.min(4, pen)); }
+    void setInkPen(int pen) { inkPen = Math.max(0, Math.min(5, pen)); }
     void setInkTool(int mode, int color, float width) {
         inkMode=mode; inkColor=color; inkWidth=width;
         if(mode!=0){setLassoMode(false);highlightMode=memoMode=outlineMode=false;}
