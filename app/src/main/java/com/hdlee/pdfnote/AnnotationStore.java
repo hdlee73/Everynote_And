@@ -98,12 +98,12 @@ final class AnnotationStore {
 
     static final class InkStroke {
         int page, color;
-        /** 0 ballpoint, 1 pencil, 2 fountain pen, 3 brush, 4 felt marker. */
+        /** 0 ballpoint, 1 pencil, 2 fountain pen, 3 brush, 4 felt marker, 5 highlighter. */
         int pen;
         float width;
         final List<InkPoint> points=new ArrayList<>();
         JSONObject toJson() throws JSONException { JSONObject o=new JSONObject().put("page",page).put("color",color).put("width",width).put("pen",pen);JSONArray a=new JSONArray();for(InkPoint p:points)a.put(p.toJson());return o.put("points",a); }
-        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF1C1C1E);s.width=(float)o.optDouble("width",0.004);s.pen=Math.max(0,Math.min(4,o.optInt("pen",0)));JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
+        static InkStroke fromJson(JSONObject o) throws JSONException { InkStroke s=new InkStroke();s.page=o.optInt("page");s.color=o.optInt("color",0xFF1C1C1E);s.width=(float)o.optDouble("width",0.004);s.pen=Math.max(0,Math.min(5,o.optInt("pen",0)));JSONArray a=o.optJSONArray("points");if(a!=null)for(int i=0;i<a.length();i++)s.points.add(InkPoint.fromJson(a.getJSONObject(i)));return s; }
     }
 
     static final class TranslationNote {

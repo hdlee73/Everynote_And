@@ -39,7 +39,7 @@ public class ReadingToolbarTest {
         assertNull("문서 개요는 페이지 이동 메뉴로 옮겼습니다",description(bar,"문서 개요"));
         for(String name:new String[]{"보기 방법","읽기 모드","필기 모드","타이핑","올가미 선택","하단 메뉴 위치·방향"})assertNotNull(name,description(bar,name));
         assertTrue("즐겨찾기",description(bar,"즐겨찾기")!=null||description(bar,"즐겨찾기 추가")!=null||description(bar,"즐겨찾기 해제")!=null);
-        assertNull("메모 추가는 삽입 메뉴 안에 있습니다",description(bar,"메모 추가"));
+        assertNull("메모는 삽입 메뉴 안에 있습니다",description(bar,"메모"));
         invoke("showOutlineList");View side=root.findViewWithTag("side_panel");assertEquals("개요는 미리보기 패널의 탭으로 열립니다",View.VISIBLE,side.getVisibility());assertNotNull(root.findViewWithTag("outline_add"));invoke("showOutlineList");assertEquals(View.GONE,side.getVisibility());
         description(bar,"보기 방법").performClick();assertNotNull(description(bar,"타이핑"));assertNull("하단 막대에는 한글 글자가 없습니다",firstText(bar));
         page.performClick();screenshot(root,"reading-toolbar.png");
@@ -50,8 +50,8 @@ public class ReadingToolbarTest {
         description(bar,"필기 모드").performClick();assertEquals("필기 모드에서도 하단 메뉴는 그대로입니다",View.VISIBLE,read.getVisibility());assertEquals(View.VISIBLE,strip.getVisibility());assertEquals("필기 모드에서는 펜이 바로 켜집니다",1,(int)(Integer)field("inkMode"));
         assertNotNull("지우개는 필기 모드 옆 하단 메뉴에 있습니다",description(bar,"지우개"));View options=root.findViewWithTag("ink_options");
         layout(root,360,720);assertEquals("굵기·색은 필기 도구 줄 아래가 아니라 펜 설정 패널에 있습니다",View.GONE,options.getVisibility());
-        description(root,"펜").performClick();description(root,"형광펜").performClick();assertTrue((Boolean)field("highlightMode"));layout(root,360,720);assertEquals("형광펜에도 줄이 생기지 않습니다",View.GONE,options.getVisibility());
-        description(root,"형광펜").performClick();description(bar,"지우개").performClick();assertEquals(2,(int)(Integer)field("inkMode"));assertEquals("지우개에는 굵기·색 줄이 없습니다",View.GONE,options.getVisibility());
+        description(root,"펜").performClick();description(root,"형광펜").performClick();assertTrue("형광펜은 필기(잉크)의 한 종류입니다",(Boolean)field("inkHl"));assertFalse("하이라이트 도구와는 별개입니다",(Boolean)field("highlightMode"));assertEquals(1,(int)(Integer)field("inkMode"));layout(root,360,720);assertEquals("형광펜에도 줄이 생기지 않습니다",View.GONE,options.getVisibility());
+        description(root,"형광펜").performClick();description(bar,"지우개").performClick();assertEquals(2,(int)(Integer)field("inkMode"));assertFalse("지우개를 고르면 형광펜이 풀립니다",(Boolean)field("inkHl"));assertEquals("지우개에는 굵기·색 줄이 없습니다",View.GONE,options.getVisibility());
         description(bar,"필기 모드").performClick();assertEquals("한 번 더 누르면 필기 도구 줄이 숨습니다",View.GONE,strip.getVisibility());assertTrue((Boolean)field("writeMode"));
         description(bar,"필기 모드").performClick();assertEquals(View.VISIBLE,strip.getVisibility());
         description(bar,"읽기 모드").performClick();assertEquals(View.GONE,strip.getVisibility());assertEquals(0,(int)(Integer)field("inkMode"));
@@ -72,6 +72,22 @@ public class ReadingToolbarTest {
     }
     @Test public void folderIconRendersAssignedColorAtSmallAndLargeSizes(){
         for(int size:new int[]{26,96}){Bitmap image=Bitmap.createBitmap(size,size,Bitmap.Config.ARGB_8888);FolderIconDrawable icon=new FolderIconDrawable(0xFF54A485,size);icon.setBounds(0,0,size,size);icon.draw(new Canvas(image));int front=image.getPixel(size/2,size*40/64);assertEquals(255,Color.alpha(front));assertTrue(Color.green(front)>Color.red(front));assertEquals(0,Color.alpha(image.getPixel(0,0)));image.recycle();}
+    }
+    @Test public void aPenColourIsCheckedInExactlyOneRow()throws Exception{
+        Field f1=MainActivity.class.getDeclaredField("INK_COLORS"),f2=MainActivity.class.getDeclaredField("INK_COLORS2");f1.setAccessible(true);f2.setAccessible(true);int[] a=(int[])f1.get(null),b=(int[])f2.get(null);
+        int[] all=new int[a.length+b.length];System.arraycopy(a,0,all,0,a.length);System.arraycopy(b,0,all,a.length,b.length);
+        Method m=MainActivity.class.getDeclaredMethod("swatches",int[].class,java.util.function.IntSupplier.class,java.util.function.IntConsumer.class,int.class,int.class,int[].class);m.setAccessible(true);
+        for(int pick:new int[]{a[2],b[3]}){
+            LinearLayout one=(LinearLayout)m.invoke(activity,a,(java.util.function.IntSupplier)()->pick,(java.util.function.IntConsumer)c->{},24,0,all),two=(LinearLayout)m.invoke(activity,b,(java.util.function.IntSupplier)()->pick,(java.util.function.IntConsumer)c->{},24,1,all);
+            int checks=0;for(LinearLayout row:new LinearLayout[]{one,two})for(int i=0;i<row.getChildCount();i++)if(row.getChildAt(i) instanceof ImageView&&((ImageView)row.getChildAt(i)).getDrawable()!=null)checks++;
+            assertEquals("색 하나만 체크됩니다",1,checks);
+        }
+    }
+    @Test public void thumbnailPanelCanListOnlyPagesWithHandwriting()throws Exception{
+        set("thumbInk",true);Method m=MainActivity.class.getDeclaredMethod("thumbnailPages");m.setAccessible(true);
+        assertTrue("필기가 없으면 목록이 비어 있습니다",((List<?>)m.invoke(activity)).isEmpty());
+        AnnotationStore.InkStroke stroke=new AnnotationStore.InkStroke();stroke.page=0;stroke.pen=AnnotationPainter.HIGHLIGHTER;stroke.points.add(new AnnotationStore.InkPoint(.1f,.1f,.5f));store.strokes.add(stroke);
+        assertEquals("형광펜 획도 필기로 칩니다",1,((List<?>)m.invoke(activity)).size());
     }
     private <T>T field(String name)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);return (T)f.get(activity);}
     private void set(String name,Object value)throws Exception{Field f=MainActivity.class.getDeclaredField(name);f.setAccessible(true);f.set(activity,value);}

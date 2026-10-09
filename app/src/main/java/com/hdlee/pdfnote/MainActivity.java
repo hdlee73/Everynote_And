@@ -110,6 +110,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private LinearLayout tabRow,thumbnailList; private HorizontalScrollView tabStrip; private ScrollView thumbnailPanel;
     private int thumbnailGeneration; private boolean sidebarVisible;
     private int inkMode,inkPen,inkColor=0xFF1C1C1E; private float inkWidth=0.004f;
+    /** The ink highlighter (형광펜): a pen of its own with its own colour / width; straight or freehand. The 하이라이트 mark tool (highlightMode) is a different, text-following tool. */
+    private boolean inkHl,hlStraight; private int hlInkColor=0x66FFDE59; private float hlInkWidth=0.016f;
     private SharedPreferences recentPrefs;
     private TextRecognizer latinRecognizer,koreanRecognizer;
     private int ocrGeneration;
@@ -136,10 +138,10 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private String pendingJsonExport;
     private boolean awaitingOfficeReturn;
     private boolean officeConverting;
-    private LinearLayout searchPanel,searchList,lassoBar; private ScrollView searchScroll; private EditText searchInput; private TextView searchStatus; private ImageButton textButton,lassoButton;
+    private LinearLayout searchPanel,searchList; private ScrollView searchScroll; private EditText searchInput; private TextView searchStatus; private ImageButton textButton,lassoButton;
     private final List<SearchScanner.Hit> searchHits=new ArrayList<>(); private int searchCurrent=-1,searchSession,searchDone,searchTotal;
     private boolean searching,searchTruncated,searchPrecise; private DocumentSession searchOwner;
-    private int lassoShape; private boolean showAllThumbnails;
+    private int lassoShape; private boolean showAllThumbnails,thumbInk;
 
     /** Translates on the device (ML Kit) and puts the result on the page right away; no other app and no copy-paste needed. */
     private void translateText(String source,RectF bounds){translateOffline(source,bounds);}
@@ -184,7 +186,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         showTranslationResult(source,translated==null?"":translated.toString(),bounds);
     }
 
-    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",true);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);selectedColor=(Math.max(26,Math.min(255,recentPrefs.getInt("highlight_alpha",Color.alpha(selectedColor))))<<24)|(selectedColor&0xFFFFFF);firstPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));secondPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));firstPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));secondPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
+    @Override protected void onCreate(Bundle state){super.onCreate(state);getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);recentPrefs=getSharedPreferences("recent_documents",MODE_PRIVATE);verticalPageSwipe=recentPrefs.getBoolean("vertical_page_swipe",false);fingerInk=recentPrefs.getBoolean("finger_ink",false);swipeEnabled=recentPrefs.getBoolean("page_swipe_enabled_v2",true);twoPage=recentPrefs.getBoolean("two_page",false);library=new LibraryRepository(this);com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(getApplicationContext());libraryFolder=library.root;lassoShape=recentPrefs.getInt("lasso_shape",PdfPageView.LASSO_FREE);showAllThumbnails=recentPrefs.getBoolean("thumb_all",true);buildUi();pageView.setLassoShape(lassoShape);applyDarkPage();inkPen=recentPrefs.getInt("ink_pen",0);pageView.setInkPen(inkPen);hlInkColor=recentPrefs.getInt("hl_ink_color",hlInkColor);hlInkWidth=Math.max(.004f,Math.min(.04f,recentPrefs.getFloat("hl_ink_width",hlInkWidth)));thumbInk=recentPrefs.getBoolean("thumb_ink",false);selectedColor=(Math.max(26,Math.min(255,recentPrefs.getInt("highlight_alpha",Color.alpha(selectedColor))))<<24)|(selectedColor&0xFFFFFF);firstPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));secondPageView.setEraserRadius(recentPrefs.getFloat("eraser_radius",10f));firstPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));secondPageView.setEraserPartial(recentPrefs.getBoolean("eraser_partial",true));pageView.setFingerInk(fingerInk);pageView.setPageSwipeEnabled(swipeEnabled);pageView.setVerticalPageSwipe(verticalPageSwipe);syncOtherTools();Uri u=getIntent().getData();if(u!=null)openPdf(u);else if(!restoreSession())showWelcome();}
     private void applyKeepAwake(){if(recentPrefs.getBoolean("keep_awake",false))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}
     @Override protected void onResume(){super.onResume();enforceChrome();applyKeepAwake();root.postDelayed(this::autoCheckForUpdate,4000);if(awaitingOfficeReturn){awaitingOfficeReturn=false;root.post(()->new AlertDialog.Builder(this).setTitle("문서로 돌아왔습니다")
         .setMessage("문서 앱에서 PDF로 내보냈다면 파일을 가져와 필기와 주석을 이어갈 수 있습니다.")
@@ -244,7 +246,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         zoomLabel=new TextView(this);zoomLabel.setTag("zoom_label");zoomLabel.setText("100%");zoomLabel.setTextSize(11);zoomLabel.setTextColor(NAVY);zoomLabel.setGravity(Gravity.CENTER);zoomLabel.setContentDescription("확대 비율 · 눌러 100%");zoomLabel.setOnClickListener(v->{if(pageView!=null)pageView.setZoom(1f);});zoomPanel.addView(zoomLabel,new LinearLayout.LayoutParams(dp(40),dp(22)));
         TextView zoomOut=stepButton("−","축소");zoomOut.setBackground(null);zoomOut.setOnClickListener(v->stepZoom(0.8f));zoomPanel.addView(zoomOut,new LinearLayout.LayoutParams(dp(40),dp(36)));
         FrameLayout.LayoutParams zoomParams=new FrameLayout.LayoutParams(dp(40),-2,Gravity.START|Gravity.BOTTOM);zoomParams.setMargins(dp(10),0,0,dp(16));viewport.addView(zoomPanel,zoomParams);
-        buildLassoBar();FrameLayout.LayoutParams lassoParams=new FrameLayout.LayoutParams(-2,dp(44),Gravity.TOP|Gravity.CENTER_HORIZONTAL);lassoParams.topMargin=dp(8);viewport.addView(lassoBar,lassoParams);
         viewerRow.addView(viewport,new LinearLayout.LayoutParams(0,-1,1));
         pdfArea=new FrameLayout(this);pdfArea.addView(viewerRow,new FrameLayout.LayoutParams(-1,-1));
         studySplit=new LinearLayout(this);studySplit.addView(pdfArea);buildStudyPanel();studySplit.addView(studyPanel);
@@ -259,7 +260,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         eraserBarButton=barIcon(readBar,R.drawable.ic_eraser,"지우개",0xFFFF6B8A,v->eraserBarTap(v));
         textButton=barIcon(readBar,R.drawable.ic_text,"타이핑",0xFF34C759,v->toggleTyping());
         bookmarkButton=barIcon(readBar,R.drawable.ic_star_outline,"즐겨찾기",0xFFF5A623,v->toggleBookmark());
-        lassoButton=barIcon(readBar,R.drawable.ic_lasso,"올가미 선택",0xFFAF52DE,v->toggleLasso());
+        lassoButton=barIcon(readBar,R.drawable.ic_lasso,"올가미 선택",0xFFAF52DE,v->toggleLasso(v));
         insertButton=barIcon(readBar,R.drawable.ic_insert,"삽입 · 메모 사진 스티커 도형 표",0xFFFF2D55,v->showInsertMenu(v));
         writeBar.setBackground(round(0xF8FFFFFF,22));writeBar.setElevation(dp(8));writeBar.setPadding(dp(4),0,dp(4),0);
         penButton=stripIcon(R.drawable.ic_ink,"펜",0xFF1C1C1E,v->penTap(v));
@@ -280,7 +281,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         fullscreenDock.addView(dockIcon(R.drawable.ic_eraser,"전체 화면 지우개",0xFFFF6B8A,v->eraserBarTap(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_insert,"전체 화면 삽입",0xFFFF2D55,v->showInsertMenu(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_text,"전체 화면 타이핑",0xFF34C759,v->toggleTyping()),new LinearLayout.LayoutParams(dp(44),dp(44)));
-        fullscreenDock.addView(dockIcon(R.drawable.ic_lasso,"전체 화면 올가미",0xFFAF52DE,v->toggleLasso()),new LinearLayout.LayoutParams(dp(44),dp(44)));
+        fullscreenDock.addView(dockIcon(R.drawable.ic_lasso,"전체 화면 올가미",0xFFAF52DE,v->toggleLasso(v)),new LinearLayout.LayoutParams(dp(44),dp(44)));
         fullscreenDock.addView(dockIcon(R.drawable.ic_more_vert,"전체 화면 메뉴",NAVY,v->showMainMenu(v,true)),new LinearLayout.LayoutParams(dp(44),dp(44)));
         dockGrip=makeGrip(fullscreenDock,"dock");dockGrip.setVisibility(View.GONE);fullscreenDock.addView(dockGrip,0,new LinearLayout.LayoutParams(dp(18),dp(44)));fullscreenExit=dockIcon(R.drawable.ic_fullscreen_exit,"전체 화면 종료",0xFF8E8E93,v->toggleFullscreen());fullscreenDock.addView(fullscreenExit,new LinearLayout.LayoutParams(dp(44),dp(44)));FrameLayout.LayoutParams ep=new FrameLayout.LayoutParams(-2,dp(44),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);ep.setMargins(dp(8),0,dp(8),dp(14));root.addView(fullscreenDock,ep);
         fullscreenDock.setOnTouchListener((v,e)->{if(dockShown){v.removeCallbacks(dockHider);if(!dockPinned()&&(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL))v.postDelayed(dockHider,6000);}return false;});
@@ -302,11 +303,11 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void penTap(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
         if(!writeMode){setWriteMode(true);return;}
-        if(!highlightMode&&(inkMode==1||inkMode==3))showPenMenu(anchor);else setInkMode(1);
+        if(!inkHl&&(inkMode==1||inkMode==3))showPenMenu(anchor);else{inkHl=false;setInkMode(1);}
     }
     private void highlightTap(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
-        if(highlightMode)showHighlightMenu(anchor);else toggleHighlight();
+        if(inkHl&&(inkMode==1||inkMode==3))showHighlightMenu(anchor);else{if(!writeMode)setWriteMode(true);inkHl=true;setInkMode(hlStraight?3:1);}
     }
     private ImageButton stripIcon(int resource,String description,int tint,View.OnClickListener action){
         ImageButton button=icon(resource,description,tint,action);button.setPadding(dp(10),dp(10),dp(10),dp(10));baseTint.put(button,tint);writeBar.addView(button,new LinearLayout.LayoutParams(dp(44),dp(44)));return button;
@@ -318,11 +319,10 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         boolean show=writeMode&&writeStripShown();if(stripBox!=null){boolean was=stripBox.getVisibility()==View.VISIBLE;stripBox.setVisibility(show?View.VISIBLE:View.GONE);if(show&&!was)applyFloatPos(stripBox,"strip");}
         positionTopTools();
     }
-    /** The pen strip and the lasso bar float at the top of the page, below the split-view name bar when that is shown. */
+    /** The pen strip floats at the top of the page, below the split-view name bar when that is shown. */
     private void positionTopTools(){
         if(stripBox==null)return;boolean strip=writeMode&&writeStripShown();int base=dp(8)+(splitBar!=null&&splitBar.getVisibility()==View.VISIBLE?dp(40):0);
         FrameLayout.LayoutParams sp=(FrameLayout.LayoutParams)stripBox.getLayoutParams();if(sp.topMargin!=base){sp.topMargin=base;stripBox.setLayoutParams(sp);}
-        if(lassoBar!=null){FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)lassoBar.getLayoutParams();int top=base+(strip?dp(52)+(inkOptions!=null&&inkOptions.getVisibility()==View.VISIBLE?dp(6)+Math.max(inkOptions.getHeight(),dp(96)):0):0);if(lp.topMargin!=top){lp.topMargin=top;lassoBar.setLayoutParams(lp);}}
     }
     /** Writing-mode button: switches to writing; pressed again while writing it shows or hides the tool strip. */
     private void inkModeTap(){
@@ -372,71 +372,93 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             @Override public void onStopTrackingTouch(android.widget.SeekBar b){}});
         row.addView(bar,new LinearLayout.LayoutParams(0,dp(32),1));row.addView(number,new LinearLayout.LayoutParams(dp(42),-2));return row;
     }
+    /** A smooth sample stroke (many points, eased pressure) for the pen panel's preview and pen-type icons. */
+    private AnnotationStore.InkStroke sampleStroke(int pen,int color,float width,float x0,float x1,float amp){
+        AnnotationStore.InkStroke sample=new AnnotationStore.InkStroke();sample.pen=pen;sample.color=color;sample.width=width;final int n=64;
+        for(int k=0;k<=n;k++){float t=k/(float)n;sample.points.add(new AnnotationStore.InkPoint(x0+(x1-x0)*t,.5f+amp*(float)Math.sin(t*Math.PI*2),.45f+.5f*(float)Math.sin(t*Math.PI)));}
+        return sample;
+    }
     /**
-     * One tidy panel for the pen and for the highlighter (opened by tapping the tool again): live preview, pen type, thickness,
+     * One tidy panel for the pen and for the ink highlighter (opened by tapping the tool again): live preview, pen type, thickness,
      * opacity, colours and the on/off options. It replaces the width / colour rows that used to hang under the tool strip.
+     * The highlighter is part of the handwriting: a flat translucent band, straight or freehand. (The 하이라이트 mark tool only has a thickness menu.)
      */
     private void showPenPanel(View anchor,boolean hl){
-        final float lo=hl?0.01f:0.0015f,hi=hl?0.06f:0.012f;
+        final float lo=hl?0.004f:0.0015f,hi=hl?0.04f:0.012f;
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(10),dp(8),dp(10),dp(4));box.setTag("pen_panel");box.setContentDescription(hl?"형광펜 설정":"펜 설정");
         final View[] previewRef={null};
         final Runnable redraw=()->{if(previewRef[0]!=null)previewRef[0].invalidate();};
         TextView title=new TextView(this);title.setText(hl?"형광펜":"펜");title.setTextSize(15);title.setTypeface(Typeface.DEFAULT_BOLD);title.setTextColor(0xFF1C1C1E);title.setPadding(dp(2),0,0,dp(6));box.addView(title);
         View preview=new View(this){@Override protected void onDraw(Canvas c){
             float w=getWidth(),h=getHeight();Paint bg=new Paint(Paint.ANTI_ALIAS_FLAG);bg.setColor(0xFFF7F7FA);c.drawRoundRect(new RectF(0,0,w,h),dp(14),dp(14),bg);
-            if(hl){Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(selectedColor);p.setStrokeWidth(Math.min(h-dp(8),Math.max(dp(6),highlightThick*h*3f)));p.setStrokeCap(Paint.Cap.BUTT);c.drawLine(w*.08f,h/2f,w*.92f,h/2f,p);return;}
-            AnnotationStore.InkStroke sample=new AnnotationStore.InkStroke();sample.pen=inkPen;sample.color=inkColor;sample.width=inkWidth*dp(420)/Math.max(1f,w);
-            for(int k=0;k<=24;k++){float x=.08f+.84f*k/24f;sample.points.add(new AnnotationStore.InkPoint(x,.5f+.24f*(float)Math.sin(k/24f*Math.PI*2),k<2||k>22?.5f:.9f));}
+            float scale=dp(420)/Math.max(1f,w);   // the sample is drawn as if the page were 420dp wide
+            AnnotationStore.InkStroke sample=hl?sampleStroke(AnnotationPainter.HIGHLIGHTER,hlInkColor,hlInkWidth*scale,.08f,.92f,hlStraight?0f:.16f):sampleStroke(inkPen,inkColor,inkWidth*scale,.08f,.92f,.24f);
             AnnotationPainter.stroke(c,new RectF(0,0,w,h),sample);}};
         previewRef[0]=preview;box.addView(preview,new LinearLayout.LayoutParams(-1,dp(56)));
         if(!hl){
             box.addView(sectionLabel("펜 종류"));
-            box.addView(iconSegmented(AnnotationPainter.PEN_NAMES.length,()->inkPen,i->{inkPen=i;pageView.setInkPen(i);recentPrefs.edit().putInt("ink_pen",i).apply();syncOtherTools();updateInkButton();redraw.run();},(c,w,h,i)->{
-                AnnotationStore.InkStroke sample=new AnnotationStore.InkStroke();sample.pen=i;sample.color=0xFF1C1C1E;sample.width=i==4?.07f:i==3?.06f:.034f;
-                for(int k=0;k<=12;k++){float x=.18f+.64f*k/12f;sample.points.add(new AnnotationStore.InkPoint(x,.5f+.2f*(float)Math.sin(k/12f*Math.PI*2),k<2||k>10?.5f:.9f));}
-                AnnotationPainter.stroke(c,new RectF(0,0,w,h),sample);}));
+            box.addView(iconSegmented(AnnotationPainter.PEN_NAMES.length,()->inkPen,i->{inkPen=i;recentPrefs.edit().putInt("ink_pen",i).apply();applyInk();updateInkButton();redraw.run();},(c,w,h,i)->
+                AnnotationPainter.stroke(c,new RectF(0,0,w,h),sampleStroke(i,0xFF1C1C1E,i==4?.07f:i==3?.06f:.034f,.18f,.82f,.2f))));
             LinearLayout names=new LinearLayout(this);names.setPadding(dp(4),0,dp(4),0);
             for(String n:AnnotationPainter.PEN_NAMES){TextView t=new TextView(this);t.setText(n);t.setTextSize(11);t.setTextColor(0xFF8E8E93);t.setGravity(Gravity.CENTER);t.setSingleLine();names.addView(t,new LinearLayout.LayoutParams(0,-2,1));}
             box.addView(names);
         }
-        float current=hl?highlightThick:inkWidth;
+        float current=hl?hlInkWidth:inkWidth;
         box.addView(sliderRow("굵기",1,100,Math.max(1,Math.min(100,Math.round(1+(current-lo)/(hi-lo)*99))),v->{
             float f=lo+(hi-lo)*(v-1)/99f;
-            if(hl){highlightThick=f;applyHighlightStyle();}else{inkWidth=f;pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();}
-            redraw.run();},v->String.valueOf(v)));
-        int alpha=Color.alpha(hl?selectedColor:inkColor);
+            if(hl){hlInkWidth=f;recentPrefs.edit().putFloat("hl_ink_width",f).apply();}else inkWidth=f;
+            applyInk();redraw.run();},v->String.valueOf(v)));
+        int alpha=Color.alpha(hl?hlInkColor:inkColor);
         box.addView(sliderRow("투명도",10,100,Math.max(10,Math.round(alpha*100f/255f)),v->{
             int a=Math.max(hl?26:1,Math.round(v*255f/100f));
-            if(hl)setHighlightColor((a<<24)|(selectedColor&0xFFFFFF));else{inkColor=(a<<24)|(inkColor&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();}
+            if(hl)setHlInkColor((a<<24)|(hlInkColor&0xFFFFFF));else{inkColor=(a<<24)|(inkColor&0xFFFFFF);applyInk();updateInkButton();}
             redraw.run();},v->v+"%"));
         box.addView(sectionLabel("색상"));
         if(!hl){
-            java.util.function.IntConsumer pick=c->{inkColor=(inkColor&0xFF000000)|(c&0xFFFFFF);pageView.setInkTool(inkMode,inkColor,inkWidth);syncOtherTools();updateInkButton();redraw.run();};
-            box.addView(swatches(INK_COLORS,()->inkColor|0xFF000000,pick,24));
-            box.addView(swatches(INK_COLORS2,()->inkColor|0xFF000000,pick,24,1));
+            java.util.function.IntConsumer pick=c->{inkColor=(inkColor&0xFF000000)|(c&0xFFFFFF);applyInk();updateInkButton();redraw.run();};
+            int[] palette=new int[INK_COLORS.length+INK_COLORS2.length];System.arraycopy(INK_COLORS,0,palette,0,INK_COLORS.length);System.arraycopy(INK_COLORS2,0,palette,INK_COLORS.length,INK_COLORS2.length);
+            box.addView(swatches(INK_COLORS,()->inkColor|0xFF000000,pick,24,0,palette));
+            box.addView(swatches(INK_COLORS2,()->inkColor|0xFF000000,pick,24,1,palette));
         }else{
-            java.util.function.IntSupplier preset=()->{for(int c:HIGHLIGHT_COLORS)if((c&0xFFFFFF)==(selectedColor&0xFFFFFF))return c;return selectedColor;};
-            box.addView(swatches(HIGHLIGHT_COLORS,preset,c->{boolean isPreset=false;for(int p:HIGHLIGHT_COLORS)if(p==c)isPreset=true;setHighlightColor(isPreset?(Color.alpha(selectedColor)<<24)|(c&0xFFFFFF):c);redraw.run();},28,2));
+            java.util.function.IntSupplier preset=()->{for(int c:HIGHLIGHT_COLORS)if((c&0xFFFFFF)==(hlInkColor&0xFFFFFF))return c;return hlInkColor;};
+            box.addView(swatches(HIGHLIGHT_COLORS,preset,c->{boolean isPreset=false;for(int p:HIGHLIGHT_COLORS)if(p==c)isPreset=true;setHlInkColor(isPreset?(Color.alpha(hlInkColor)<<24)|(c&0xFFFFFF):c);redraw.run();},28,2));
         }
         if(!hl){
             box.addView(sectionLabel("옵션"));
             box.addView(switchRow("직선 · 시작점에서 끝점까지",inkMode==3,on->setInkMode(on?3:1)));
-            box.addView(switchRow("손가락 필기",fingerInk,on->toggleFingerInk()));
         }else{
             box.addView(sectionLabel("모양"));
-            box.addView(segmented(new String[]{"직선","자유형"},()->highlightFree?1:0,i->{highlightFree=i==1;applyHighlightStyle();}));
+            box.addView(segmented(new String[]{"직선","자유형"},()->hlStraight?0:1,i->{hlStraight=i==0;setInkMode(hlStraight?3:1);redraw.run();}));
         }
+        box.addView(switchRow("손가락 필기",fingerInk,on->toggleFingerInk()));
         AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box)),null);
     }
+    /** The 하이라이트 mark tool (text-following straight band): only its thickness can be set. */
+    private void showMarkHighlightMenu(View anchor){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(10),dp(8),dp(10),dp(4));box.setTag("pen_panel");box.setContentDescription("하이라이트 설정");
+        TextView title=new TextView(this);title.setText("하이라이트");title.setTextSize(15);title.setTypeface(Typeface.DEFAULT_BOLD);title.setTextColor(0xFF1C1C1E);title.setPadding(dp(2),0,0,dp(6));box.addView(title);
+        final View preview=new View(this){@Override protected void onDraw(Canvas c){
+            float w=getWidth(),h=getHeight();Paint bg=new Paint(Paint.ANTI_ALIAS_FLAG);bg.setColor(0xFFF7F7FA);c.drawRoundRect(new RectF(0,0,w,h),dp(14),dp(14),bg);
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(selectedColor);float band=Math.min(h-dp(8),Math.max(dp(4),highlightThick*dp(520)));c.drawRect(w*.08f,h/2f-band/2f,w*.92f,h/2f+band/2f,p);}};
+        box.addView(preview,new LinearLayout.LayoutParams(-1,dp(56)));
+        final float lo=0.008f,hi=0.06f;
+        box.addView(sliderRow("굵기",1,100,Math.max(1,Math.min(100,Math.round(1+(highlightThick-lo)/(hi-lo)*99))),v->{highlightThick=lo+(hi-lo)*(v-1)/99f;applyHighlightStyle();preview.invalidate();},v->String.valueOf(v)));
+        TextView hint=new TextView(this);hint.setText("글자를 따라 좌우로 끌어 직선으로 칠합니다. 자유롭게 그리는 형광펜은 필기 도구의 형광펜을 쓰세요.");hint.setTextSize(11);hint.setTextColor(0xFF8E8E93);hint.setPadding(dp(2),dp(6),dp(2),dp(6));box.addView(hint);
+        AnchoredMenu.show(this,anchor,true,AnchoredMenu.rows(AnchoredMenu.Row.custom(box)),null);
+    }
+    /** Pushes the tool in use (pen or ink highlighter) to the page views. */
+    private void applyInk(){
+        boolean h=inkHl&&(inkMode==1||inkMode==3);
+        pageView.setInkPen(h?AnnotationPainter.HIGHLIGHTER:inkPen);pageView.setInkTool(inkMode,h?hlInkColor:inkColor,h?hlInkWidth:inkWidth);syncOtherTools();
+    }
+    private void setHlInkColor(int color){hlInkColor=color;recentPrefs.edit().putInt("hl_ink_color",color).apply();applyInk();updateInkButton();}
     private LinearLayout switchRow(String label,boolean on,java.util.function.Consumer<Boolean> changed){
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(2),dp(2),0,dp(2));
         TextView text=new TextView(this);text.setText(label);text.setTextSize(13);text.setTextColor(0xFF1C1C1E);row.addView(text,new LinearLayout.LayoutParams(0,-2,1));
         android.widget.Switch toggle=new android.widget.Switch(this);toggle.setChecked(on);toggle.setContentDescription(label);toggle.setOnCheckedChangeListener((b,checked)->changed.accept(checked));
         row.addView(toggle,new LinearLayout.LayoutParams(-2,-2));row.setOnClickListener(v->toggle.toggle());return row;
     }
-    private boolean highlightFree;private float highlightThick=0.022f;
-    /** Highlighter colour incl. its opacity; the opacity is remembered for the next session (new strokes only, old marks keep theirs). */
-    private void setHighlightColor(int color){selectedColor=color;recentPrefs.edit().putInt("highlight_alpha",Color.alpha(color)).apply();pageView.setHighlightMode(highlightMode,selectedColor);syncOtherTools();updateInkButton();}
+    private float highlightThick=0.022f;
     private static final int[] ERASER_SIZES={5,10,18,28,40};
     /** Bottom-bar eraser: starts writing with the eraser; pressed again it opens the eraser range menu. */
     private void eraserBarTap(View anchor){
@@ -448,7 +470,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private void updateInkOptions(){if(inkOptions!=null&&inkOptions.getVisibility()!=View.GONE){inkOptions.setVisibility(View.GONE);positionTopTools();}}
     private void eraserTap(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
-        if(inkMode==2&&!highlightMode)showEraserMenu(anchor);else setInkMode(2);
+        if(inkMode==2)showEraserMenu(anchor);else setInkMode(2);
     }
     /** Eraser range: five circle sizes; the chosen radius is shown under the pen while erasing. */
     private void showEraserMenu(View anchor){
@@ -476,7 +498,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             .setPositiveButton("전체 지우기",(d,w)->{if(target.clearPageInk()){DocumentSession ds=activeSession;if(ds!=null){ds.clearedStrokes.clear();ds.clearedStrokes.addAll(target.clearedStrokes);ds.clearedMarks.clear();ds.clearedMarks.addAll(target.clearedMarks);ds.clearedPage=number;}toast("페이지를 지웠습니다");}else toast("지울 필기가 없습니다");}).setNegativeButton("취소",null).show();
     }
     private void setEraserRadius(float dp){recentPrefs.edit().putFloat("eraser_radius",dp).apply();for(PdfPageView v:paneViews)if(v!=null)v.setEraserRadius(dp);}
-    private void applyHighlightStyle(){pageView.setHighlightStyle(highlightFree,highlightThick);syncOtherTools();}
+    private void applyHighlightStyle(){pageView.setHighlightStyle(false,highlightThick);syncOtherTools();}
     private void showViewMenu(View anchor){
         if(renderer==null){toast("문서를 먼저 여세요");return;}
         List<AnchoredMenu.Row> rows=AnchoredMenu.rows(
@@ -679,7 +701,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         new Thread(()->{try{File saved=library.importPdf(source,title,destination);runOnUiThread(()->{importing.remove(source.toString());if(isFinishing()||isDestroyed())return;if(progress!=null)progress.dismiss();openPdf(Uri.fromFile(saved),false,page,activate);if(announce)toast("문서함에 자동 저장했습니다");saveSessionState();});}catch(Exception error){runOnUiThread(()->{importing.remove(source.toString());if(isFinishing()||isDestroyed())return;if(progress!=null)progress.dismiss();toast("가져오기 실패: "+error.getMessage());});}},"library-import").start();
     }
     private void switchDocument(DocumentSession s){switchDocumentNow(s);consumeSplitWanted(s);}
-    private void switchDocumentNow(DocumentSession s){if(splitMode){if(consumePaneWanted(s))return;splitAssign(s);return;}commitInlineText();if(searchOwner!=null&&searchOwner!=s)closeSearch();library.opened(s.uri);if(activeSession!=null)activeSession.page=currentPage;activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);highlightMode=memoMode=outlineMode=false;inkMode=0;pageView.setLassoMode(false);pageView.stopTextSelection();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setInkTool(0,inkColor,inkWidth);updateToolStates();updateInkButton();updateTabs();showPage(Math.min(s.page,renderer.getPageCount()-1));rebuildThumbnails();saveSessionState();}
+    private void switchDocumentNow(DocumentSession s){if(splitMode){if(consumePaneWanted(s))return;splitAssign(s);return;}commitInlineText();if(searchOwner!=null&&searchOwner!=s)closeSearch();library.opened(s.uri);if(activeSession!=null)activeSession.page=currentPage;activeSession=s;renderer=s.renderer;descriptor=s.descriptor;documentUri=s.uri;documentTitle=s.title;store=s.store;titleView.setText(documentTitle);highlightMode=memoMode=outlineMode=false;inkMode=0;pageView.setLassoMode(false);pageView.stopTextSelection();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);inkHl=false;applyInk();updateToolStates();updateInkButton();updateTabs();showPage(Math.min(s.page,renderer.getPageCount()-1));rebuildThumbnails();saveSessionState();}
     private void closeDocument(DocumentSession s){if(splitMode&&paneIndex(s)>=0)removePane(paneIndex(s));commitInlineText();if(s==searchOwner)closeSearch();int oldIndex=sessions.indexOf(s);sessions.remove(s);if(s.renderer!=null)s.renderer.close();if(s.descriptor!=null)try{s.descriptor.close();}catch(IOException ignored){}if(s.officePreview!=null)s.officePreview.delete();if(s==activeSession){activeSession=null;if(sessions.isEmpty()){renderer=null;descriptor=null;documentUri=null;store=null;firstPageView.clearPage();secondPageView.clearPage();thumbnailList.removeAllViews();refreshStudyPanel();updateTabs();showWelcome();}else switchDocument(sessions.get(Math.max(0,Math.min(oldIndex,sessions.size()-1))));}else updateTabs();saveSessionState();}
     private void updateTabs(){
         updateSplitBar();tabRow.removeAllViews();View activeTab=null;
@@ -929,9 +951,15 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         }
         updateSplitChrome();
     }
+    private boolean chipsRepositionQueued;
+    /** Chips are sized to their pane; the panes may still have their old size right after a layout change, so measure again on the next frame. */
     private void positionPaneChips(){
+        positionPaneChipsNow();
+        if(!chipsRepositionQueued&&papersView!=null){chipsRepositionQueued=true;papersView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener(){@Override public void onGlobalLayout(){ViewTreeObserver o=papersView.getViewTreeObserver();if(o.isAlive())o.removeOnGlobalLayoutListener(this);chipsRepositionQueued=false;positionPaneChipsNow();}});}
+    }
+    private void positionPaneChipsNow(){
         if(!splitMode||papersView==null||papersView.getWidth()<=0)return;
-        for(int i=0;i<paneCount;i++){PdfPageView p=paneViews[i];TextView chip=paneChip[i];chip.setMaxWidth(Math.max(dp(60),p.getWidth()-dp(16)));chip.setTranslationX(papersView.getLeft()+p.getLeft()+dp(8));chip.setTranslationY(papersView.getTop()+p.getTop()+dp(6));}
+        for(int i=0;i<paneCount;i++){PdfPageView p=paneViews[i];TextView chip=paneChip[i];int room=Math.max(dp(60),p.getWidth()-dp(16));if(chip.getMaxWidth()!=room)chip.setMaxWidth(room);chip.setTranslationX(papersView.getLeft()+p.getLeft()+dp(8));chip.setTranslationY(papersView.getTop()+p.getTop()+dp(6));}
     }
     private String layoutLabel(int layout,int n){return layout==0?(n==2?"좌우로 나누기":"가로로 "+n+"등분"):layout==1?(n==2?"상하로 나누기":"세로로 "+n+"등분"):(n==3?"위 1칸 · 아래 2칸":"2 × 2 (4분할)");}
     /** Menu of pane k: its document, the layout, add / close / swap panes, end split. */
@@ -994,15 +1022,15 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         showPage(Math.max(0,Math.min(s.page,renderer.getPageCount()-1)));rebuildThumbnails();updateTabs();
     }
     private void toggleTwoPage(){if(splitMode){toast("분할 보기를 끄고 두 쪽 보기를 사용하세요");return;}twoPage=!twoPage;recentPrefs.edit().putBoolean("two_page",twoPage).apply();if(renderer!=null)showPage(currentPage);else secondPageView.setVisibility(twoPage?View.INVISIBLE:View.GONE);toast(twoPage?"두 쪽 보기 · 각 페이지를 터치해 필기하세요":"한 쪽 보기");}
-    private void toggleHighlight(){if(renderer==null)return;highlightMode=!highlightMode;memoMode=outlineMode=false;stopInk();updateToolStates();pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setHighlightMode(highlightMode,selectedColor);toast(highlightMode?(highlightFree?"원하는 모양대로 그리세요":"문장을 따라 좌우로 드래그하세요"):"하이라이트를 종료했습니다");}
-    private void toggleMemoMode(){placementKind="";if(renderer==null)return;memoMode=!memoMode;highlightMode=outlineMode=false;stopInk();updateToolStates();pageView.setHighlightMode(false,selectedColor);pageView.setOutlineMode(false);pageView.setMemoMode(memoMode);toast(memoMode?"메모를 놓을 위치를 탭하세요":"메모 추가를 종료했습니다");}
+    private void toggleHighlight(){if(renderer==null)return;highlightMode=!highlightMode;memoMode=outlineMode=false;stopInk();updateToolStates();pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setHighlightMode(highlightMode,selectedColor);toast(highlightMode?"하이라이트: 문장을 따라 좌우로 드래그하세요":"하이라이트를 종료했습니다");}
+    private void toggleMemoMode(){placementKind="";if(renderer==null)return;memoMode=!memoMode;highlightMode=outlineMode=false;stopInk();updateToolStates();pageView.setHighlightMode(false,selectedColor);pageView.setOutlineMode(false);pageView.setMemoMode(memoMode);toast(memoMode?"메모를 놓을 위치를 탭하세요":"메모를 종료했습니다");}
     private void toggleOutlineMode(){if(renderer==null)return;outlineMode=!outlineMode;highlightMode=memoMode=false;stopInk();pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(outlineMode);updateToolStates();toast(outlineMode?"개요로 저장할 정확한 위치를 탭하세요":"개요 지점 선택을 종료했습니다");}
     private void paintTool(ImageButton button,boolean on,int background,int foreground){if(button==null)return;button.setColorFilter(on?foreground:baseTint.containsKey(button)?baseTint.get(button):NAVY);button.setBackground(on?round(background,22):round(Color.TRANSPARENT,22));}
-    private void updateToolStates(){commitInlineText();syncOtherTools();updateInkButton();boolean typing=typingActive(),memo=memoMode&&!typing;paintTool(insertButton,memo,ACTIVE_BG,ACTIVE_FG);paintTool(readButton,!writeMode,ACTIVE_BG,ACTIVE_FG);paintTool(inkButton,writeMode,ACTIVE_BG,ACTIVE_FG);paintTool(textButton,typing,ACTIVE_BG,ACTIVE_FG);paintTool(lassoButton,pageView!=null&&pageView.isLassoMode(),ACTIVE_BG,ACTIVE_FG);}
-    private void stopInk(){pageView.setLassoMode(false);inkMode=0;pageView.setInkTool(0,inkColor,inkWidth);updateInkButton();}
-    private void setInkMode(int mode){placementKind="";if(renderer==null)return;pageView.setLassoMode(false);inkMode=mode;pageView.setDirectTextSelection(false);highlightMode=memoMode=outlineMode=false;pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);pageView.setInkTool(mode,inkColor,inkWidth);updateToolStates();updateInkButton();toast(mode==3?"직선: 시작점에서 끝점까지 드래그하세요":mode==1?(fingerInk?"손가락 또는 S펜으로 필기하세요":"S펜으로 필기하세요. 손가락 필기는 필기도구에서 켤 수 있습니다"):mode==2?"지울 획을 터치하세요":"읽기 모드 · 빠르게 스와이프하면 페이지를 넘깁니다");}
+    private void updateToolStates(){commitInlineText();syncOtherTools();updateInkButton();boolean typing=typingActive(),memo=memoMode&&!typing;paintTool(insertButton,memo||highlightMode,ACTIVE_BG,ACTIVE_FG);paintTool(readButton,!writeMode,ACTIVE_BG,ACTIVE_FG);paintTool(inkButton,writeMode,ACTIVE_BG,ACTIVE_FG);paintTool(textButton,typing,ACTIVE_BG,ACTIVE_FG);paintTool(lassoButton,pageView!=null&&pageView.isLassoMode(),ACTIVE_BG,ACTIVE_FG);}
+    private void stopInk(){pageView.setLassoMode(false);inkMode=0;inkHl=false;applyInk();updateInkButton();}
+    private void setInkMode(int mode){placementKind="";if(renderer==null)return;pageView.setLassoMode(false);inkMode=mode;pageView.setDirectTextSelection(false);highlightMode=memoMode=outlineMode=false;pageView.setHighlightMode(false,selectedColor);pageView.setMemoMode(false);pageView.setOutlineMode(false);if(mode!=1&&mode!=3)inkHl=false;applyInk();updateToolStates();updateInkButton();toast(mode==3?(inkHl?"직선 형광펜: 시작점에서 끝점까지 드래그하세요":"직선: 시작점에서 끝점까지 드래그하세요"):mode==1&&inkHl?"형광펜: 쓰듯이 자유롭게 칠하세요":mode==1?(fingerInk?"손가락 또는 S펜으로 필기하세요":"S펜으로 필기하세요. 손가락 필기는 필기도구에서 켤 수 있습니다"):mode==2?"지울 획을 터치하세요":"읽기 모드 · 빠르게 스와이프하면 페이지를 넘깁니다");}
     private int soft(int color){return (color&0xFFFFFF)|0x26000000;}
-    private void updateInkButton(){updateLassoBar();boolean hl=highlightMode,eraser=inkMode==2&&!hl,pen=!hl&&(inkMode==1||inkMode==3);int penColor=inkColor|0xFF000000,hlColor=selectedColor|0xFF000000;
+    private void updateInkButton(){boolean hl=inkHl&&(inkMode==1||inkMode==3),eraser=inkMode==2,pen=!hl&&(inkMode==1||inkMode==3);int penColor=inkColor|0xFF000000,hlColor=hlInkColor|0xFF000000;
         if(penButton!=null)baseTint.put(penButton,penColor);if(hlButton!=null)baseTint.put(hlButton,hlColor);
         paintTool(penButton,pen,soft(penColor),penColor);paintTool(hlButton,hl,soft(hlColor),hlColor);paintTool(eraserButton,eraser,0xFFFFE3E8,0xFFFF3B30);paintTool(eraserBarButton,eraser&&writeMode,0xFFFFE3E8,0xFFFF3B30);updateInkOptions();
         if(penButton!=null)penButton.setContentDescription("펜");if(inkButton!=null){inkButton.setContentDescription("필기 모드");}}
@@ -1012,7 +1040,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         for(int i=store.strokes.size()-1;i>=0;i--){AnnotationStore.InkStroke s=store.strokes.get(i);if(s.page==currentPage){store.strokes.remove(i);activeSession.redoStrokes.push(s);store.save();pageView.invalidate();toast("마지막 필기를 취소했습니다");return;}}toast("취소할 필기가 없습니다");}
     private void redoInk(){if(activeSession==null||activeSession.redoStrokes.isEmpty()){toast("다시 실행할 필기가 없습니다");return;}AnnotationStore.InkStroke s=activeSession.redoStrokes.pop();store.strokes.add(s);store.save();if(s.page!=currentPage)showPage(s.page);else pageView.invalidate();}
     private void showInkHelp(){new AlertDialog.Builder(this).setTitle("필기 안내").setMessage("• S펜: 필기 또는 지우개\n• 손가락 필기 켜기: 펜·지우개 사용\n• 손가락 필기 끄기: 글자 선택·화면 이동\n• 두 손가락: 확대·이동\n• 필압: 누르는 힘에 따라 선 굵기 변화\n• S펜 측면 버튼: 누르는 동안 임시 지우개\n• 펜 뒤쪽 지우개: 지원 기기에서 자동 인식\n\n일반 정전식 펜과 손가락은 필압을 지원하지 않습니다.").setPositiveButton("확인",null).show();}
-    private void toggleBookmark(){if(renderer==null)return;if(!store.bookmarks.add(currentPage))store.bookmarks.remove(currentPage);store.save();updateBookmarkButton();if(sidebarVisible&&!showAllThumbnails)rebuildThumbnails();}
+    private void toggleBookmark(){if(renderer==null)return;if(!store.bookmarks.add(currentPage))store.bookmarks.remove(currentPage);store.save();updateBookmarkButton();if(sidebarVisible&&!showAllThumbnails&&!thumbInk)rebuildThumbnails();}
     private void updateBookmarkButton(){boolean marked=renderer!=null&&store.bookmarks.contains(currentPage);bookmarkButton.setImageResource(marked?R.drawable.ic_star:R.drawable.ic_star_outline);bookmarkButton.setColorFilter(marked?0xFFF59E0B:NAVY);bookmarkButton.setContentDescription(marked?"즐겨찾기 해제":"즐겨찾기 추가");}
     /** In full screen the system navigation/status bars must stay hidden, also after a swipe from the screen edge briefly reveals them. */
     private final Runnable barHider=()->{if(!fullscreen)return;if(Build.VERSION.SDK_INT>=30){WindowInsetsController c=getWindow().getInsetsController();if(c!=null)c.hide(WindowInsets.Type.systemBars());}else getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);};
@@ -1035,7 +1063,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     private void toggleFullscreen(){fullscreen=!fullscreen;railMargin();header.setVisibility(fullscreen?View.GONE:View.VISIBLE);tabStrip.setVisibility(fullscreen?View.GONE:View.VISIBLE);bottomBar.setVisibility(fullscreen?View.GONE:View.VISIBLE);if(fullscreen){showFullscreenDock(true);int hints=recentPrefs.getInt("fullscreen_hint_count",0);if(hints<3){recentPrefs.edit().putInt("fullscreen_hint_count",hints+1).apply();toast("메뉴는 화면 아래에서 위로 쓸어올리거나 아래쪽 ⌃ 버튼을 누르면 다시 나옵니다");}}else hideFullscreenDock(false);if(Build.VERSION.SDK_INT>=30){WindowInsetsController c=getWindow().getInsetsController();if(c!=null){c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);if(fullscreen)c.hide(WindowInsets.Type.systemBars());else c.show(WindowInsets.Type.systemBars());}}else getWindow().getDecorView().setSystemUiVisibility(fullscreen?View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION:View.SYSTEM_UI_FLAG_VISIBLE);root.requestApplyInsets();}
     @Override public void onBackPressed(){if(titleEdit!=null){commitTitleEdit(activeSession,false);return;}if(inlineElement!=null){commitInlineText();return;}if(searchPanel!=null&&searchPanel.getVisibility()==View.VISIBLE){closeSearch();return;}if(fullscreen)toggleFullscreen();else super.onBackPressed();}
-    @Override public void onHighlightCreated(AnnotationStore.Mark mark){store.marks.add(mark);store.save();pageView.invalidate();}
+    @Override public void onHighlightCreated(AnnotationStore.Mark mark){store.marks.add(mark);store.save();pageView.invalidate();if(sidebarVisible&&panelTab==4)rebuildInsertions();}
     @Override public void onMemoPointRequested(int page,float x,float y){if(!placementKind.isEmpty()){createPlacedElement(page,x,y);return;}AnnotationStore.Mark m=new AnnotationStore.Mark();m.page=page;m.left=Math.max(0f,x-0.025f);m.right=Math.min(1f,x+0.025f);m.top=Math.max(0f,y-0.025f);m.bottom=Math.min(1f,y+0.025f);m.color=selectedColor;m.note="";m.noteOnly=true;
         showMemoEditor("새 메모 포스트잇",m,"저장",note->{if(note.isEmpty())return;m.note=note;store.marks.add(m);store.save();pageView.invalidate();toast("메모 포스트잇을 저장했습니다");},null,null,null,null);}
     @Override public void onMarkTapped(AnnotationStore.Mark mark){editMark(mark);}
@@ -1164,20 +1192,6 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private RectF normalized(android.graphics.Rect r,int w,int h){return new RectF(Math.max(0f,(float)r.left/w),Math.max(0f,(float)r.top/h),Math.min(1f,(float)r.right/w),Math.min(1f,(float)r.bottom/h));}
     private PopupWindow selectionPopup;
     @Override public void onSelectionAdjustStarted(){if(selectionPopup!=null){selectionPopup.dismiss();selectionPopup=null;}}
-    private TextView menuTile(LinearLayout row,String label,int iconId,Runnable action){
-        LinearLayout tile=new LinearLayout(this);tile.setOrientation(LinearLayout.VERTICAL);tile.setGravity(Gravity.CENTER);
-        tile.setBackground(round(0xFFF4F7FB,16));tile.setContentDescription(label);
-        FrameLayout chip=new FrameLayout(this);chip.setBackground(round(0x1F2563EB,12));
-        ImageView iconView=new ImageView(this);iconView.setImageResource(iconId);iconView.setColorFilter(ACCENT);
-        chip.addView(iconView,new FrameLayout.LayoutParams(dp(20),dp(20),Gravity.CENTER));
-        tile.addView(chip,new LinearLayout.LayoutParams(dp(32),dp(32)));
-        TextView title=new TextView(this);title.setText(label);title.setSingleLine();title.setTextColor(NAVY);
-        title.setTextSize(12);title.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,dp(22));titleParams.topMargin=dp(3);tile.addView(title,titleParams);
-        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(65),1);params.setMargins(dp(3),dp(3),dp(3),dp(3));row.addView(tile,params);
-        tile.setOnClickListener(v->action.run());
-        return title;
-    }
     /** One menu for everything: the selection actions on top, then the same insert rows as the long-press menu, in the same card style. */
     private void showTextSelectionPopup(PdfPageView.TextSelection selection,float anchorX,float anchorY){
         onSelectionAdjustStarted();
@@ -1262,7 +1276,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         new AnchoredMenu.Row("이동",R.drawable.ic_page,()->{showPage(item.page);pageView.post(()->pageView.focusOnPoint(item.x,item.y));}).tint(0xFF30B0C7),
         new AnchoredMenu.Row("삭제",R.drawable.ic_delete,()->{store.outlines.remove(item);store.save();toast("개요 항목을 삭제했습니다");if(sidebarVisible&&panelTab==2)rebuildOutlinePanel();}).danger()));}
     private void choosePageSwipeDirection(){showActionSheet("페이지 넘김",SWIPE_CHOICES,swipeMode(),this::setSwipeMode);}
-    private void showMarkList(){List<AnnotationStore.Mark> items=new ArrayList<>(store.marks);if(items.isEmpty()){toast("저장된 하이라이트나 메모가 없습니다");return;}String[] labels=new String[items.size()];for(int i=0;i<items.size();i++){AnnotationStore.Mark mark=items.get(i);String note=mark.note;String state=note==null||note.isEmpty()?"":(!mark.visible?"[숨김] ":(mark.minimized?"[최소화] ":"[펼침] "));labels[i]="p."+(mark.page+1)+"  "+state+(note==null||note.isEmpty()?"(메모 없음)":note);}new AlertDialog.Builder(this).setTitle("메모·하이라이트").setItems(labels,(d,i)->{showPage(items.get(i).page);editMark(items.get(i));}).show();}
+    private void showMarkList(){List<AnnotationStore.Mark> items=new ArrayList<>(store.marks);if(items.isEmpty()){toast("저장된 하이라이트나 메모가 없습니다");return;}String[] labels=new String[items.size()];for(int i=0;i<items.size();i++){AnnotationStore.Mark mark=items.get(i);String note=mark.note;String state=note==null||note.isEmpty()?"":(!mark.visible?"[숨김] ":(mark.minimized?"[최소화] ":"[펼침] "));labels[i]="p."+(mark.page+1)+"  "+(mark.noteOnly?"메모":"하이라이트")+"  "+state+(note==null||note.isEmpty()?"":note);}new AlertDialog.Builder(this).setTitle("메모·하이라이트").setItems(labels,(d,i)->{showPage(items.get(i).page);editMark(items.get(i));}).show();}
     private void showBookmarks(){if(store.bookmarks.isEmpty()){toast("즐겨찾기한 페이지가 없습니다");return;}List<Integer> pages=new ArrayList<>(store.bookmarks);Collections.sort(pages);String[] labels=new String[pages.size()];for(int i=0;i<pages.size();i++)labels[i]="페이지 "+(pages.get(i)+1);new AlertDialog.Builder(this).setTitle("즐겨찾기").setItems(labels,(d,i)->showPage(pages.get(i))).show();}
     private void goToPage(){if(renderer==null)return;EditText input=new EditText(this);input.setInputType(2);input.setHint("1 ~ "+renderer.getPageCount());new AlertDialog.Builder(this).setTitle("페이지로 이동").setView(input).setPositiveButton("이동",(d,w)->{try{showPage(Integer.parseInt(input.getText().toString())-1);}catch(Exception ignored){toast("올바른 페이지를 입력하세요");}}).setNegativeButton("취소",null).show();}
     private void exportAnnotations(){if(documentUri==null)return;try{pendingJsonExport=store.exportJson(documentUri,documentTitle);}catch(JSONException error){toast("백업 실패");return;}Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/json");i.putExtra(Intent.EXTRA_TITLE,documentTitle.replaceAll("(?i)\\.pdf$","")+"_annotations.json");startActivityForResult(i,EXPORT_JSON);}
@@ -1272,19 +1286,21 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(capture==null)return;
         final String selectedText=pageView.lassoText();final int capturedPage=currentPage;final String capturedTitle=documentTitle;
         final boolean[] handedOff={false};
-        ScrollView scroll=new ScrollView(this);LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(12),dp(8),dp(12),dp(8));scroll.addView(panel);
-        ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setBackground(round(0xFFF2F2F7,12));preview.setImageBitmap(capture);panel.addView(preview,new LinearLayout.LayoutParams(-1,dp(190)));
-        TextView hint=new TextView(this);hint.setText("선택 영역 · p."+(capturedPage+1));hint.setTextColor(NAVY);hint.setPadding(dp(8),dp(8),dp(8),dp(4));panel.addView(hint);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("올가미 캡처").setView(scroll).setNegativeButton("닫기",null).create();
-        String[] labels={"이미지 복사","PNG 저장","이미지 공유","글자 복사","다시 선택","선택 종료"};
-        int[] icons={R.drawable.ic_copy,R.drawable.ic_folder_open,R.drawable.ic_share,R.drawable.ic_scan,R.drawable.ic_lasso,R.drawable.ic_check};
-        for(int row=0;row<3;row++){LinearLayout group=new LinearLayout(this);panel.addView(group);for(int col=0;col<2;col++){final int index=row*2+col;menuTile(group,labels[index],icons[index],()->{
-            if(index<3){handedOff[0]=true;dialog.dismiss();writeCapture(capture,index,capturedTitle,capturedPage);}
-            else if(index==3){if(selectedText.isEmpty()){toast("인식된 글자가 없습니다. 이미지 복사를 사용하거나 글자를 다시 인식하세요");return;}copySelectedText(selectedText);dialog.dismiss();}
-            else{dialog.dismiss();if(index==5){setInkMode(0);updateToolStates();}}
-        });}}
-        dialog.setOnDismissListener(d->{preview.setImageDrawable(null);pageView.clearLassoSelection();if(!handedOff[0]&&!capture.isRecycled())capture.recycle();});
-        dialog.show();dialog.getWindow().setLayout((int)(getResources().getDisplayMetrics().widthPixels*0.92f),Math.min(dp(600),getResources().getDisplayMetrics().heightPixels-dp(100)));
+        // the same floating card as the other menus: a small preview, then one row per action
+        ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setBackground(round(0xFFF2F2F7,12));preview.setImageBitmap(capture);preview.setTag("lasso_preview");
+        FrameLayout previewBox=new FrameLayout(this);previewBox.setPadding(dp(6),dp(2),dp(6),dp(6));previewBox.addView(preview,new FrameLayout.LayoutParams(-1,dp(130)));
+        List<AnchoredMenu.Row> rows=new ArrayList<>();
+        rows.add(AnchoredMenu.Row.custom(previewBox));
+        rows.add(new AnchoredMenu.Row("이미지 복사",R.drawable.ic_copy,()->{handedOff[0]=true;writeCapture(capture,0,capturedTitle,capturedPage);}).tint(0xFF007AFF));
+        rows.add(new AnchoredMenu.Row("PNG 저장",R.drawable.ic_folder_open,()->{handedOff[0]=true;writeCapture(capture,1,capturedTitle,capturedPage);}).tint(0xFF34C759));
+        rows.add(new AnchoredMenu.Row("이미지 공유",R.drawable.ic_share,()->{handedOff[0]=true;writeCapture(capture,2,capturedTitle,capturedPage);}).tint(0xFF5856D6));
+        if(!selectedText.isEmpty())rows.add(new AnchoredMenu.Row("글자 복사",R.drawable.ic_scan,()->copySelectedText(selectedText)).tint(0xFF30B0C7));
+        rows.add(AnchoredMenu.Row.divider());
+        rows.add(new AnchoredMenu.Row("다시 선택",R.drawable.ic_lasso,()->{}).tint(0xFFAF52DE));
+        rows.add(new AnchoredMenu.Row("선택 종료",R.drawable.ic_check,()->{setInkMode(0);updateToolStates();}).tint(0xFF8E8E93));
+        PopupWindow menu=AnchoredMenu.showCentered(this,pageView,"올가미 캡처 · p."+(capturedPage+1),rows);
+        // a tapped row dismisses the card before its action runs, so the bitmap is recycled only after the action had its chance to take it over
+        menu.setOnDismissListener(()->{preview.setImageDrawable(null);pageView.clearLassoSelection();pageView.post(()->{if(!handedOff[0]&&!capture.isRecycled())capture.recycle();});});
     }
     private void writeCapture(Bitmap image,int action,String title,int page){
         new Thread(()->{
@@ -1554,11 +1570,17 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
             root.addView(bottomBar,new FrameLayout.LayoutParams(rail,-1,place.equals("left")?Gravity.START:Gravity.END));
         }
         contentColumn.setLayoutParams(cl);railMargin();
+        if(stripBox!=null)applyFloatPos(stripBox,"strip");   // the bar moved: keep the pen strip clear of it
         enforceChrome();
     }
+    /** Keeps a floating bar inside the view it floats in (the pen strip lives in the page area, so it can never slip behind the bottom bar) and above a floating bottom bar. */
     private void moveFloating(View target,float tx,float ty){
-        int w=root.getWidth(),h=root.getHeight();if(w<=0||h<=0){target.setTranslationX(tx);target.setTranslationY(ty);return;}
-        target.setTranslationX(Math.max(-target.getLeft(),Math.min(tx,w-target.getRight())));target.setTranslationY(Math.max(-target.getTop(),Math.min(ty,h-target.getBottom())));
+        View area=target.getParent() instanceof View?(View)target.getParent():root;int w=area.getWidth(),h=area.getHeight();if(w<=0||h<=0){target.setTranslationX(tx);target.setTranslationY(ty);return;}
+        float maxY=h-target.getBottom();
+        if(target==stripBox&&bottomBar!=null&&bottomBar.getParent()==root&&bottomBar.getVisibility()==View.VISIBLE&&barPlace().equals("float")&&!barVertical()){   // a floating bottom bar overlaps the page: stop above it
+            int[] a=new int[2],b=new int[2];area.getLocationInWindow(a);bottomBar.getLocationInWindow(b);float barTop=b[1]-a[1];if(barTop>0)maxY=Math.min(maxY,barTop-dp(6)-target.getBottom());
+        }
+        target.setTranslationX(Math.max(-target.getLeft(),Math.min(tx,w-target.getRight())));target.setTranslationY(Math.max(-target.getTop(),Math.min(ty,maxY)));
     }
     private void applyFloatPos(final View target,final String key){target.post(()->moveFloating(target,dp(1)*recentPrefs.getFloat(key+"_dx",0f),dp(1)*recentPrefs.getFloat(key+"_dy",0f)));}
     private View makeGrip(final View target,final String key){
@@ -1881,7 +1903,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(renderer==null){toast("문서를 먼저 여세요");return;}
         dropTarget=null;
         List<AnchoredMenu.Row> rows=new ArrayList<>(insertRows());
-        rows.add(0,new AnchoredMenu.Row("메모 추가",R.drawable.ic_note_add,this::toggleMemoMode).tint(0xFFFF9500).selected(memoMode));
+        rows.add(0,new AnchoredMenu.Row("메모",R.drawable.ic_note_add,this::toggleMemoMode).tint(0xFFFF9500).selected(memoMode));
+        rows.add(1,new AnchoredMenu.Row("하이라이트",R.drawable.ic_highlight,()->{toggleHighlight();if(highlightMode)showMarkHighlightMenu(anchor);}).tint(0xFFF5C400).selected(highlightMode));
         AnchoredMenu.show(this,anchor,true,rows,null);
     }
     private View tapAnchor;
@@ -2169,7 +2192,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         for(AnnotationStore.PageElement e:store.elements){if(e.kind.equals("audio"))continue;if(e.kind.equals("hyperlink")&&!seen.add(e.page+"|"+e.color+"|"+e.text))continue;items.add(e);}
         items.sort(Comparator.comparingInt((AnnotationStore.PageElement e)->e.page).thenComparingDouble(e->e.top));
         TextView heading=new TextView(this);heading.setTag("insert_heading");heading.setText("삽입한 항목 "+items.size()+"개");heading.setTextSize(12);heading.setTextColor(0xFF8E8E93);heading.setPadding(dp(6),dp(4),0,dp(6));insertList.addView(heading);
-        if(items.isEmpty()){TextView empty=new TextView(this);empty.setText("링크·사진·동영상·도형·표·타이핑·메모를 넣으면 여기에 모여 보입니다.\n항목을 누르면 그 위치로 이동하고, ⋮ 로 열기·수정·삭제를 합니다.");empty.setTextSize(12);empty.setTextColor(0xFF8E8E93);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(4),dp(18),dp(4),dp(8));insertList.addView(empty);}
+        if(items.isEmpty()){TextView empty=new TextView(this);empty.setText("링크·사진·동영상·도형·표·타이핑·메모·하이라이트를 넣으면 여기에 모여 보입니다.\n항목을 누르면 그 위치로 이동하고, ⋮ 로 열기·수정·삭제를 합니다.");empty.setTextSize(12);empty.setTextColor(0xFF8E8E93);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(4),dp(18),dp(4),dp(8));insertList.addView(empty);}
         for(AnnotationStore.PageElement item:items){
             LinearLayout row=new LinearLayout(this);row.setTag("insert_item");row.setPadding(dp(12),dp(8),dp(2),dp(8));row.setGravity(Gravity.CENTER_VERTICAL);row.setBackground(round(Color.WHITE,14));
             String detail=item.kind.equals("hyperlink")?describeLink(item.text):item.kind.equals("link")?item.text:item.kind.equals("audio")?item.text:item.kind.equals("youtube")||item.kind.equals("video")||item.kind.equals("image")||item.kind.equals("sticker")?"":item.text==null?"":item.text.trim();
@@ -2258,7 +2281,9 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose){return swatches(colors,current,choose,32);}
     private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose,int size){return swatches(colors,current,choose,size,0);}
     /** @param more 0 = presets only, 1 = adds a rainbow chip that opens the free colour chooser, 2 = the same with an opacity slider */
-    private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose,int size,int more){
+    private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose,int size,int more){return swatches(colors,current,choose,size,more,colors);}
+    /** @param known every preset colour of the whole palette (all rows): the rainbow chip only counts as "custom" when the colour is in none of them, so two rows never show a check at once. */
+    private LinearLayout swatches(int[] colors,java.util.function.IntSupplier current,java.util.function.IntConsumer choose,int size,int more,int[] known){
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(4),dp(2),dp(4),dp(6));
         List<ImageView> dots=new ArrayList<>();final Runnable[] after={null};
         Runnable refresh=()->{for(int i=0;i<dots.size();i++){
@@ -2271,7 +2296,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         }
         if(more>0){
             final ImageView chip=new ImageView(this);chip.setScaleType(ImageView.ScaleType.CENTER);chip.setContentDescription("다른 색 선택");
-            final Runnable chipLook=()->{int now=current.getAsInt();boolean custom=true;for(int c:colors)if(c==now){custom=false;break;}
+            final Runnable chipLook=()->{int now=current.getAsInt();boolean custom=true;for(int c:known)if(c==now){custom=false;break;}
                 GradientDrawable shape=new GradientDrawable();shape.setShape(GradientDrawable.OVAL);
                 if(custom){shape.setColor(now);shape.setStroke(dp(3),NAVY);chip.setImageResource(R.drawable.ic_check);chip.setColorFilter(Color.WHITE);}
                 else{shape.setGradientType(GradientDrawable.SWEEP_GRADIENT);shape.setColors(new int[]{0xFFFF3B30,0xFFFFCC00,0xFF34C759,0xFF00C7BE,0xFF007AFF,0xFFAF52DE,0xFFFF3B30});shape.setStroke(dp(1),0xFFD5DCE6);chip.setImageDrawable(null);}
@@ -2348,7 +2373,8 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
                 t.add(new Tile("동영상",R.drawable.ic_video,this::pickVideo));
                 t.add(new Tile("유튜브 링크",R.drawable.ic_youtube,this::askYoutube));
                 t.add(new Tile("음성 녹음",R.drawable.ic_mic,this::startRecording));
-                t.add(new Tile("메모 추가",R.drawable.ic_memo,this::toggleMemoMode));
+                t.add(new Tile("메모",R.drawable.ic_memo,this::toggleMemoMode));
+                t.add(new Tile("하이라이트",R.drawable.ic_highlight,this::toggleHighlight));
                 break;
             case 3:
                 t.add(new Tile("문서·필기 검색",R.drawable.ic_search,this::searchDocument));
@@ -2386,44 +2412,30 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         showSheet("메뉴",sections);
     }
     private int widthIndex(){int best=0;for(int i=0;i<INK_WIDTHS.length;i++)if(Math.abs(INK_WIDTHS[i]-inkWidth)<Math.abs(INK_WIDTHS[best]-inkWidth))best=i;return best;}
-    // ================================================================== lasso shape bar
-    private void buildLassoBar(){
-        lassoBar=new LinearLayout(this);lassoBar.setTag("lasso_bar");lassoBar.setGravity(Gravity.CENTER_VERTICAL);lassoBar.setPadding(dp(6),dp(4),dp(4),dp(4));
-        lassoBar.setBackground(round(0xF2FFFFFF,24));lassoBar.setElevation(dp(6));lassoBar.setVisibility(View.GONE);
-        int[] icons={R.drawable.ic_lasso,R.drawable.ic_rect,R.drawable.ic_circle};String[] names={"자유","네모","원"};
-        for(int i=0;i<3;i++){
-            final int shape=i;LinearLayout chip=new LinearLayout(this);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(10),0,dp(12),0);chip.setTag("lasso_shape_"+i);chip.setContentDescription("올가미 "+names[i]);
-            ImageView glyph=new ImageView(this);glyph.setImageResource(icons[i]);glyph.setColorFilter(NAVY);chip.addView(glyph,new LinearLayout.LayoutParams(dp(20),dp(20)));
-            TextView label=new TextView(this);label.setText(names[i]);label.setTextSize(13);label.setTextColor(NAVY);label.setPadding(dp(5),0,0,0);chip.addView(label,new LinearLayout.LayoutParams(-2,-2));
-            chip.setOnClickListener(v->chooseLassoShape(shape));
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(36));p.setMargins(dp(2),0,dp(2),0);lassoBar.addView(chip,p);
-        }
-        lassoBar.addView(icon(R.drawable.ic_close,"올가미 종료",0xFF8E8E93,v->setInkMode(0)),new LinearLayout.LayoutParams(dp(40),dp(40)));
-        updateLassoBar();
-    }
+    // ================================================================== lasso
     private void chooseLassoShape(int shape){
         lassoShape=shape;recentPrefs.edit().putInt("lasso_shape",shape).apply();
-        pageView.setLassoShape(shape);syncOtherTools();updateLassoBar();
+        pageView.setLassoShape(shape);syncOtherTools();
         toast(shape==PdfPageView.LASSO_RECT?"네모: 대각선으로 드래그하세요":shape==PdfPageView.LASSO_CIRCLE?"원: 중심에서 바깥쪽으로 드래그하세요":"자유: 원하는 영역을 둘러 그리세요");
     }
-    private void updateLassoBar(){
-        if(lassoBar==null||pageView==null)return;
-        boolean on=pageView.isLassoMode();lassoBar.setVisibility(on?View.VISIBLE:View.GONE);if(!on)return;
-        for(int i=0;i<3;i++){
-            View chip=lassoBar.findViewWithTag("lasso_shape_"+i);if(!(chip instanceof LinearLayout))continue;
-            boolean selected=i==lassoShape;LinearLayout group=(LinearLayout)chip;group.setBackground(round(selected?ACTIVE_BG:Color.TRANSPARENT,18));
-            ((ImageView)group.getChildAt(0)).setColorFilter(selected?ACTIVE_FG:NAVY);((TextView)group.getChildAt(1)).setTextColor(selected?ACTIVE_FG:NAVY);
-        }
+    /** Floating menu of the lasso button (same card as the pen panel): the shape to select with, or leave the lasso. */
+    private void showLassoMenu(View anchor){
+        String[] names={"자유 올가미","네모","원"};int[] icons={R.drawable.ic_lasso,R.drawable.ic_rect,R.drawable.ic_circle};List<AnchoredMenu.Row> rows=new ArrayList<>();
+        for(int i=0;i<3;i++){final int shape=i;rows.add(new AnchoredMenu.Row(names[i],icons[i],()->chooseLassoShape(shape)).tint(0xFFAF52DE).selected(lassoShape==i));}
+        rows.add(AnchoredMenu.Row.divider());
+        rows.add(new AnchoredMenu.Row("올가미 종료",R.drawable.ic_close,()->{setInkMode(0);toast("올가미를 종료했습니다");}).tint(0xFF8E8E93));
+        AnchoredMenu.show(this,anchor,true,rows,null);
     }
-    private void toggleLasso(){
+    /** First tap starts the lasso; tapped again it opens the shape menu. */
+    private void toggleLasso(View anchor){
         if(renderer==null){toast("PDF를 먼저 여세요");return;}
-        if(pageView.isLassoMode()){setInkMode(0);toast("올가미를 종료했습니다");}else startLasso();
+        if(pageView.isLassoMode())showLassoMenu(anchor);else startLasso();
     }
     private void startLasso(){
         if(renderer==null){toast("PDF를 먼저 여세요");return;}
-        onSelectionAdjustStarted();highlightMode=memoMode=outlineMode=false;placementKind="";inkMode=0;
+        onSelectionAdjustStarted();highlightMode=memoMode=outlineMode=false;placementKind="";inkMode=0;inkHl=false;
         pageView.setLassoShape(lassoShape);pageView.setLassoMode(true);updateToolStates();
-        toast(lassoShape==PdfPageView.LASSO_RECT?"드래그해서 네모 영역을 지정하세요. 모양은 위쪽 막대에서 바꿀 수 있습니다.":lassoShape==PdfPageView.LASSO_CIRCLE?"중심에서 바깥쪽으로 드래그해 원형 영역을 지정하세요.":"손가락 또는 S펜으로 원하는 영역을 둘러 그리세요. 두 손가락으로 확대할 수 있습니다.");
+        toast(lassoShape==PdfPageView.LASSO_RECT?"드래그해서 네모 영역을 지정하세요. 모양은 올가미 단추를 한 번 더 눌러 바꿀 수 있습니다.":lassoShape==PdfPageView.LASSO_CIRCLE?"중심에서 바깥쪽으로 드래그해 원형 영역을 지정하세요.":"손가락 또는 S펜으로 원하는 영역을 둘러 그리세요. 두 손가락으로 확대할 수 있습니다.");
     }
 
     // ================================================================== typing directly on the page
@@ -2744,7 +2756,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     }
     /** Same icon as the matching menu entry (star while only favourites are shown) + the word. */
     private void setSideTitle(int tab){
-        boolean star=tab==1&&!showAllThumbnails;android.graphics.drawable.Drawable d=getResources().getDrawable(star?R.drawable.ic_star:SIDE_ICONS[tab],getTheme()).mutate();
+        boolean star=tab==1&&!showAllThumbnails&&!thumbInk;android.graphics.drawable.Drawable d=getResources().getDrawable(star?R.drawable.ic_star:SIDE_ICONS[tab],getTheme()).mutate();
         d.setTint(star?0xFFF5A623:SIDE_TINTS[tab]);d.setBounds(0,0,dp(20),dp(20));sideTitle.setText(SIDE_TITLES[tab]);sideTitle.setCompoundDrawables(d,null,null,null);sideTitle.setCompoundDrawablePadding(dp(6));sideTitle.post(this::fitSideTitleText);
     }
     /** Shrinks the title (15sp down to 8sp) until icon and word fit; auto-size ignores the icon, so it is measured here. */
@@ -2786,12 +2798,34 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     /** Icon-only floating menu for the preview panel: favorites only, all pages, add page, delete page. */
     private void showThumbnailMenu(View anchor){
         AnchoredMenu.show(this,anchor,false,AnchoredMenu.rows(
-            new AnchoredMenu.Row("즐겨찾기 페이지만",R.drawable.ic_star,()->{showAllThumbnails=false;recentPrefs.edit().putBoolean("thumb_all",false).apply();selectPanelTab(1);}).tint(0xFFF5A623).selected(!showAllThumbnails),
-            new AnchoredMenu.Row("전체 페이지",R.drawable.ic_thumbnails,()->{showAllThumbnails=true;recentPrefs.edit().putBoolean("thumb_all",true).apply();selectPanelTab(1);}).tint(0xFF007AFF).selected(showAllThumbnails),
+            new AnchoredMenu.Row("즐겨찾기 페이지만",R.drawable.ic_star,()->{setThumbMode(0);selectPanelTab(1);}).tint(0xFFF5A623).selected(!showAllThumbnails&&!thumbInk),
+            new AnchoredMenu.Row("전체 페이지",R.drawable.ic_thumbnails,()->{setThumbMode(1);selectPanelTab(1);}).tint(0xFF007AFF).selected(showAllThumbnails&&!thumbInk),
+            new AnchoredMenu.Row("필기 있는 페이지만",R.drawable.ic_ink,()->{setThumbMode(2);selectPanelTab(1);}).tint(0xFF5856D6).selected(thumbInk),
             AnchoredMenu.Row.divider(),
             new AnchoredMenu.Row("페이지 추가",R.drawable.ic_page_add,this::chooseAddedPage).tint(0xFF34C759),
             new AnchoredMenu.Row("다른 형식으로 페이지 추가",R.drawable.ic_page_add,()->chooseOtherPageFormat(renderer==null?0:renderer.getPageCount()-1)).tint(0xFF34C759),
-            new AnchoredMenu.Row("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).danger()),null);
+            new AnchoredMenu.Row("페이지 삭제",R.drawable.ic_delete,()->confirmDeletePage(currentPage)).danger(),
+            AnchoredMenu.Row.divider(),
+            new AnchoredMenu.Row("이 페이지 필기·삽입 모두 지우기",R.drawable.ic_eraser,()->confirmClearAnnotations(currentPage)).danger(),
+            new AnchoredMenu.Row("문서 전체 필기·삽입 모두 지우기",R.drawable.ic_eraser,()->confirmClearAnnotations(-1)).danger()),null);
+    }
+    /** 0 favourites only, 1 every page, 2 only pages that have handwriting (pen or highlighter strokes). */
+    private void setThumbMode(int mode){showAllThumbnails=mode==1;thumbInk=mode==2;recentPrefs.edit().putBoolean("thumb_all",mode==1).putBoolean("thumb_ink",mode==2).apply();}
+    /**
+     * Removes everything written or inserted on one page (page &gt;= 0) or on the whole document (page &lt; 0) after asking:
+     * pen and highlighter strokes, text highlights and memos, and inserted elements (pictures, shapes, tables, typed text, links...). Voice recordings are kept. It cannot be undone.
+     */
+    private void confirmClearAnnotations(final int page){
+        if(renderer==null||store==null)return;final AnnotationStore target=store;
+        new AlertDialog.Builder(this).setTitle(page<0?"문서 전체 필기·삽입 지우기":"페이지 필기·삽입 지우기")
+            .setMessage((page<0?"이 문서 전체":(page+1)+"페이지")+"의 필기, 형광펜, 하이라이트, 메모와 삽입한 사진·도형·표·타이핑·링크를 모두 지웁니다. 되돌릴 수 없습니다. 계속할까요?")
+            .setPositiveButton("모두 지우기",(d,w)->{
+                boolean changed=target.strokes.removeIf(x->page<0||x.page==page);
+                changed|=target.marks.removeIf(x->page<0||x.page==page);
+                changed|=target.elements.removeIf(x->!x.kind.equals("audio")&&(page<0||x.page==page));
+                if(activeSession!=null){activeSession.redoStrokes.clear();activeSession.clearedStrokes.clear();activeSession.clearedMarks.clear();activeSession.clearedPage=-1;}
+                if(changed)target.save();for(PdfPageView v:paneViews)if(v!=null)v.selectElement(null);redrawPages();refreshStudyPanel();if(sidebarVisible)rebuildThumbnails();
+                toast(changed?"필기와 삽입 항목을 지웠습니다":"지울 항목이 없습니다");}).setNegativeButton("취소",null).show();
     }
     private TextView pill(String text,String description,int background,int foreground,View.OnClickListener action){TextView b=new TextView(this);b.setText(text);b.setTextSize(14);b.setTextColor(foreground);b.setTypeface(Typeface.DEFAULT_BOLD);b.setGravity(Gravity.CENTER);b.setContentDescription(description);b.setBackground(round(background,18));b.setOnClickListener(action);return b;}
     /** Lets a list row be swiped away (either direction) to delete it; taps and vertical scrolling keep working. */
@@ -2832,10 +2866,10 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         });
     }
     private void rebuildOutlinePanel(){rebuildOutlineItems();}
-    /** Lists every highlight with a note and every sticky memo in the 삽입 목록 tab (the outline tab keeps outlines only). */
+    /** Lists every highlight (with or without a note) and every sticky memo in the 삽입 목록 tab (the outline tab keeps outlines only). */
     private void appendMarkList(){
-        if(store==null)return;List<AnnotationStore.Mark> listed=new ArrayList<>();for(AnnotationStore.Mark m:store.marks)if(m.noteOnly||(m.note!=null&&!m.note.trim().isEmpty()))listed.add(m);if(listed.isEmpty())return;
-        TextView heading=new TextView(this);heading.setText("메모 "+listed.size());heading.setTextSize(12);heading.setTextColor(0xFF8E8E93);heading.setPadding(dp(6),dp(14),0,dp(6));insertList.addView(heading);
+        if(store==null)return;List<AnnotationStore.Mark> listed=new ArrayList<>(store.marks);if(listed.isEmpty())return;
+        TextView heading=new TextView(this);heading.setText("메모·하이라이트 "+listed.size());heading.setTextSize(12);heading.setTextColor(0xFF8E8E93);heading.setPadding(dp(6),dp(14),0,dp(6));insertList.addView(heading);
         List<AnnotationStore.Mark> marks=new ArrayList<>(listed);marks.sort(Comparator.comparingInt((AnnotationStore.Mark m)->m.page).thenComparingDouble(m->m.top));
         for(AnnotationStore.Mark mark:marks){
             LinearLayout row=new LinearLayout(this);row.setTag("mark_item");row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(10),dp(12),dp(10));row.setBackground(round(Color.WHITE,12));
@@ -3093,19 +3127,21 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     // ================================================================== favorites-only page previews
     private View thumbnailModeToggle(){
         LinearLayout row=new LinearLayout(this);row.setTag("thumb_toggle");row.setPadding(0,0,0,dp(6));
-        String[] labels={"★ 즐겨찾기","전체"};
-        for(int i=0;i<2;i++){
-            final boolean all=i==1;boolean on=all==showAllThumbnails;
+        String[] labels={"★ 즐겨찾기","전체","필기"};String[] descriptions={"즐겨찾기한 페이지만 미리보기","전체 페이지 미리보기","필기가 있는 페이지만 미리보기"};
+        int current=thumbInk?2:showAllThumbnails?1:0;
+        for(int i=0;i<3;i++){
+            final int mode=i;boolean on=mode==current;
             TextView chip=new TextView(this);chip.setText(labels[i]);chip.setTextSize(10);chip.setSingleLine();chip.setGravity(Gravity.CENTER);chip.setBackground(round(on?ACCENT:0xFFE5E5EA,14));chip.setTextColor(on?Color.WHITE:NAVY);chip.setTypeface(on?Typeface.DEFAULT_BOLD:Typeface.DEFAULT);
-            chip.setContentDescription(all?"전체 페이지 미리보기":"즐겨찾기한 페이지만 미리보기");
-            chip.setOnClickListener(v->{if(showAllThumbnails==all)return;showAllThumbnails=all;recentPrefs.edit().putBoolean("thumb_all",all).apply();rebuildThumbnails();});
-            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(30),all?2f:3f);p.setMargins(dp(2),0,dp(2),0);row.addView(chip,p);
+            chip.setContentDescription(descriptions[i]);
+            chip.setOnClickListener(v->{if(mode==(thumbInk?2:showAllThumbnails?1:0))return;setThumbMode(mode);rebuildThumbnails();});
+            LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(30),mode==0?3f:2f);p.setMargins(dp(2),0,dp(2),0);row.addView(chip,p);
         }
         return row;
     }
     private List<Integer> thumbnailPages(){
         List<Integer> pages=new ArrayList<>();int total=renderer==null?0:renderer.getPageCount();
-        if(showAllThumbnails){for(int i=0;i<total;i++)pages.add(i);}
+        if(thumbInk){if(store!=null){Set<Integer> written=new HashSet<>();for(AnnotationStore.InkStroke stroke:store.strokes)written.add(stroke.page);for(int i=0;i<total;i++)if(written.contains(i))pages.add(i);}}
+        else if(showAllThumbnails){for(int i=0;i<total;i++)pages.add(i);}
         else if(store!=null){for(Integer page:store.bookmarks)if(page!=null&&page>=0&&page<total)pages.add(page);Collections.sort(pages);}
         return pages;
     }
@@ -3113,7 +3149,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
         if(!sidebarVisible)return;if(panelTab==2){rebuildOutlinePanel();return;}if(panelTab==3){rebuildRecordings();return;}if(panelTab==4){rebuildInsertions();return;}if(panelTab!=1)return;final int generation=++thumbnailGeneration;thumbnailList.removeAllViews();if(renderer==null)return;
         final List<Integer> pages=thumbnailPages();
         if(pages.isEmpty()){
-            TextView empty=new TextView(this);empty.setTag("thumb_empty");empty.setText("즐겨찾기한 페이지가 없습니다.\n\n아래쪽 ★를 누르면\n이곳에 미리보기가 나타납니다.");empty.setTextSize(12);empty.setTextColor(0xFF8E8E93);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(4),dp(18),dp(4),dp(8));
+            TextView empty=new TextView(this);empty.setTag("thumb_empty");empty.setText(thumbInk?"필기한 페이지가 없습니다.\n\n펜이나 형광펜으로 쓰면\n이곳에 미리보기가 나타납니다.":"즐겨찾기한 페이지가 없습니다.\n\n아래쪽 ★를 누르면\n이곳에 미리보기가 나타납니다.");empty.setTextSize(12);empty.setTextColor(0xFF8E8E93);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(4),dp(18),dp(4),dp(8));
             thumbnailList.addView(empty,new LinearLayout.LayoutParams(-1,-2));return;
         }
         for(int i=0;i<pages.size();i++){final int page=pages.get(i);LinearLayout item=new LinearLayout(this);item.setTag(page);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(dp(6),dp(8),dp(6),dp(10));ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setAdjustViewBounds(true);preview.setBackgroundColor(Color.WHITE);preview.setElevation(dp(1));item.addView(preview,new LinearLayout.LayoutParams(sidePanelWidth()-dp(60),Math.round((sidePanelWidth()-dp(60))*thumbnailAspect())));TextView number=new TextView(this);number.setText(String.valueOf(page+1));number.setGravity(Gravity.CENTER);number.setTextSize(12);number.setTextColor(0xFF8E8E93);LinearLayout numberRow=new LinearLayout(this);numberRow.setGravity(Gravity.CENTER_VERTICAL);numberRow.addView(number,new LinearLayout.LayoutParams(0,dp(24),1));TextView pageMore=new TextView(this);pageMore.setText("⋮");pageMore.setTextSize(15);pageMore.setTextColor(0xFF8E8E93);pageMore.setGravity(Gravity.CENTER);pageMore.setContentDescription("페이지 "+(page+1)+" 메뉴");pageMore.setOnClickListener(v->showPageMenu(page,v));numberRow.addView(pageMore,new LinearLayout.LayoutParams(dp(28),dp(24)));item.addView(numberRow,new LinearLayout.LayoutParams(-1,dp(24)));item.setOnClickListener(v->showPage(page));item.setOnLongClickListener(v->{showPageMenu(page,v);return true;});thumbnailList.addView(item,new LinearLayout.LayoutParams(-1,-2));}
@@ -3139,7 +3175,7 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
          "여러 문서|상단 탭으로 문서를 전환하고 × 로 닫습니다. 기록은 문서마다 따로 저장됩니다."},
         {"2. 화면 구성",
          "상단 줄|문서함, 문서 이름, 페이지 미리보기, 검색, 전체 화면, 더보기(⋮) 메뉴가 있습니다.",
-         "하단 도구 줄|읽기 · 펜 · 하이라이트 · 지우개 · 올가미 · 텍스트 · 메모 · 삽입 · 실행 취소 · 다시 실행 순서입니다. 선택한 도구는 배경이 진하게 표시되고, 선택된 도구를 한 번 더 누르면 굵기·색 같은 세부 설정이 열립니다.",
+         "하단 도구 줄|읽기 · 펜 · 형광펜 · 지우개 · 올가미 · 텍스트 · 메모 · 삽입 · 실행 취소 · 다시 실행 순서입니다. 선택한 도구는 배경이 진하게 표시되고, 선택된 도구를 한 번 더 누르면 굵기·색 같은 세부 설정이 열립니다.",
          "왼쪽 패널|검색 · 페이지 미리보기 · 개요 · 음성 녹음 탭이 있습니다. 패널과 문서 사이의 회색 막대를 좌우로 끌면 폭을 조절하고, 조절한 폭은 기억됩니다.",
          "반투명 화살표|본문 양옆의 화살표를 누르면 이전·다음 페이지로 이동합니다."},
         {"3. 읽기와 이동",
@@ -3158,16 +3194,16 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
          "굵기·색·투명도|색은 기본 팔레트 또는 무지개 칩으로 직접 고르고, 투명도 막대로 농도를 정합니다. 하이라이트와 도형·메모 색도 같은 방식입니다.",
          "직선|펜 메뉴의 ‘직선’을 켜면 시작점과 끝점을 잇는 반듯한 선을 긋습니다.",
          "지우개|지우개 아이콘으로 필기와 하이라이트를 지웁니다. 지울 부분을 문지르거나 눌러서 한 획(하이라이트는 한 덩어리)씩 지워집니다. 실행 취소·다시 실행도 사용할 수 있습니다.",
-         "올가미|영역을 그려 필기를 선택하고 옮기거나 지웁니다. 올가미 모양은 도구에서 바꿀 수 있습니다."},
-        {"6. 하이라이트",
-         "만드는 법|하이라이트 아이콘을 켜고 글자를 드래그하거나, 글자를 선택한 뒤 팝업의 ‘하이라이트’를 누릅니다.",
-         "색·모양·굵기|하이라이트 아이콘을 한 번 더 누르면 색, 굵기 막대, 모양(직선 / 자유형)을 고를 수 있습니다. 직선은 좌우로 끌어 한 줄을 칠하고, 자유형은 손가락이나 펜으로 원하는 모양대로 그립니다.",
-         "삭제|지우개로 문지르면 지워집니다. 하이라이트는 개요 목록에 나타나지 않습니다(메모가 붙은 것만 ‘삽입 목록’ 탭의 ‘메모’ 목록에 표시됩니다)."},
+         "올가미|영역을 그려 캡처하거나 글자를 복사합니다. 올가미 단추를 한 번 더 누르면 모양(자유·네모·원) 메뉴가 떠서 고를 수 있고, 영역을 그리면 복사·저장·공유 메뉴가 열립니다."},
+        {"6. 형광펜과 하이라이트",
+         "형광펜|필기 도구 줄의 형광펜은 펜처럼 쓰는 필기의 한 종류입니다. 쓰듯이 자유롭게 칠할 수 있고, 한 번 더 누르면 색·투명도·굵기와 모양(직선 / 자유형)을 고릅니다. 지우개로 지우고 실행 취소도 됩니다.",
+         "하이라이트|글자를 따라 반듯하게 칠하는 도구입니다. 삽입 메뉴의 ‘하이라이트’를 켜고 글자를 좌우로 끌거나, 글자를 선택한 뒤 팝업의 ‘하이라이트’를 누릅니다. 굵기만 조절할 수 있고, 하이라이트를 누르면 메모를 달 수 있습니다.",
+         "삽입 목록|하이라이트와 메모는 모두 ‘삽입 목록’ 탭의 ‘메모·하이라이트’에 모여, 누르면 그 위치로 이동합니다. 하이라이트는 개요 목록에는 나타나지 않습니다."},
         {"7. 텍스트 상자",
          "넣기|읽기 모드 하단의 필기 아이콘 옆 T 아이콘을 누르고 문서를 탭하면 입력할 수 있습니다. 입력 중에는 한 줄짜리 서식 막대가 글상자 위에 붙고, ‘Aa’를 누르면 정렬(왼쪽·가운데·오른쪽) · 밑줄 · 취소선 · 글머리 기호 · 번호 매기기 · 체크리스트와 글꼴 · 색이 펼쳐집니다. 목록 줄에서 Enter를 누르면 다음 항목이 이어지고, 빈 항목에서 Enter를 누르면 목록이 끝납니다. 체크리스트 버튼을 한 번 더 누르면 ☑ 로 바뀌고, 또 누르면 해제됩니다. 키보드가 올라와도 페이지 크기는 줄지 않습니다.",
          "이동·크기·삭제|입력 중 상자 위의 핸들로 이동하고, 모서리 핸들로 너비를 조절하며, 빨간 휴지통 또는 상자 위의 × 로 삭제합니다. ✓ 버튼으로 입력을 마칩니다."},
         {"8. 메모 포스트잇",
-         "만들기|하단의 메모 아이콘을 누르고 문서를 탭해 내용을 입력합니다. 글자를 선택한 뒤 팝업의 ‘메모’로도 만들 수 있습니다.",
+         "만들기|삽입 메뉴의 ‘메모’를 누르고 문서를 탭해 내용을 입력합니다. 글자를 선택한 뒤 팝업의 ‘메모’로도 만들 수 있습니다.",
          "크기 조절|메모를 한 번 탭하면 점선 테두리와 오른쪽 아래 둥근 핸들이 나타납니다. 핸들을 끌어 가로·세로 크기를 자유롭게 바꿉니다. 이미 선택된 메모를 다시 탭하면 편집 창이 열립니다.",
          "편집 창|글자 크기(− ＋)는 메모 안 글자의 크기이고, 메모 상자 크기(작게·보통·크게)는 상자의 기본 크기입니다. 상자 크기를 고르면 직접 조절한 크기는 초기화됩니다. 메모 색은 기본 색, 무지개 칩, 투명도로 정합니다.",
          "숨기기·최소화|메모와 번역 포스트잇은 펼치기 · 최소화 · 숨기기로 관리합니다."},
