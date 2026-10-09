@@ -138,13 +138,14 @@ final class AnnotationPainter {
         float[] rx=new float[n],ry=new float[n],X=new float[n],Y=new float[n],P=new float[n];
         for(int i=0;i<n;i++){AnnotationStore.InkPoint q=s.points.get(i);rx[i]=X[i]=q.x;ry[i]=Y[i]=q.y;P[i]=q.pressure;}
         for(int pass=0;pass<2;pass++){float[] src=P.clone();for(int i=1;i<n-1;i++)P[i]=(src[i-1]+2*src[i]+src[i+1])/4f;}
+        for(int pass=0;pass<2;pass++){System.arraycopy(X,0,rx,0,n);System.arraycopy(Y,0,ry,0,n);   // two passes also calm strokes saved by older versions
         for(int i=1;i<n-1;i++){
             float ax=rx[i]-rx[i-1],ay=(ry[i]-ry[i-1])*1.414f,bx=rx[i+1]-rx[i],by=(ry[i+1]-ry[i])*1.414f;
             float la=(float)Math.hypot(ax,ay),lb=(float)Math.hypot(bx,by);
             if(la<1e-9f||lb<1e-9f)continue;
             if((ax*bx+ay*by)/(la*lb)<.5f)continue;   // turn of more than 60 degrees: a real corner
             X[i]=(rx[i-1]+2*rx[i]+rx[i+1])/4f;Y[i]=(ry[i-1]+2*ry[i]+ry[i+1])/4f;
-        }
+        }}
         java.util.ArrayList<float[]> out=new java.util.ArrayList<>();out.add(new float[]{X[0],Y[0],P[0]});
         for(int i=0;i<n-1;i++){
             int i0=Math.max(0,i-1),i3=Math.min(n-1,i+2);

@@ -103,6 +103,25 @@ public class MainActivity extends Activity implements PdfPageView.Listener {
     private FrameLayout root; private AnnotationStore store; private boolean highlightMode,memoMode,outlineMode,fullscreen;
     private boolean verticalPageSwipe;
     private boolean fingerInk,swipeEnabled;
+    /** Palm rejection for the tool bars (v1.55.0): while writing, a resting hand often lands on the bottom bar / pen strip. A finger that touches them while the pen is near (hover or touch, or within 0.6 s of it) or with a palm-sized contact is ignored. */
+    private long penSeenTime=-100000;private boolean barPalmBlocked;
+    private boolean penPointer(MotionEvent e,int i){int t=e.getToolType(i);return t==MotionEvent.TOOL_TYPE_STYLUS||t==MotionEvent.TOOL_TYPE_ERASER;}
+    private boolean overBar(View v,float rawX,float rawY){if(v==null||v.getVisibility()!=View.VISIBLE||!v.isShown())return false;int[] loc=new int[2];v.getLocationOnScreen(loc);return rawX>=loc[0]-dp(4)&&rawX<=loc[0]+v.getWidth()+dp(4)&&rawY>=loc[1]-dp(4)&&rawY<=loc[1]+v.getHeight()+dp(4);}
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent e){if(penPointer(e,0))penSeenTime=e.getEventTime();return super.dispatchGenericMotionEvent(e);}
+    @Override public boolean dispatchTouchEvent(MotionEvent e){
+        int am=e.getActionMasked();
+        for(int i=0;i<e.getPointerCount();i++)if(penPointer(e,i))penSeenTime=e.getEventTime();
+        if(am==MotionEvent.ACTION_DOWN){
+            barPalmBlocked=false;
+            if(writeMode&&!penPointer(e,0)){
+                float mm=e.getTouchMajor()/Math.max(1f,getResources().getDisplayMetrics().xdpi)*25.4f;
+                boolean palmLike=e.getToolType(0)==5/*TOOL_TYPE_PALM*/||mm>14f||e.getEventTime()-penSeenTime<600;
+                if(palmLike&&(overBar(bottomBar,e.getRawX(),e.getRawY())||overBar(stripBox,e.getRawX(),e.getRawY())))barPalmBlocked=true;
+            }
+        }
+        if(barPalmBlocked){if(am==MotionEvent.ACTION_UP||am==MotionEvent.ACTION_CANCEL)barPalmBlocked=false;return true;}
+        return super.dispatchTouchEvent(e);
+    }
     private HwpConversion hwpConversion;
     private final List<DocumentSession> sessions=new ArrayList<>(); private DocumentSession activeSession; private boolean splitMode,twoPageBeforeSplit;
     private final PdfPageView[] paneViews=new PdfPageView[4]; private final DocumentSession[] paneSessions=new DocumentSession[4]; private int paneCount,splitLayout; private float[] splitCols={1f},splitRows={1f}; private final List<View> splitDividers=new ArrayList<>(); private PaneLayout papersLayout;
